@@ -3,6 +3,10 @@ import secrets
 from pathlib import Path
 from dotenv import load_dotenv
 
+print("DEBUG from env:", os.getenv('DJANGO_DEBUG'))
+print("SECRET from env:", os.getenv('DJANGO_SECRET_KEY'))
+
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -11,11 +15,10 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 # --- SECURITY ---
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
+
+# Pokud není v env, použij dev key (jen pro vývoj)
 if not SECRET_KEY:
-    if os.getenv('DJANGO_DEBUG', 'False') == 'True':
-        SECRET_KEY = 'django-insecure-dev-key-temporary'
-    else:
-        raise ValueError("DJANGO_SECRET_KEY must be set in production!")
+    SECRET_KEY = 'django-insecure-dev-key-temporary'
 
 # DEBUG musí být False pro produkci, True jen pro vývoj
 DEBUG = os.getenv('DJANGO_DEBUG', 'False') == 'True'
@@ -438,6 +441,14 @@ JAZZMIN_UI_TWEAKS = {
     },
     "actions_sticky_top": False
 }
+
+if os.getenv("DJANGO_DEBUG", "False") == "True":
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 # =============================================================================
 # SECURITY NOTES FOR PRODUCTION:

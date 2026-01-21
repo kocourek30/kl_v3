@@ -638,14 +638,14 @@ function connectRFIDBridge() {
     console.log('🔌 Připojuji k RFID Bridge na jidelna.kliknijidlo.cz...');
     
     try {
-        socket = io('https://jidelna.kliknijidlo.cz:3001', {
-            transports: ['websocket', 'polling'],
-            timeout: 2000,  // ⚡ ZKRÁCENO z 10000 na 2000ms
-            reconnection: true,
-            reconnectionAttempts: 5,
-            reconnectionDelay: 300,  // ⚡ ZKRÁCENO z 1000 na 300ms
-            forceNew: true
-        });
+        socket = io('http://localhost:3001', {
+        transports: ['websocket', 'polling'],
+        timeout: 5000,
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 500,
+        forceNew: true
+    });
         
         socket.on('connect', () => {
             console.log('✅ Bridge připojen! Transport:', socket.io.engine.transport.name);
