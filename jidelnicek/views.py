@@ -28,9 +28,11 @@ from .services import (
     can_order_for_date,
     check_group_limit,
 )
+
 from canteen_settings.models import (
     CanteenContact, MealPickupTime, OperatingDays, OperatingExceptions
 )
+
 
 from objednavky.models import Order, OrderItem
 from jidelnicek.models import PolozkaJidelnicku, Jidelnicek

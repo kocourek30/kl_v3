@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.db import models
 from django.core.exceptions import ValidationError
 
@@ -67,6 +68,22 @@ class Jidlo(models.Model):
 
     def __str__(self):
         return self.nazev
+    
+    def vypocitej_spotrebu_surovin(self, pocet_porci: int):
+        """
+        Vrátí dict {surovina: celkové_mnozstvi} pro daný počet porcí.
+        Nic neodečítá ze skladu, jen počítá.
+        """
+        from sklad.models import RecepturaPolozka  # import uvnitř kvůli cyklickým závislostem
+
+        spotreba = {}
+        polozky = self.receptura.select_related("surovina").all()
+
+        for pol in polozky:
+            celkem = pol.mnozstvi_na_porci * Decimal(pocet_porci)
+            spotreba[pol.surovina] = spotreba.get(pol.surovina, Decimal("0")) + celkem
+
+        return spotreba
 
 
 class Jidelnicek(models.Model):

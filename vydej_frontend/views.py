@@ -19,6 +19,7 @@ from django.db.models import Count, Sum, Q
 from django.contrib.auth import get_user_model
 
 from .decorators import obsluha_required
+from sklad.utils import odeber_ze_skladu_pro_jidlo
 
 User = get_user_model()
 
@@ -164,7 +165,8 @@ from decimal import Decimal
 @csrf_protect
 @require_POST
 def issue_order(request, order_id):
-    """AJAX endpoint pro vydání AKTUÁLNÍCH položek objednávky.
+    """
+    AJAX endpoint pro vydání AKTUÁLNÍCH položek objednávky.
     Vždy vrací JSON payload (success / error).
     """
     try:
@@ -202,6 +204,20 @@ def issue_order(request, order_id):
                 'error': 'Žádné položky k vydání v aktuálním čase'
             }, status=400)
 
+        # 🔥 1) odečet ze skladu + nastavení statusu na 'vydano' / 'castecne-vydano'
+        # použijeme službu, ale jen pro items_to_issue – proto je lepší varianta níž:
+        from sklad.utils import odeber_ze_skladu_pro_jidlo
+
+        # nejdřív odečti za každou položku v aktuálním čase
+        for item in items_to_issue.select_related("menu_item__jidlo"):
+            ok, _ = odeber_ze_skladu_pro_jidlo(item.menu_item.jidlo, item.quantity)
+            if not ok:
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Nedostatek surovin pro {item.menu_item.jidlo.nazev}'
+                }, status=400)
+
+        # 🔥 2) vytvoř / aktualizuj účtenku a flagy vydano (zbytek logiky necháváš jak máš)
         uctenka, created = VydejniUctenka.objects.get_or_create(
             order=order,
             defaults={
@@ -268,6 +284,7 @@ def issue_order(request, order_id):
             'success': False,
             'error': f'Chyba při vytváření účtenky: {str(e)}',
         }, status=500)
+
 
 @login_required
 @obsluha_required

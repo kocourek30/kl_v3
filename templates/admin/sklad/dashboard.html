@@ -1,0 +1,104 @@
+{% extends "admin/change_list.html" %}
+{% load i18n %}
+
+{% block content_title %}
+  <h1>
+    <i class="fas fa-warehouse"></i>
+    Sklad – přehled spotřeby
+  </h1>
+{% endblock %}
+
+{% block search %}
+<div class="col-12">
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="get" class="form-inline">
+      <div class="form-group mr-2">
+        <label for="id_date" class="mr-2 mb-0">
+          <i class="fas fa-calendar-alt"></i> Datum:
+        </label>
+        <input
+          id="id_date"
+          type="date"
+          name="date"
+          class="form-control"
+          value="{{ target_date|date:'Y-m-d' }}"
+        >
+      </div>
+      <button type="submit" class="btn btn-primary">
+        <i class="fas fa-filter"></i> Filtrovat
+      </button>
+    </form>
+  </div>
+</div>
+</div>
+{% endblock %}
+
+{% block result_list %}
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>
+      <i class="fas fa-list"></i>
+      Přehled surovin
+    </span>
+    <small class="text-muted">
+      Datum: {{ target_date|date:"d.m.Y" }}
+    </small>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-striped mb-0">
+        <thead class="thead-light">
+          <tr>
+            <th><i class="fas fa-carrot"></i> Surovina</th>
+            <th><i class="fas fa-chart-line"></i> Očekávaná spotřeba</th>
+            <th><i class="fas fa-check-circle"></i> Reálná spotřeba</th>
+            <th><i class="fas fa-boxes-stacked"></i> Stav skladu</th>
+            <th><i class="fas fa-bell"></i> Minimum</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr class="{% if row.pod_min %}table-danger{% endif %}">
+              <td>
+                <strong>{{ row.surovina.nazev }}</strong>
+                <small class="text-muted">
+                  ({{ row.surovina.jednotka }})
+                </small>
+              </td>
+              <td>{{ row.expected }}</td>
+              <td>{{ row.real }}</td>
+              <td>
+                {% if row.stav is not None %}
+                  {{ row.stav }}
+                {% else %}
+                  <span class="text-muted">–</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if row.min is not None %}
+                  {{ row.min }}
+                  {% if row.pod_min %}
+                    <span class="badge badge-danger ml-1">
+                      <i class="fas fa-exclamation-triangle"></i> Pod minimem
+                    </span>
+                  {% endif %}
+                {% else %}
+                  <span class="text-muted">–</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="5" class="text-center text-muted py-3">
+                <i class="fas fa-info-circle"></i>
+                Žádná data pro zvolené datum.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

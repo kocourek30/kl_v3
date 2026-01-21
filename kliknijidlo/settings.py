@@ -80,6 +80,7 @@ INSTALLED_APPS = [
     'vydej_frontend',
     'reporty',
     'prepocty',
+    'sklad',
     
 ]
 
@@ -353,6 +354,11 @@ JAZZMIN_SETTINGS = {
         "frontend.Setting": "fas fa-sliders",
         "reporty": "fas fa-chart-mixed",
         "auth": "fas fa-shield-alt",
+        "sklad.Surovina": "fas fa-carrot",
+        "sklad.StavSkladu": "fas fa-boxes-stacked",
+        "sklad.RecepturaPolozka": "fas fa-list-ul",
+        "sklad.SkladDashboard": "fas fa-warehouse",
+
 
         "reporty.ReportDummy": "fas fa-chart-pie",
         "objednavky.PriceRecalculationDetail": "fas fa-clipboard-check",
@@ -375,9 +381,26 @@ JAZZMIN_SETTINGS = {
     ],
     
     "topmenu_links": [
-        {"name": "🏠 Dashboard", "url": "admin:index", "permissions": ["auth.view_user"]},
-        {"name": "📊 Reporty", "url": "admin:reporty_reportdummy_changelist", "permissions": ["auth.view_user"]},
+        {
+            "name": "🏠 Dashboard",
+            "url": "admin:index",
+            "permissions": ["auth.view_user"],
+            "icon": "fas fa-home",
+        },
+        {
+            "name": "📊 Reporty",
+            "url": "admin:reporty_reportdummy_changelist",
+            "permissions": ["auth.view_user"],
+            "icon": "fas fa-chart-pie",
+        },
+        {
+            "name": "📦 Sklad",
+            "url": "admin:sklad_skladdashboard_changelist",
+            "permissions": ["auth.view_user"],
+            "icon": "fas fa-warehouse",
+        },
     ],
+
     
     "custom_css": "css/custom-admin.css",
 

@@ -6,6 +6,7 @@ from django.db.models import Sum
 from .models import Alergen, Jidlo, DruhJidla, Jidelnicek, PolozkaJidelnicku
 from dotace.models import DotacniPolitika, DotaceProJidelniskouSkupinu
 from django.utils.html import format_html
+from sklad.admin import RecepturaPolozkaInline
 
 @admin.register(DruhJidla)
 class DruhJidlaAdmin(admin.ModelAdmin):
@@ -30,6 +31,7 @@ class JidloAdmin(admin.ModelAdmin):
     list_display = ('nazev', 'cena', 'alergeny_list', 'ceny_po_dotacich')
     search_fields = ('nazev',)
     filter_horizontal = ('alergeny',)
+    inlines = [RecepturaPolozkaInline]
 
     def alergeny_list(self, obj):
         return ", ".join([a.nazev for a in obj.alergeny.all()])
@@ -143,3 +145,4 @@ class AlergenAdmin(admin.ModelAdmin):
         if not obj.ikona:
             obj.ikona = 'fas fa-exclamation-triangle'  # výchozí Font Awesome ikona
         super().save_model(request, obj, form, change)
+

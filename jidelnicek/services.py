@@ -13,6 +13,66 @@ from objednavky.models import Order, OrderItem
 from jidelnicek.models import Jidelnicek, PolozkaJidelnicku
 from canteen_settings.utils import is_ordering_allowed, get_order_closing_datetime
 
+# objednavky/services.py
+from django.db import transaction
+from django.utils import timezone
+
+
+from sklad.utils import odeber_ze_skladu_pro_jidlo
+
+
+@transaction.atomic
+def mark_order_as_issued(order: Order):
+    """
+    Označí objednávku / položky jako vydané a odečte suroviny ze skladu.
+    Volat při skutečném výdeji (u vás ve vydej_frontend).
+    """
+    if order.status in ("vydano", "nevyzvednuto"):
+        return  # už kompletně řešená objednávka
+
+    now = timezone.now()
+
+    for item in order.items.select_related("menu_item__jidlo").all():
+        if item.vydano:
+            continue
+
+        jidlo = item.menu_item.jidlo
+        pocet = item.quantity
+
+        ok, _ = odeber_ze_skladu_pro_jidlo(jidlo, pocet)
+        if not ok:
+            raise ValueError(f"Nedostatek surovin pro {jidlo.nazev}")
+
+        item.vydano = True
+        item.datum_vydani = now
+        item.save(update_fields=["vydano", "datum_vydani"])
+
+    order.status = "vydano"
+    order.datum_vydani = now
+    order.save(update_fields=["status", "datum_vydani"])
+
+
+@transaction.atomic
+def mark_order_as_not_picked(order: Order):
+    """
+    Označí objednávku jako nevyzvednutou BEZ dalšího odečtu ze skladu.
+    Použij, pokud už byla vydaná / připravená a chceš pouze přepnout stav.
+    """
+    if order.status == "nevyzvednuto":
+        return
+
+    # pokud ještě není nic vydáno, necháš asi na logice volajícího, jestli dovolit
+    if not order.items.filter(vydano=True).exists():
+        # tady můžeš buď raise, nebo prostě přesto označit
+        pass
+
+    order.status = "nevyzvednuto"
+    if not order.datum_vydani:
+        order.datum_vydani = timezone.now()
+    order.save(update_fields=["status", "datum_vydani"])
+
+
+
 # ✅ NAHRAĎ FUNKCI can_order_for_date
 def can_order_for_date(user=None, target_date=None):
     """Kontroluje, zda lze objednávat na dané datum podle nastavení uzavírací doby"""
