@@ -1,10 +1,22 @@
 from datetime import datetime
+from decimal import Decimal
 from django.utils import timezone
 from django.contrib import admin
 
 from .models import SkladDashboard, Surovina, StavSkladu, RecepturaPolozka
 from objednavky.models import OrderItem
 
+from .models import (
+    SkladDashboard, Surovina, StavSkladu, RecepturaPolozka,
+    PrijemSkladu, PolozkaPrijmu,
+)
+from django.db import transaction
+
+from .models import (
+    SkladDashboard, Surovina, StavSkladu, RecepturaPolozka,
+    PrijemSkladu, PolozkaPrijmu,
+    Inventura, PolozkaInventury, InventurniDoklad,
+)
 
 @admin.register(SkladDashboard)
 class SkladDashboardAdmin(admin.ModelAdmin):
@@ -110,9 +122,168 @@ class SurovinaAdmin(admin.ModelAdmin):
 @admin.register(StavSkladu)
 class StavSkladuAdmin(admin.ModelAdmin):
     list_display = ("surovina", "mnozstvi", "min_mnozstvi")
-    list_editable = ("mnozstvi", "min_mnozstvi")
+    readonly_fields = ("surovina", "mnozstvi")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 
 class RecepturaPolozkaInline(admin.TabularInline):
     model = RecepturaPolozka
     extra = 1
+
+
+class PolozkaPrijmuInline(admin.TabularInline):
+    model = PolozkaPrijmu
+    extra = 1
+
+
+@admin.register(PrijemSkladu)
+class PrijemSkladuAdmin(admin.ModelAdmin):
+    list_display = ("id", "datum", "vytvoril", "uzavreny")
+    list_filter = ("uzavreny", "datum")
+    inlines = [PolozkaPrijmuInline]
+    readonly_fields = ("vytvoril",)
+
+    def save_model(self, request, obj, form, change):
+        if not obj.pk and not obj.vytvoril:
+            obj.vytvoril = request.user
+        super().save_model(request, obj, form, change)
+
+    @transaction.atomic
+    def response_change(self, request, obj):
+        """
+        Při označení 'uzavreny' navýší stav skladu podle položek.
+        """
+        if "uzavreny" in obj.__dict__ and obj.uzavreny:
+            # jednorázově navýšit sklad (idempotence: jen pokud dřív nebyl uzavřený)
+            prev = PrijemSkladu.objects.get(pk=obj.pk)
+            if not prev.uzavreny:
+                for pol in obj.polozky.select_related("surovina").all():
+                    stav, _ = StavSkladu.objects.get_or_create(
+                        surovina=pol.surovina,
+                        defaults={"mnozstvi": 0, "min_mnozstvi": 0},
+                    )
+                    stav.mnozstvi = stav.mnozstvi + pol.mnozstvi
+                    stav.save(update_fields=["mnozstvi"])
+        return super().response_change(request, obj)
+    
+
+    
+
+class PolozkaInventuryInline(admin.TabularInline):
+    model = PolozkaInventury
+    extra = 0
+    readonly_fields = ("stav_pred", "rozdil")
+
+
+@admin.register(Inventura)
+class InventuraAdmin(admin.ModelAdmin):
+    list_display = ("id", "datum", "vytvoril", "uzavrena")
+    list_filter = ("uzavrena", "datum")
+    readonly_fields = ("vytvoril",)
+    inlines = [PolozkaInventuryInline]
+
+    def has_delete_permission(self, request, obj=None):
+        # inventuru raději nemažeme
+        return False
+
+    def save_model(self, request, obj, form, change):
+        # doplnění vytvoril
+        if not obj.pk and not obj.vytvoril:
+            obj.vytvoril = request.user
+        super().save_model(request, obj, form, change)
+
+        # při vytvoření inventury automaticky předvyplnit položky
+        if not change:
+            self._napln_polozky_ze_stavu(obj)
+
+    def _napln_polozky_ze_stavu(self, inventura):
+        """
+        Vytvoří PolozkaInventury pro všechny suroviny, které mají StavSkladu.
+        stav_pred = aktuální množství na skladě,
+        fyzicky_stav = stejné číslo (uživatel pak jen opraví),
+        rozdil = 0.
+        """
+        stavy = StavSkladu.objects.select_related("surovina").all()
+        polozky = []
+        for stav in stavy:
+            polozky.append(PolozkaInventury(
+                inventura=inventura,
+                surovina=stav.surovina,
+                stav_pred=stav.mnozstvi,
+                fyzicky_stav=stav.mnozstvi,
+                rozdil=Decimal("0"),
+            ))
+        PolozkaInventury.objects.bulk_create(polozky)
+    
+    
+
+    @transaction.atomic
+    def response_change(self, request, obj):
+        """
+        Při uzavření inventury promítne rozdíly do StavSkladu:
+        nastaví stav skladu na fyzicky_stav.
+        """
+        if "uzavrena" in obj.__dict__ and obj.uzavrena:
+            prev = Inventura.objects.get(pk=obj.pk)
+            if not prev.uzavrena:
+                for pol in obj.polozky.select_related("surovina").all():
+                    stav, _ = StavSkladu.objects.get_or_create(
+                        surovina=pol.surovina,
+                        defaults={"mnozstvi": 0, "min_mnozstvi": 0},
+                    )
+                    stav.mnozstvi = pol.fyzicky_stav
+                    stav.save(update_fields=["mnozstvi"])
+        return super().response_change(request, obj)
+    
+class PolozkaInventuryReadOnlyInline(admin.TabularInline):
+    model = PolozkaInventury
+    extra = 0
+    can_delete = False
+    readonly_fields = ("surovina", "stav_pred", "fyzicky_stav", "rozdil")
+    fields = ("surovina", "stav_pred", "fyzicky_stav", "rozdil")
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(InventurniDoklad)
+class InventurniDokladAdmin(admin.ModelAdmin):
+    """
+    Čistě read-only pohled na uzavřené inventury – inventurní doklady.
+    """
+    list_display = ("id", "datum", "vytvoril", "pocet_polozek")
+    list_filter = ("datum",)
+    search_fields = ("id", "vytvoril__username")
+    inlines = [PolozkaInventuryReadOnlyInline]
+
+    # hlavička inventury jen ke čtení
+    readonly_fields = ("datum", "popis", "vytvoril", "uzavrena")
+
+    def get_queryset(self, request):
+        # zobrazovat jen uzavřené inventury
+        qs = super().get_queryset(request)
+        return qs.filter(uzavrena=True)
+
+    # kompletně zakázat editace / mazání / přidávání
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        # umožní zobrazit detail, ale inline i pole jsou readonly
+        return True
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def pocet_polozek(self, obj):
+        return obj.polozky.count()
+    pocet_polozek.short_description = "Počet položek"

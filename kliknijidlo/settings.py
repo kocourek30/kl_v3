@@ -358,6 +358,14 @@ JAZZMIN_SETTINGS = {
         "sklad.StavSkladu": "fas fa-boxes-stacked",
         "sklad.RecepturaPolozka": "fas fa-list-ul",
         "sklad.SkladDashboard": "fas fa-warehouse",
+                # inventury (pracovní)
+        "sklad.Inventura": "fas fa-clipboard-check",
+        "sklad.PolozkaInventury": "fas fa-list-check",
+
+        # inventurní doklady (proxy model – report)
+        "sklad.InventurniDoklad": "fas fa-file-invoice",
+        "sklad.PrijemSkladu": "fas fa-truck-loading",      # nebo 'fas fa-file-import'
+        "sklad.PolozkaPrijmu": "fas fa-plus-square",
 
 
         "reporty.ReportDummy": "fas fa-chart-pie",
