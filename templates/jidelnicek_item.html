@@ -41,7 +41,7 @@
               <div class="mi-alergens">
                 <i class="fa-solid fa-triangle-exclamation me-1"></i> Alergeny:
                 {% for alergen in item.jidlo.alergeny.all %}
-                  <span class="">{{ alergen.nazev }}</span>
+                  <span class="">{{ alergen.nazev }}, </span>
                 {% endfor %}
               </div>
             {% endif %}
