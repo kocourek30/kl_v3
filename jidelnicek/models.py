@@ -2,6 +2,9 @@ from decimal import Decimal
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.contrib.auth.models import Group
+from PIL import Image
+from django.core.files.base import ContentFile
+from io import BytesIO
 
 
 class Alergen(models.Model):
@@ -70,6 +73,13 @@ class Jidlo(models.Model):
     tuky = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, verbose_name="Tuky (g)")
     sacharidy = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, verbose_name="Sacharidy (g)")
 
+    foto = models.ImageField(
+        upload_to="jidla/",
+        blank=True,
+        null=True,
+        verbose_name="Fotka jídla"
+    )
+
     class Meta:
         verbose_name = "Jídlo"
         verbose_name_plural = "Jídla"
@@ -77,6 +87,25 @@ class Jidlo(models.Model):
     def __str__(self):
         return self.nazev
     
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+
+        if self.foto:
+            try:
+                img = Image.open(self.foto.path)
+                max_size = (800, 800)  # cílové max rozlišení
+
+                img.thumbnail(max_size, Image.LANCZOS)
+                img_io = BytesIO()
+                img.save(img_io, format="JPEG", quality=80)
+                img_content = ContentFile(img_io.getvalue(), name=self.foto.name)
+
+                # znovu ulož zmenšenou verzi
+                self.foto.save(self.foto.name, img_content, save=False)
+                super().save(update_fields=["foto"])
+            except Exception as e:
+                print("⚠️ Nelze zpracovat fotku jídla:", e)
+
     # v modelu Jidlo
     def spolecne_alergeny(self, user):
         from users.models import CustomUser  # podle struktury

@@ -1,12 +1,4 @@
-{# úplně nahoru, do body šablony, jen na debug #}
-{% if debug %}
-  <pre>
-    order_status={{ order_status|default:"-" }}
-    current_quantity={{ current_quantity|default:"-" }}
-    can_order={{ can_order|default:"-" }}
-    can_cancel={{ can_cancel|default:"-" }}
-  </pre>
-{% endif %}
+
 
 
 <!-- jidelnicek_item.html - UNIVERZÁLNÍ pro DASHBOARD + AJAX -->
@@ -15,15 +7,22 @@
     <div class="menu-item-grid {% if item.hide_quantity %}grid-no-qty{% endif %}">
       
       <!-- 1. BLOK – TALÍŘOVÁ IKONA -->
-      <div class="mi-block mi-icon">
-        <div class="mi-plate">
-          <div class="mi-plate-outer">
-            <div class="mi-plate-inner">
-              <i class="{{ item.druh_jidla.ikona }} mi-plate-icon"></i>
-            </div>
-          </div>
-        </div>
+<div class="mi-block mi-icon">
+  <div class="mi-plate">
+    <div class="mi-plate-outer">
+      <div class="mi-plate-inner">
+        {% if item.jidlo.foto %}
+          <a href="{{ item.jidlo.foto.url }}" class="mi-photo-link" data-lightbox="jidlo-{{ item.id }}" data-caption="{{ item.jidlo.nazev }}">
+            <img src="{{ item.jidlo.foto.url }}" alt="{{ item.jidlo.nazev }}" class="mi-photo-img">
+          </a>
+        {% else %}
+          <i class="{{ item.druh_jidla.ikona }} mi-plate-icon"></i>
+        {% endif %}
       </div>
+    </div>
+  </div>
+</div>
+
 
       <!-- 2. BLOK – INFO O JÍDLE (VLEVOLÉ ZAROVNÁNÍ) -->
       <div class="mi-block mi-info">
@@ -187,23 +186,35 @@ function adjustQty(btn, delta) {
   --accent-color: #f28c28;
 }
 
+/* FOTO */
+.mi-photo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+.mi-photo-link {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 /* KARTA */
 .menu-item-card {
   border-radius: 18px !important;
   background: #ffffff;
   box-shadow: 0 8px 24px rgba(0,0,0,0.06) !important;
-  
 }
 
 /* GRID */
 .menu-item-grid {
   display: grid;
-  grid-template-columns: 64px minmax(0, 2fr) 120px 1fr;
+  /* zvětšený první sloupec pro fotku */
+  grid-template-columns: 120px minmax(0, 2fr) 120px 1fr;
   gap: 16px;
   align-items: center;
   min-height: 76px;
 }
-
 
 .menu-item-grid.grid-no-qty .mi-block-full {
   grid-column: -2 / -1;
@@ -221,14 +232,15 @@ function adjustQty(btn, delta) {
   justify-content: center;
 }
 
-/* 1) TALÍŘ - VYSTŘEDĚNÝ */
+/* 1) TALÍŘ / FOTO - VYSTŘEDĚNÉ */
 .mi-icon {
   justify-content: center;
 }
 
+/* zvětšená „miska“ pro fotku */
 .mi-plate {
-  width: 54px;
-  height: 54px;
+  width: 100px;
+  height: 100px;
 }
 
 .mi-plate-outer {
@@ -243,8 +255,8 @@ function adjustQty(btn, delta) {
 }
 
 .mi-plate-inner {
-  width: 76%;
-  height: 76%;
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
   border: 2px solid #e0e7ff;
   background: #ffffff;
@@ -254,11 +266,11 @@ function adjustQty(btn, delta) {
 }
 
 .mi-plate-icon {
-  font-size: 1.25rem;
+  font-size: 3rem;
   color: #6b7280;
 }
 
-/* 2) INFO - VLEVOLÉ ZAROVNÁNÍ */
+/* 2) INFO - VLEVO */
 .mi-info {
   justify-content: flex-start;
 }
@@ -336,7 +348,7 @@ function adjustQty(btn, delta) {
   color: var(--primary-color);
 }
 
-/* 3) CENA - VYSTŘEDĚNÁ */
+/* 3) CENA - STŘED */
 .mi-price {
   justify-content: center;
 }
@@ -347,7 +359,7 @@ function adjustQty(btn, delta) {
   color: #111827;
 }
 
-/* KOMPAKTNÍ MNOŽSTVÍ - BEZ PODBARVENÍ */
+/* KOMPAKTNÍ MNOŽSTVÍ */
 .qty-action-group {
   display: flex;
   align-items: center;
@@ -471,42 +483,49 @@ function adjustQty(btn, delta) {
 /* RESPONSIVE */
 @media (max-width: 768px) {
   .menu-item-grid {
-    grid-template-columns: 52px 1fr;
+    /* menší fotka a jednodušší layout na mobilu */
+    grid-template-columns: 80px 1fr;
     grid-template-rows: auto auto;
     row-gap: 12px;
     gap: 12px;
   }
-  
+
   .mi-icon { grid-row: 1; grid-column: 1; }
-  .mi-info { 
-    grid-row: 1; 
-    grid-column: 2; 
-    justify-content: flex-start; 
+  .mi-info {
+    grid-row: 1;
+    grid-column: 2;
+    justify-content: flex-start;
   }
-  .mi-price { 
-    grid-row: 2; 
-    grid-column: 1 / -1; 
-    justify-content: center; 
-  }
-  .mi-block-full { 
-    grid-row: 3; 
-    grid-column: 1 / -1; 
+  .mi-price {
+    grid-row: 2;
+    grid-column: 1 / -1;
     justify-content: center;
   }
-  
+  .mi-block-full {
+    grid-row: 3;
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+
+  .mi-plate {
+    width: 72px;
+    height: 72px;
+  }
+
   .qty-action-group {
     flex-direction: column;
     gap: 8px;
     align-items: stretch;
   }
-  
+
   .mi-qty-compact {
     justify-content: center;
     min-width: auto;
   }
-  
+
   .mi-btn-fixed {
     width: 100%;
   }
 }
+
 </style>
