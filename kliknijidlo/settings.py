@@ -371,6 +371,7 @@ JAZZMIN_SETTINGS = {
         "reporty.ReportDummy": "fas fa-chart-pie",
         "objednavky.PriceRecalculationDetail": "fas fa-clipboard-check",
         "objednavky.PriceRecalculationLog": "fas fa-clipboard-list",
+        "vydej_jidel.VydejSettings": "fas fa-stopwatch-20",
 
     },
     

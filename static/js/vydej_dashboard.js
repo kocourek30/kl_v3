@@ -2,11 +2,17 @@
 // KLIKNIJIDLO - VÝDEJNÍ DASHBOARD (OPTIMALIZOVÁNO PRO RYCHLOST)
 // ============================================
 
+
 // 🔥 GLOBÁLNÍ PROMĚNNÉ
 let currentRFIDOrder = null;
 let socket = null;
 let isConnected = false;
 let lastRFIDTime = 0;
+
+// ⏱ AUTO ISSUE – globální stav
+let autoIssueTimeoutId = null;
+let autoIssueTimeoutSeconds = null; // načítá se z backendu
+
 
 // ============================================
 // HODINY
@@ -21,6 +27,7 @@ function updateTime() {
         timeElement.textContent = `${hours}:${minutes}:${seconds}`;
     }
 }
+
 
 // ============================================
 // TAB SWITCHING
@@ -41,11 +48,13 @@ function initTabs() {
     });
 }
 
+
 // ============================================
 // VYHLEDÁVÁNÍ ZÁKAZNÍKŮ
 // ============================================
 const searchInput = document.getElementById('customerSearchInput');
 const clearSearchBtn = document.getElementById('clearSearchBtn');
+
 
 function filterCustomers() {
     const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
@@ -68,6 +77,7 @@ function filterCustomers() {
     }
 }
 
+
 function initSearch() {
     if (searchInput) {
         searchInput.addEventListener('input', filterCustomers);
@@ -84,6 +94,7 @@ function initSearch() {
     }
 }
 
+
 // ============================================
 // RFID STATE MANAGEMENT
 // ============================================
@@ -99,7 +110,10 @@ function showRFIDWaiting() {
     if (loadingOverlay) loadingOverlay.style.display = 'none';
     
     currentRFIDOrder = null;
+    // ⏱ AUTO ISSUE – při návratu do waiting vždy stopni timeout
+    cancelAutoIssue();
 }
+
 
 function showRFIDLoading() {
     const loadingOverlay = document.getElementById('rfidLoadingOverlay');
@@ -108,12 +122,14 @@ function showRFIDLoading() {
     }
 }
 
+
 function hideRFIDLoading() {
     const loadingOverlay = document.getElementById('rfidLoadingOverlay');
     if (loadingOverlay) {
         loadingOverlay.style.display = 'none';
     }
 }
+
 
 function hideRFIDStates() {
     const waitingState = document.getElementById('rfidWaitingState');
@@ -124,6 +140,7 @@ function hideRFIDStates() {
     if (successState) successState.style.display = 'none';
     if (errorState) errorState.style.display = 'none';
 }
+
 
 // ✅ KOMPAKTNÍ RENDERING POLOŽEK - SE TLAČÍTKY PRO JEDNOTLIVÉ VYDÁNÍ
 function renderRFIDItems(items) {
@@ -174,6 +191,7 @@ function renderRFIDItems(items) {
     // 🔥 NAVĚS LISTENERY NA TLAČÍTKA
     attachSingleItemIssueListeners();
 }
+
 
 
 // 🔥 NOVÝ STAV - UŽ VYDANÁ OBJEDNÁVKA
@@ -233,6 +251,7 @@ function showRFIDAlreadyIssued(orderData) {
 }
 
 
+
 function showRFIDSuccess(orderData) {
     currentRFIDOrder = orderData;
     
@@ -264,14 +283,20 @@ function showRFIDSuccess(orderData) {
     const issueIconBtn = document.getElementById('rfidIssueIconBtn');
     if (issueIconBtn) {
         issueIconBtn.onclick = function() {
+            // ⏱ AUTO ISSUE – ruční vydání = zruš timeout
+            cancelAutoIssue();
             issueRFIDOrder(orderData.order_id);
         };
+        // ⏱ AUTO ISSUE – když je k dispozici order_id, nastartuj automat
+        startAutoIssue(orderData.order_id);
     }
     
     // Cancel button
     const cancelBtn = document.getElementById('rfidCancelBtn');
     if (cancelBtn) {
         cancelBtn.onclick = function() {
+            // ⏱ AUTO ISSUE – ruční "zavření" = zruš timeout
+            cancelAutoIssue();
             showRFIDWaiting();
         };
     }
@@ -282,6 +307,7 @@ function showRFIDSuccess(orderData) {
         rfidTabBtn.click();
     }
 }
+
 
 function showRFIDError(errorMessage, rfidTag) {
     console.log('🔴 Showing error:', errorMessage); // Debug
@@ -301,7 +327,10 @@ function showRFIDError(errorMessage, rfidTag) {
     const rfidTabBtn = document.querySelector('[data-tab="rfid"]');
     if (rfidTabBtn) rfidTabBtn.click();
     
-    // 🔥 FAIL-SAFE AUTO-HIDE (5s) + force waiting
+    // ⏱ AUTO ISSUE – při chybě raději stopni timeout
+    cancelAutoIssue();
+
+    // 🔥 FAIL-SAFE AUTO-HIDE (2.5s) + force waiting
     setTimeout(() => {
         console.log('🕒 Auto-hiding error');
         if (errorState) {
@@ -311,6 +340,7 @@ function showRFIDError(errorMessage, rfidTag) {
         showRFIDWaiting();
     }, 2500);
 }
+
 
 // ✅ FUNKCE PRO VYDÁNÍ OBJEDNÁVKY
 function issueRFIDOrder(orderId) {
@@ -330,6 +360,9 @@ function issueRFIDOrder(orderId) {
     })
     .then(response => response.json())
     .then(data => {
+        // ⏱ AUTO ISSUE – po jakémkoli výsledku stopni timeout
+        cancelAutoIssue();
+
         if (data.success) {
             showNotification('✅ ' + data.message, 'success');
             showRFIDWaiting();
@@ -346,6 +379,67 @@ function issueRFIDOrder(orderId) {
         hideRFIDLoading();
     });
 }
+
+
+// ============================================
+// ⏱ AUTO ISSUE – helpery
+// ============================================
+
+// načtení timeoutu z backendu (volá se v initDashboard)
+function loadAutoIssueSettings() {
+    return fetch('/vydej/settings/', {
+        method: 'GET',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (typeof data.timeout_seconds === 'number') {
+            autoIssueTimeoutSeconds = data.timeout_seconds;
+            console.log('⏱ Auto-issue timeout nastaven na', autoIssueTimeoutSeconds, 's');
+        } else {
+            console.warn('⏱ Auto-issue timeout není definován, používám default 20s');
+            autoIssueTimeoutSeconds = 20;
+        }
+    })
+    .catch(err => {
+        console.error('❌ Nelze načíst vydej settings, používám default 20s', err);
+        autoIssueTimeoutSeconds = 20;
+    });
+}
+
+// start timeoutu pro konkrétní order_id
+function startAutoIssue(orderId) {
+    if (!orderId) return;
+
+    // pokud ještě nemáme načtený timeout, použij default a paralelně dolaď
+    if (autoIssueTimeoutSeconds == null) {
+        autoIssueTimeoutSeconds = 20;
+        loadAutoIssueSettings();
+    }
+
+    // prevent duplikátů
+    cancelAutoIssue();
+
+    const timeoutMs = autoIssueTimeoutSeconds * 1000;
+    console.log(`⏱ Spouštím auto-issue za ${autoIssueTimeoutSeconds}s pro objednávku`, orderId);
+
+    autoIssueTimeoutId = setTimeout(() => {
+        console.log('⏱ Auto-issue timeout uplynul, vydávám objednávku', orderId);
+        issueRFIDOrder(orderId); // volá standardní flow
+    }, timeoutMs);
+}
+
+// zrušení timeoutu
+function cancelAutoIssue() {
+    if (autoIssueTimeoutId) {
+        clearTimeout(autoIssueTimeoutId);
+        autoIssueTimeoutId = null;
+        console.log('⏱ Auto-issue timeout zrušen');
+    }
+}
+
 
 // ============================================
 // RFID PROCESSING
@@ -407,6 +501,7 @@ async function processRFIDTag(rfidTag) {
 }
 
 
+
 // ============================================
 // MANUÁLNÍ VYDÁVÁNÍ Z TABU ZÁKAZNÍKŮ
 // ============================================
@@ -421,6 +516,9 @@ function attachIssueOrderListeners() {
             this.disabled = true;
             this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Vydávám...';
             
+            // ⏱ AUTO ISSUE – manuální vydání z tabulky nemá auto-timeout, ale jistota
+            cancelAutoIssue();
+
             fetch(`/vydej/issue-order/${orderId}/`, {
                 method: 'POST',
                 headers: {
@@ -451,6 +549,7 @@ function attachIssueOrderListeners() {
     });
 }
 
+
 // ============================================
 // REFRESH DASHBOARD DATA
 // ============================================
@@ -477,6 +576,7 @@ function refreshDashboardData() {
     });
 }
 
+
 function updateBadgeCounts(pendingCount, completedCount) {
     const pendingBadge = document.querySelector('[data-tab="customers"] .tab-badge');
     const completedBadge = document.querySelector('[data-tab="completed"] .tab-badge');
@@ -484,6 +584,7 @@ function updateBadgeCounts(pendingCount, completedCount) {
     if (pendingBadge) pendingBadge.textContent = pendingCount;
     if (completedBadge) completedBadge.textContent = completedCount;
 }
+
 
 function updatePendingOrders(html) {
     const customersTab = document.getElementById('customers');
@@ -530,6 +631,7 @@ function updatePendingOrders(html) {
     }
 }
 
+
 function updateCompletedOrders(html) {
     const completedTab = document.getElementById('completed');
     if (!completedTab) return;
@@ -561,6 +663,7 @@ function updateCompletedOrders(html) {
     }
 }
 
+
 function updateSummaryFooter(html) {
     const summaryFooter = document.querySelector('.summary-footer');
     if (summaryFooter) {
@@ -568,12 +671,14 @@ function updateSummaryFooter(html) {
     }
 }
 
+
 function updateRecentOrders(html) {
     const recentList = document.querySelector('.recent-list');
     if (recentList) {
         recentList.innerHTML = html;
     }
 }
+
 
 // ============================================
 // UTILITY FUNKCE
@@ -589,6 +694,7 @@ function getCookie(name) {
     }
     return decodeURIComponent(value.split('=')[1]);
 }
+
 
 
 function showNotification(message, type = 'success') {
@@ -617,6 +723,7 @@ function showNotification(message, type = 'success') {
         setTimeout(() => notification.remove(), 200);
     }, 1500);
 }
+
 
 // ============================================
 // RFID BRIDGE CONNECTION
@@ -712,6 +819,7 @@ function connectRFIDBridge() {
     }
 }
 
+
 function handleRFIDScan(rfidTag) {
     if (!rfidTag) {
         console.error('❌ RFID tag je prázdný!');
@@ -730,6 +838,7 @@ function handleRFIDScan(rfidTag) {
     processRFIDTag(rfidTag);
 }
 
+
 function disconnectRFIDBridge() {
     if (socket) {
         socket.disconnect();
@@ -744,6 +853,7 @@ function disconnectRFIDBridge() {
     if (btn) btn.style.display = 'inline-block';
     if (disconnectBtn) disconnectBtn.style.display = 'none';
 }
+
 
 // ============================================
 // VYDÁNÍ JEDNOTLIVÉ POLOŽKY
@@ -767,6 +877,7 @@ function attachSingleItemIssueListeners() {
         });
     });
 }
+
 
 async function issueSingleItemGroup(itemIds, itemName, itemQuantity, button) {
     try {
@@ -832,6 +943,7 @@ async function issueSingleItemGroup(itemIds, itemName, itemQuantity, button) {
 }
 
 
+
 // ============================================
 // INICIALIZACE
 // ============================================
@@ -850,6 +962,9 @@ function initDashboard() {
     
     // Navěs listenery na tlačítka vydání
     attachIssueOrderListeners();
+
+    // ⏱ AUTO ISSUE – načti nastavení timeoutu
+    loadAutoIssueSettings();
     
     // ⚡ Auto-refresh každých 10 sekund (místo 30)
     setInterval(() => {
@@ -889,12 +1004,14 @@ function initDashboard() {
     console.log('✅ Dashboard initialized');
 }
 
+
 // Spusť po načtení DOM
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initDashboard);
 } else {
     initDashboard();
 }
+
 
 // ============================================
 // DEBUG FUNKCE
@@ -903,5 +1020,6 @@ window.testRFID = function(rfidTag = '2404211AFFFF12E0') {
     console.log('🧪 TEST: Simuluji RFID scan');
     processRFIDTag(rfidTag);
 };
+
 
 console.log('📡 RFID Dashboard script loaded');

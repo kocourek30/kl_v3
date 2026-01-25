@@ -23,6 +23,17 @@ from sklad.utils import odeber_ze_skladu_pro_jidlo
 
 User = get_user_model()
 
+# vydej_frontend/views.py
+from django.http import JsonResponse
+from vydej.models import VydejSettings
+
+
+def get_vydej_settings(request):
+    settings, created = VydejSettings.objects.get_or_create()
+    return JsonResponse({
+        "timeout_seconds": settings.timeout_seconds
+    })
+
 
 def get_current_meal_type_ids():
     """Vrátí ID druhů jídel s aktuálním výdejním časem"""

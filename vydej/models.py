@@ -24,6 +24,24 @@ class PrehledProKuchyni(Order):
         verbose_name_plural = "Přehled pro kuchyni"
 
 
+# vydej/models.py
+from django.db import models
+
+
+class VydejSettings(models.Model):
+    timeout_seconds = models.PositiveIntegerField(
+        default=20,
+        verbose_name="Timeout výdeje (sekundy)",
+        help_text="Po kolika sekundách od nalezení objednávky se automaticky vydá."
+    )
+
+    class Meta:
+        verbose_name = "Nastavení výdeje"
+        verbose_name_plural = "Nastavení výdeje"
+
+    def __str__(self):
+        return f"Timeout: {self.timeout_seconds}s"
+
 
 
 class VydejniUctenka(models.Model):
