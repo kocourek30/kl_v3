@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django.db import models
 from django.core.exceptions import ValidationError
+from django.contrib.auth.models import Group
 
 
 class Alergen(models.Model):
@@ -38,6 +39,13 @@ class DruhJidla(models.Model):
     class Meta:
         verbose_name = "Druh jídla"
         verbose_name_plural = "Druhy jídel"
+
+    viditelne_pro_skupiny = models.ManyToManyField(
+        Group,
+        blank=True,
+        related_name="viditelne_druhy_jidel",
+        help_text="Pokud je prázdné, druh je viditelný pro všechny skupiny.",
+    )
 
     def __str__(self):
         return self.nazev
