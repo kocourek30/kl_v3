@@ -17,6 +17,8 @@ from canteen_settings.utils import is_ordering_allowed, get_order_closing_dateti
 from sklad.utils import odeber_ze_skladu_pro_jidlo
 
 
+
+
 @transaction.atomic
 def mark_order_as_issued(order: Order):
     """
@@ -506,6 +508,7 @@ def build_day_menu_context(user, selected_date):
         for item in menu_items:
             validate_item_for_display(user, item, selected_date)
             item.target_date = selected_date
+            item.common_allergens = item.jidlo.spolecne_alergeny(user)
 
     menu_items_grouped = {}
     for item in menu_items:
@@ -562,6 +565,7 @@ def build_week_menu_context(user, selected_date):
                 validate_item_for_display(user, item, current)
                 item.target_date = current
                 items_list.append(item)
+                item.common_allergens = item.jidlo.spolecne_alergeny(user) 
                 print(f"         ✅ Položka: {item.jidlo.nazev} (ID={item.id})")
 
             if items_list:
@@ -636,6 +640,7 @@ def build_month_menu_context(user, first_day_month, last_day_month):
                 validate_item_for_display(user, item, current_date)
                 item.target_date = current_date
                 items_list.append(item)
+                item.common_allergens = item.jidlo.spolecne_alergeny(user) 
 
             if items_list:
                 menu_items_by_day[current_date] = items_list

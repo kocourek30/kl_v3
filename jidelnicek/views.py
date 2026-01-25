@@ -145,6 +145,8 @@ def menu_item_partial(request):
     can_order, _ = can_order_for_menuitem_date(request.user, menu_item, target_date)
     can_cancel, _ = can_cancel_order_for_menuitem_date(request.user, menu_item, target_date)
 
+    common_allergens = menu_item.jidlo.spolecne_alergeny(request.user)
+
     context = {
         'item': menu_item,
         'date': target_date,
@@ -153,6 +155,7 @@ def menu_item_partial(request):
         'order_status': order_status,
         'can_order': can_order,
         'can_cancel': can_cancel,
+        'common_allergens': common_allergens,   
     }
 
     html = render_to_string('jidelnicek_item.html', context, request=request)
@@ -461,6 +464,7 @@ def order_create_view(request):
             'order_status': order_status,
             'can_order': can_order_flag,
             'can_cancel': can_cancel_flag,
+            'common_allergens': menu_item.jidlo.spolecne_alergeny(request.user),
         }
 
         item_html = render_to_string('jidelnicek_item.html', context, request=request)
@@ -594,6 +598,7 @@ def order_delete_view(request):
             'order_status': order_status,
             'can_order': can_order_flag,
             'can_cancel': can_cancel_flag,
+            'common_allergens': menu_item.jidlo.spolecne_alergeny(request.user),
         }
 
         item_html = render_to_string('jidelnicek_item.html', context, request=request)

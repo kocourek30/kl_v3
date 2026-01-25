@@ -46,6 +46,20 @@
                 {% endfor %}
               </div>
             {% endif %}
+
+            {% if item.common_allergens %}
+  <div class="mi-alergens mt-1">
+    <i class="fa-solid fa-circle-exclamation me-1" style="color:#b91c1c;"></i>
+    <strong>Pozor:</strong>
+    Toto jídlo obsahuje alergen(y), na které jste alergický:
+    <strong style="color:#b91c1c;">{{ item.common_allergens.all|join:", " }}</strong>
+  </div>
+{% endif %}
+
+
+    {% if common_allergens is not None %}
+    <pre>common_allergens: {{ common_allergens|length }}</pre>
+  {% endif %}
             {% if item.jidlo.kcal or item.jidlo.bílkoviny or item.jidlo.tuky or item.jidlo.sacharidy %}
               <div class="mi-nutrition">
                 <i class="fa-solid fa-scale-balanced me-1"></i>

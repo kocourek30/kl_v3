@@ -77,6 +77,15 @@ class Jidlo(models.Model):
     def __str__(self):
         return self.nazev
     
+    # v modelu Jidlo
+    def spolecne_alergeny(self, user):
+        from users.models import CustomUser  # podle struktury
+
+        if user is None or not getattr(user, "is_authenticated", False):
+            return self.alergeny.none()
+        return self.alergeny.filter(id__in=user.alergeny.values("id"))
+
+    
     def vypocitej_spotrebu_surovin(self, pocet_porci: int):
         """
         Vrátí dict {surovina: celkové_mnozstvi} pro daný počet porcí.
