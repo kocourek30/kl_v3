@@ -1,5 +1,12 @@
 {% comment %}
-  Očekává: my_order_items s atributy total_price, can_cancel, is_closed
+  Očekává: my_order_items s atributy:
+  - menu_item (FK na PolozkaJidelnicku)
+  - order (FK na Order)
+  - quantity, cena
+  - total_price (doplněno ve get_user_order_items)
+  - can_cancel (doplněno ve get_user_order_items)
+  - is_closed (volitelně)
+  - target_date (doplněno ve get_user_order_items)
 {% endcomment %}
 
 {% if my_order_items %}
@@ -13,16 +20,13 @@
       <div class="order-info flex-grow-1 me-3">
         <!-- Datum a druh jídla -->
         <div class="order-meta mb-2 d-flex align-items-center flex-wrap gap-2">
-
           <span class="text-muted d-flex align-items-center small">
             <i class="fa-regular fa-calendar-days me-2"></i>
             {{ oi.order.datum_vydeje|date:"d.m.Y" }}
           </span>
-                    <span class="badge bg-success text-white fw-semibold small rounded-pill">
+          <span class="badge bg-success text-white fw-semibold small rounded-pill">
             {{ item.druh_jidla.nazev }}
           </span>
-
-          
         </div>
 
         <!-- Název jídla -->
@@ -56,9 +60,11 @@
           <form action="{% url 'jidelnicek:order_delete' %}" method="post"
                 class="ajax-order-form">
             {% csrf_token %}
-            <input type="hidden" name="order_item_id" value="{{ oi.id }}">
+            <!-- nové parametry pro order_delete_view -->
+            <input type="hidden" name="menu_item_id" value="{{ item.id }}">
+            <input type="hidden" name="menu_date" value="{{ oi.target_date|default:oi.order.datum_vydeje|date:'Y-m-d' }}">
             <input type="hidden" name="quantity" value="{{ oi.quantity }}">
-            <button type="submit" 
+            <button type="submit"
                     class="btn btn-outline-danger px-4 py-2 rounded-pill fw-semibold d-flex align-items-center gap-2 order-cancel-btn"
                     title="Zrušit objednávku">
               <i class="fas fa-times-circle"></i>
@@ -67,7 +73,7 @@
           </form>
         {% else %}
           <!-- STAV: OBJEDNÁNO (neaktivní) -->
-          <button type="button" 
+          <button type="button"
                   class="btn btn-success px-4 py-2 rounded-pill fw-semibold d-flex align-items-center gap-2"
                   disabled
                   title="Objednávka je potvrzena">
@@ -99,6 +105,7 @@
   </div>
 </div>
 {% endif %}
+
 <style>
 /* Styly pro vylepšený výpis objednávek */
 

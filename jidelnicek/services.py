@@ -163,28 +163,37 @@ def get_effective_closing_time(target_date):
         )
 
 
+
+
 def get_user_order_items(user):
     """Vrátí VŠECHNY BUDOUCÍ objednané položky uživatele (včetně dneška)
-    S informací, zda lze zrušit podle času uzavření"""
+    S informací, zda lze zrušit podle nových pravidel."""
     from datetime import date as date_class
-    
+    # lokální import helperu → žádný cyklus na úrovni modulů
+    from objednavky.views import can_cancel_order_for_menuitem_date
+
     items = OrderItem.objects.filter(
         order__user=user,
-        order__datum_vydeje__gte=date_class.today(),  # Od dneška dál
-        order__status__in=['zalozena-obsluhou', 'objednano']  # Pouze aktivní statusy
+        order__datum_vydeje__gte=date_class.today(),
+        order__status__in=['zalozena-obsluhou', 'objednano']
     ).select_related(
         'order', 'menu_item__jidlo', 'menu_item__druh_jidla'
     ).order_by('order__datum_vydeje', 'menu_item__id')
-    
-    # Přidej atributy can_cancel a total_price
+
     items_list = []
     for item in items:
-        closing_time = get_effective_closing_time(item.order.datum_vydeje)
-        item.can_cancel = timezone.now() <= closing_time
-        item.is_closed = not item.can_cancel
-        item.total_price = item.quantity * item.cena  # ✅ PŘIDÁNO
+        target_date = item.order.datum_vydeje
+        menu_item = item.menu_item
+
+        can_cancel, _ = can_cancel_order_for_menuitem_date(user, menu_item, target_date)
+
+        item.can_cancel = can_cancel
+        item.is_closed = not can_cancel
+        item.total_price = item.quantity * item.cena
+        item.target_date = target_date
+
         items_list.append(item)
-    
+
     return items_list
 
 
@@ -298,9 +307,10 @@ def validate_item_for_display(user, item, target_date):
     Validuje položku pro zobrazení (stavy, limity, ceny) - S current_order_item_id
     + nastavuje hide_quantity podle GroupOrderLimit
     """
+    # ZÁKLADNÍ DEFAULTY
     item.order_status = "none"
     item.can_order = True
-    item.can_cancel = True
+    item.can_cancel = False  # výchozí: nejde rušit
     item.validation_error = None
     item.balance_info = None
     item.current_quantity = 0
@@ -310,14 +320,14 @@ def validate_item_for_display(user, item, target_date):
     item.display_price = get_user_price_for_item(user, item)
     item.hide_quantity = False
 
-    # ✅ KONTROLA LIMITU SKUPINY PRO SKRYTÍ MNOŽSTVÍ
+    # ✅ SKRYTÍ MNOŽSTVÍ PODLE GROUP LIMITU
     user_group = user.groups.first()
     if user_group:
         limit_setting = GroupOrderLimit.objects.filter(
             group=user_group,
             druh_jidla=item.druh_jidla
         ).first()
-        
+
         if limit_setting:
             if limit_setting.max_orders_per_day == 1:
                 item.hide_quantity = True
@@ -326,11 +336,20 @@ def validate_item_for_display(user, item, target_date):
                 item.hide_quantity = False
                 item.max_order_quantity = limit_setting.max_orders_per_day
 
-    # ✅ KONTROLA UZÁVĚRKY - NOVÁ LOGIKA S PROVOZNÍMI DNY
-    can_order_time, time_msg = can_order_for_date(user, target_date)
-    is_closed = not can_order_time
-    
-    if is_closed:
+    # ✅ ČASOVÉ PRAVIDLO PRO OBJEDNÁNÍ/ZMĚNU – PER POLOŽKA
+    # IMPORT UVNITŘ FUNKCE → žádný cyklický import
+    from objednavky.views import (
+        can_order_for_menuitem_date,
+        can_cancel_order_for_menuitem_date,
+    )
+
+    can_order_time, time_msg = can_order_for_menuitem_date(user, item, target_date)
+    can_cancel_time, cancel_msg = can_cancel_order_for_menuitem_date(user, item, target_date)
+
+    is_closed_for_order = not can_order_time
+
+    if is_closed_for_order:
+        # jen informační text – uzávěrka objednávek
         closing_datetime = get_order_closing_datetime(target_date)
         if closing_datetime:
             item.closing_info = f"Uzavřeno {closing_datetime.strftime('%d.%m. %H:%M')}"
@@ -347,30 +366,33 @@ def validate_item_for_display(user, item, target_date):
         item.order_status = "ordered"
         item.current_quantity = user_order.quantity
         item.current_order_item_id = user_order.id
-        item.can_order = False  # Už má objednáno
-        
-        if is_closed:
-            item.can_cancel = False
-            
+
+        # když už má objednáno:
+        item.can_order = can_order_time  # může ještě přidat/změnit před uzávěrkou
+        item.can_cancel = can_cancel_time  # může rušit dle cancel_days/cancel_until_time
+
     except OrderItem.DoesNotExist:
         # ✅ NEMÁ OBJEDNÁNO
-        if is_closed:
-            # Uzavřeno a nemá objednáno → zobraz "Objednávky uzavřeny"
+        if is_closed_for_order:
+            # uzavřeno a nemá objednáno → nemůže ani objednat ani rušit
             item.order_status = "closed"
             item.validation_error = "order_closed"
             item.can_order = False
             item.can_cancel = False
         else:
-            # Otevřeno → kontroluj zůstatek
+            # otevřeno pro objednání → kontrola zůstatku
             item.order_status = "active"
             can_order_balance, balance_info = check_user_balance_for_item(user, item.display_price)
             if not can_order_balance:
                 item.balance_info = balance_info
                 item.can_order = False
                 item.validation_error = balance_info['type']
+            else:
+                item.can_order = True
+                item.can_cancel = False  # není co rušit
 
-    # Group limit check (jen pokud je active a může objednávat)
-    if item.order_status == "active" and item.can_order:
+    # ✅ GROUP LIMIT (jen pokud může objednávat)
+    if item.order_status in ["active", "ordered"] and item.can_order:
         quantity_check, limit_error = check_group_limit(user, item, target_date, 1)
         if not quantity_check:
             item.can_order = False

@@ -23,14 +23,40 @@ class CanteenContact(models.Model):
 
 class OrderClosingTime(models.Model):
     je_aktivni = models.BooleanField(default=True, verbose_name="Aktivní nastavení")
+
+    druh_jidla = models.ForeignKey(
+        'jidelnicek.DruhJidla',
+        on_delete=models.CASCADE,
+        related_name='order_closing_times',
+        verbose_name="Druh jídla",
+        null=True,
+        blank=True,
+        help_text="Pokud není vyplněno, nastavení platí globálně pro všechny druhy."
+    )
+
+    # ❗ počet provozních dní dopředu pro VYTVOŘENÍ / ZMĚNU objednávky
     advance_days = models.PositiveIntegerField(
         default=1,
-        verbose_name="Počet provozních dní dopředu",
-        help_text="Počítají se pouze provozní dny (např. 1 = o jeden provozní den dříve)"
+        verbose_name="Počet provozních dní dopředu pro objednání",
+        help_text="Např. 3 = objednávat lze nejpozději 3 provozní dny předem do stanoveného času."
     )
+
     closing_time = models.TimeField(
         default=timezone.datetime.strptime("07:00", "%H:%M").time(),
         verbose_name="Čas uzavření objednávek"
+    )
+
+    # ❗ počet provozních dní dopředu pro ZRUŠENÍ objednávky
+    cancel_days = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Počet provozních dní dopředu pro zrušení",
+        help_text="Např. 0 = rušení ve stejný provozní den do stanoveného času."
+    )
+
+    cancel_until_time = models.TimeField(
+        default=timezone.datetime.strptime("09:00", "%H:%M").time(),
+        verbose_name="Čas povoleného zrušení objednávky",
+        help_text="Do tohoto času lze objednávku zrušit dle nastaveného počtu dní dopředu."
     )
 
     class Meta:
@@ -38,7 +64,13 @@ class OrderClosingTime(models.Model):
         verbose_name_plural = "Časy uzavření objednávek"
 
     def __str__(self):
-        return f"Uzavření: {self.advance_days} prac. dní dopředu do {self.closing_time.strftime('%H:%M')}"
+        druh = self.druh_jidla.nazev if self.druh_jidla else "Všechny druhy"
+        return (
+            f"{druh}: objednat {self.advance_days} prac. dní dopředu do "
+            f"{self.closing_time.strftime('%H:%M')}, "
+            f"zrušit {self.cancel_days} prac. dní dopředu do "
+            f"{self.cancel_until_time.strftime('%H:%M')}"
+        )
 
 
 class GroupOrderLimit(models.Model):

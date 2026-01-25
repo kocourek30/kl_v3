@@ -19,12 +19,20 @@ class CanteenContactAdmin(admin.ModelAdmin):
 
 @admin.register(OrderClosingTime)
 class OrderClosingTimeAdmin(admin.ModelAdmin):
-    list_display = ('popis', 'je_aktivni', 'advance_days', 'closing_time')  # ✅ Přesuň je_aktivni
-    list_editable = ('je_aktivni',)
-    
-    def popis(self, obj):
-        return f"{obj.advance_days} provozních dnů do {obj.closing_time.strftime('%H:%M')}"
-    popis.short_description = 'Nastavení'
+    list_display = (
+        'je_aktivni',
+        'get_druh',
+        'advance_days',
+        'closing_time',
+        'cancel_days',
+        'cancel_until_time',
+    )
+    list_filter = ('je_aktivni', 'druh_jidla')
+    search_fields = ('druh_jidla__nazev',)
+
+    def get_druh(self, obj):
+        return obj.druh_jidla.nazev if obj.druh_jidla else "Všechny druhy"
+    get_druh.short_description = "Druh jídla"
 
 
 

@@ -102,6 +102,13 @@ def update_user_balance(user, amount_change):
         return False
 
 
+from objednavky.views import (
+    can_order_for_menuitem_date,
+    can_cancel_order_for_menuitem_date,
+)
+# nebo z místa, kde ty funkce máš – důležité je je naimportovat
+
+
 @login_required
 def menu_item_partial(request):
     menu_item_id = request.GET.get('menu_item_id')
@@ -126,11 +133,26 @@ def menu_item_partial(request):
         menu_item=menu_item
     ).first()
 
+    # stav objednávky
+    if order_item:
+        order_status = "ordered"
+        current_quantity = order_item.quantity
+    else:
+        order_status = ""
+        current_quantity = 0
+
+    # flagy pro šablonu
+    can_order, _ = can_order_for_menuitem_date(request.user, menu_item, target_date)
+    can_cancel, _ = can_cancel_order_for_menuitem_date(request.user, menu_item, target_date)
+
     context = {
         'item': menu_item,
         'date': target_date,
         'current_order_item_id': order_item.id if order_item else None,
-        'current_quantity': order_item.quantity if order_item else 0,
+        'current_quantity': current_quantity,
+        'order_status': order_status,
+        'can_order': can_order,
+        'can_cancel': can_cancel,
     }
 
     html = render_to_string('jidelnicek_item.html', context, request=request)
@@ -351,10 +373,10 @@ def order_create_view(request):
         target_date = datetime.strptime(menu_date_str, '%Y-%m-%d').date()
         item_name = get_item_name(menu_item)
 
-        # 1. Validace časová
-        can_order_time, time_msg = can_order_for_date(request.user, target_date)
+        # 1. Validace časová – per položka (druh jídla)
+        can_order_time, time_msg = can_order_for_menuitem_date(request.user, menu_item, target_date)
         if not can_order_time:
-            return JsonResponse({'status': 'error', 'message': 'Objednávky zavřené'})
+            return JsonResponse({'status': 'error', 'message': time_msg or 'Objednávky zavřené'})
 
         # 2. ✅ KONTROLA GROUP LIMITU
         can_order_group, group_msg = check_group_limit(request.user, menu_item, target_date, quantity)
@@ -385,9 +407,9 @@ def order_create_view(request):
         if balance_settings['cerpani_debit']:
             debit_limit = Decimal(str(balance_settings['debit_limit']))
             if new_balance < -abs(debit_limit):
-                return JsonResponse({'status': 'error', 'message': f'Překročen debet'})
+                return JsonResponse({'status': 'error', 'message': 'Překročen debet'})
 
-        # 5. Vytvoř objednávku
+        # 5. Vytvoř / uprav objednávku
         with transaction.atomic():
             order, _ = Order.objects.select_for_update().get_or_create(
                 user=request.user,
@@ -410,7 +432,7 @@ def order_create_view(request):
         # 6. Refresh
         request.user.refresh_from_db()
         menu_item.refresh_from_db()
-        
+
         # ✅ Validuj pro hide_quantity
         validate_item_for_display(request.user, menu_item, target_date)
 
@@ -420,11 +442,25 @@ def order_create_view(request):
             menu_item=menu_item
         ).first()
 
+        # Kontext pro partial
+        if order_item_final:
+            order_status = "ordered"
+            current_qty = order_item_final.quantity
+        else:
+            order_status = ""
+            current_qty = 0
+
+        can_order_flag, _ = can_order_for_menuitem_date(request.user, menu_item, target_date)
+        can_cancel_flag, _ = can_cancel_order_for_menuitem_date(request.user, menu_item, target_date)
+
         context = {
             'item': menu_item,
             'date': target_date,
             'current_order_item_id': order_item_final.id if order_item_final else None,
-            'current_quantity': order_item_final.quantity if order_item_final else 0,
+            'current_quantity': current_qty,
+            'order_status': order_status,
+            'can_order': can_order_flag,
+            'can_cancel': can_cancel_flag,
         }
 
         item_html = render_to_string('jidelnicek_item.html', context, request=request)
@@ -444,7 +480,6 @@ def order_create_view(request):
             'message': f'✅ Přidáno {quantity}x {item_name}',
             'item_html': item_html,
             'my_orders_html': my_orders_html,
-            
             'navbar_balance': f"{final_balance:.0f} Kč",
             'navbar_balance_class': balance_class,
             'menu_item_id': menu_item_id,
@@ -456,67 +491,82 @@ def order_create_view(request):
         import traceback
         traceback.print_exc()
         return JsonResponse({'status': 'error', 'message': 'Chyba objednávky'})
-
 @login_required
 @require_POST
 def order_delete_view(request):
-    """✅ OKAMŽITÉ ZRUŠENÍ - pouze pro aktivní objednávky před uzávěrkou"""
+    """✅ OKAMŽITÉ ZRUŠENÍ – podle nových pravidel, menu_item_id + menu_date."""
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'message': 'POST only'}, status=405)
 
-    order_item_id = request.POST.get('order_item_id') or request.POST.get('orderitemid')
+    # nový formát z jidelnicek_item.html
+    menu_item_id = request.POST.get('menu_item_id') or request.POST.get('menuitemid')
+    menu_date_str = request.POST.get('menudate') or request.POST.get('menu_date')
     quantity_to_remove = int(request.POST.get('quantity', 1))
 
+    if not menu_item_id or not menu_date_str:
+        return JsonResponse({'status': 'error', 'message': 'Chybí parametry'})
+
     try:
-        order_item_id_int = int(order_item_id)
-    except (TypeError, ValueError):
-        return JsonResponse({'status': 'error', 'message': 'Neplatné ID'})
+        menu_item = PolozkaJidelnicku.objects.select_related('jidlo', 'druh_jidla').get(id=menu_item_id)
+        target_date = datetime.strptime(menu_date_str, '%Y-%m-%d').date()
+    except PolozkaJidelnicku.DoesNotExist:
+        return JsonResponse({'status': 'error', 'message': 'Položka nenalezena'})
+    except ValueError:
+        return JsonResponse({'status': 'error', 'message': 'Neplatné datum'})
+
+    # ✅ KONTROLA ČASU PRO ZRUŠENÍ – cancel_days + cancel_until_time
+    can_cancel_time, time_msg = can_cancel_order_for_menuitem_date(request.user, menu_item, target_date)
+    if not can_cancel_time:
+        return JsonResponse({'status': 'error', 'message': time_msg})
 
     try:
         with transaction.atomic():
+            order = (
+                Order.objects
+                .select_for_update()
+                .filter(user=request.user, datum_vydeje=target_date)
+                .first()
+            )
+
+            if not order:
+                return JsonResponse({'status': 'error', 'message': 'Objednávka nenalezena'})
+
             order_item = (
                 OrderItem.objects
                 .select_for_update()
-                .filter(id=order_item_id_int, order__user=request.user)
-                .select_related('order', 'menu_item__jidlo', 'menu_item__druh_jidla')
+                .filter(order=order, menu_item=menu_item)
                 .first()
             )
 
             if not order_item:
-                return JsonResponse({'status': 'error', 'message': 'Objednávka nenalezena'})
+                return JsonResponse({'status': 'error', 'message': 'Položka nebyla objednána'})
 
             # ✅ KONTROLA STATUSU OBJEDNÁVKY
             if order_item.order.status not in ['zalozena-obsluhou', 'objednano']:
                 return JsonResponse({
-                    'status': 'error', 
+                    'status': 'error',
                     'message': 'Tuto objednávku nelze zrušit (již byla vydána nebo zrušena)'
                 })
 
-            # ✅ KONTROLA ČASU UZAVŘENÍ
-            target_date = order_item.order.datum_vydeje
-            closing_time = get_effective_closing_time(target_date)
-            can_cancel_time = timezone.now() <= closing_time
-            
-            if not can_cancel_time:
-                return JsonResponse({
-                    'status': 'error',
-                    'message': f'Objednávky na {target_date.strftime("%d.%m.%Y")} jsou již uzavřeny'
-                })
+            # cena vracená uživateli
+            qty_to_remove = min(quantity_to_remove, order_item.quantity)
+            return_price = order_item.cena * qty_to_remove
 
-            menu_item = order_item.menu_item
-            return_price = order_item.cena * quantity_to_remove
-
-            if order_item.quantity <= quantity_to_remove:
+            if order_item.quantity <= qty_to_remove:
                 order_item.delete()
             else:
-                order_item.quantity -= quantity_to_remove
+                order_item.quantity -= qty_to_remove
                 order_item.save()
+
+            # pokud v objednávce nic nezbylo, smaž i Order
+            if not order.items.exists():
+                order.delete()
 
             update_user_balance(request.user, return_price)
 
         request.user.refresh_from_db()
         menu_item.refresh_from_db()
-        
+
         # ✅ Validuj pro hide_quantity
         validate_item_for_display(request.user, menu_item, target_date)
 
@@ -526,11 +576,24 @@ def order_delete_view(request):
             menu_item=menu_item
         ).first()
 
+        if order_item_final:
+            order_status = "ordered"
+            current_qty = order_item_final.quantity
+        else:
+            order_status = ""
+            current_qty = 0
+
+        can_order_flag, _ = can_order_for_menuitem_date(request.user, menu_item, target_date)
+        can_cancel_flag, _ = can_cancel_order_for_menuitem_date(request.user, menu_item, target_date)
+
         context = {
             'item': menu_item,
             'date': target_date,
             'current_order_item_id': order_item_final.id if order_item_final else None,
-            'current_quantity': order_item_final.quantity if order_item_final else 0,
+            'current_quantity': current_qty,
+            'order_status': order_status,
+            'can_order': can_order_flag,
+            'can_cancel': can_cancel_flag,
         }
 
         item_html = render_to_string('jidelnicek_item.html', context, request=request)
@@ -550,7 +613,6 @@ def order_delete_view(request):
             'message': '🗑️ Objednávka zrušena!',
             'item_html': item_html,
             'my_orders_html': my_orders_html,
-            
             'navbar_balance': f"{final_balance:.0f} Kč",
             'navbar_balance_class': balance_class,
             'menu_item_id': menu_item.id,
@@ -562,6 +624,7 @@ def order_delete_view(request):
         import traceback
         traceback.print_exc()
         return JsonResponse({'status': 'error', 'message': 'Chyba rušení'})
+
 
 @login_required
 def account_status_api(request):

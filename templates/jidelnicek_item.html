@@ -1,3 +1,14 @@
+{# úplně nahoru, do body šablony, jen na debug #}
+{% if debug %}
+  <pre>
+    order_status={{ order_status|default:"-" }}
+    current_quantity={{ current_quantity|default:"-" }}
+    can_order={{ can_order|default:"-" }}
+    can_cancel={{ can_cancel|default:"-" }}
+  </pre>
+{% endif %}
+
+
 <!-- jidelnicek_item.html - UNIVERZÁLNÍ pro DASHBOARD + AJAX -->
 <div class="card border-0 shadow-sm mb-2 menu-item-card">
   <div class="card-body py-3 px-3">
@@ -30,7 +41,6 @@
             {% if item.jidlo.alergeny.count %}
               <div class="mi-alergens">
                 <i class="fa-solid fa-triangle-exclamation me-1"></i> Alergeny:
-                {% comment %} Ikona alergenu je nyní odstraněna {% endcomment %}
                 {% for alergen in item.jidlo.alergeny.all %}
                   <span class="">{{ alergen.nazev }}</span>
                 {% endfor %}
@@ -64,22 +74,25 @@
           </button>
         </div>
 
-      {% elif item.order_status == "ordered" or current_order_item_id %}
+      {% elif item.order_status == "ordered" %}
         <div class="mi-block mi-action mi-block-full">
           {% if item.can_cancel %}
+            <!-- ZRUŠENÍ OBJEDNÁVKY: menu_item_id + menu_date -->
             <form action="{% url 'jidelnicek:order_delete' %}" method="post"
                   class="mb-0 ajax-order-form d-flex align-items-stretch justify-content-end w-100">
               {% csrf_token %}
-              <input type="hidden" name="order_item_id" value="{{ current_order_item_id|default:item.current_order_item_id }}">
-              <input type="hidden" name="quantity" value="{% if item.hide_quantity %}{{ current_quantity|default:item.current_quantity|default:1 }}{% else %}{{ current_quantity|default:item.current_quantity }}{% endif %}">
+              <input type="hidden" name="menu_item_id" value="{{ item.id }}">
+              <input type="hidden" name="menu_date" value="{% if item.target_date %}{{ item.target_date|date:'Y-m-d' }}{% else %}{{ date|date:'Y-m-d' }}{% endif %}">
               <button type="submit" class="btn mi-btn-danger mi-btn-fixed flex-grow-1">
-                <i class="fas fa-trash me-1"></i> Zrušit{% if not item.hide_quantity and current_quantity|default:1 > 1 %} ({{ current_quantity|default:item.current_quantity }} ks){% endif %}
+                <i class="fas fa-trash me-1"></i>
+                Zrušit{% if not item.hide_quantity and item.current_quantity %} ({{ item.current_quantity }} ks){% endif %}
               </button>
             </form>
           {% else %}
+            <!-- Objednáno, ale už nelze rušit -->
             <button class="btn mi-btn-success mi-btn-fixed w-100" disabled>
               <i class="fas fa-check-circle me-1"></i>
-              Objednáno{% if not item.hide_quantity %} {{ current_quantity|default:item.current_quantity|default:"1" }} ks{% endif %}
+              Objednáno{% if not item.hide_quantity %} {{ item.current_quantity|default:"1" }} ks{% endif %}
             </button>
           {% endif %}
         </div>
@@ -87,12 +100,13 @@
       {% else %}
         <div class="mi-block mi-action mi-block-full">
           {% if item.can_order %}
+            <!-- VYTVOŘENÍ OBJEDNÁVKY -->
             <form action="{% url 'jidelnicek:order_create' %}" method="post"
                   class="mb-0 ajax-order-form d-flex align-items-stretch justify-content-end w-100">
               {% csrf_token %}
               <input type="hidden" name="menu_item_id" value="{{ item.id }}">
               <input type="hidden" name="menu_date" value="{% if item.target_date %}{{ item.target_date|date:'Y-m-d' }}{% else %}{{ date|date:'Y-m-d' }}{% endif %}">
-              
+
               {% if item.hide_quantity %}
                 <button type="submit" class="btn mi-btn-primary mi-btn-fixed w-100">
                   <i class="fas fa-cart-shopping me-1"></i> Objednat
@@ -103,8 +117,12 @@
                     <button type="button" class="btn-qty-circle qty-minus" onclick="adjustQty(this, -1)" tabindex="-1" aria-label="Odečíst">
                       <i class="fas fa-minus"></i>
                     </button>
-                    <input type="number" name="quantity" min="1" max="{{ item.max_order_quantity|default:'10' }}" value="1"
-                           class="qty-input-compact" required>
+                    <input type="number" name="quantity"
+                           min="1"
+                           max="{{ item.max_order_quantity|default:'10' }}"
+                           value="1"
+                           class="qty-input-compact"
+                           required>
                     <button type="button" class="btn-qty-circle qty-plus" onclick="adjustQty(this, 1)" tabindex="-1" aria-label="Přičíst">
                       <i class="fas fa-plus"></i>
                     </button>
@@ -136,15 +154,15 @@
 function adjustQty(btn, delta) {
   const input = btn.closest('.mi-qty-compact').querySelector('input[type="number"]');
   if (!input) return;
-  
+
   const currentVal = parseInt(input.value) || 1;
   const minVal = parseInt(input.min) || 1;
   const maxVal = parseInt(input.max) || 10;
-  
+
   let newVal = currentVal + delta;
   if (newVal < minVal) newVal = minVal;
   if (newVal > maxVal) newVal = maxVal;
-  
+
   input.value = newVal;
 }
 </script>
