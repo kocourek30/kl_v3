@@ -1,0 +1,61 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4" style="max-width: 700px;">
+  <div class="card shadow-sm">
+    <div class="card-header bg-primary text-white">
+      <h5 class="mb-0">
+        <i class="fas fa-file-import me-2"></i>{{ title }}
+      </h5>
+    </div>
+    <div class="card-body">
+      <p class="text-muted small mb-3">
+        Vyber TXT soubor s jídelníčkem v předepsaném formátu a spusť import.
+      </p>
+
+      <form method="post" enctype="multipart/form-data" novalidate>
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+          <div class="alert alert-danger">
+            {{ form.non_field_errors }}
+          </div>
+        {% endif %}
+
+        <div class="mb-3">
+          <label for="{{ form.soubor.id_for_label }}" class="form-label">
+            {{ form.soubor.label }}
+          </label>
+          {{ form.soubor }}
+          {% if form.soubor.errors %}
+            <div class="text-danger small mt-1">
+              {{ form.soubor.errors|striptags }}
+            </div>
+          {% endif %}
+          {% if form.soubor.help_text %}
+            <div class="form-text">
+              {{ form.soubor.help_text }}
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mt-4">
+          <a href="{% url 'admin:jidelnicek_jidelnicek_changelist' %}" class="btn btn-outline-secondary">
+            Zpět na jídelníčky
+          </a>
+          <button type="submit" class="btn btn-success">
+            <i class="fas fa-upload me-1"></i> Importovat jídelníček
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

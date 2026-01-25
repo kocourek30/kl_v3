@@ -56,9 +56,6 @@
 {% endif %}
 
 
-    {% if common_allergens is not None %}
-    <pre>common_allergens: {{ common_allergens|length }}</pre>
-  {% endif %}
             {% if item.jidlo.kcal or item.jidlo.bílkoviny or item.jidlo.tuky or item.jidlo.sacharidy %}
               <div class="mi-nutrition">
                 <i class="fa-solid fa-scale-balanced me-1"></i>
@@ -266,7 +263,7 @@ function adjustQty(btn, delta) {
 }
 
 .mi-plate-icon {
-  font-size: 3rem;
+  font-size: 2.55rem;
   color: #6b7280;
 }
 

@@ -244,12 +244,13 @@ def dashboard(request):
 # ✅ FIXED POŘADÍ JÍDEL: 1.Polévka 2.Hlavní 3.Dezert 4.Večeře
 # ✅ OPRAVENÉ POŘADÍ podle skutečných dat v DB
     DRUH_ORDER = {
-        'Snídaně': 1,
-        'Přesnídávka': 2,
-        'Oběd': 3,
-        'Svačina': 4,
-        'Večeře': 5,
-        'Pozdní večeře': 6,
+        'Snídaně 1': 1,
+        'Snídaně 2': 2,
+        'Přesnídávka': 3,
+        'Oběd': 4,
+        'Svačina': 5,
+        'Večeře': 6,
+        'Pozdní večeře': 7,
     }
 
 
