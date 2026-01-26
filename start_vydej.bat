@@ -26,14 +26,14 @@ timeout /t 4 /nobreak >nul
 
 echo [5/5] Otevírám prohlížeč v fullscreen...
 REM ⭐ ZMĚNĚNÁ URL - AUTO-LOGIN
-start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" --kiosk --app=http://127.0.0.1:8000/vydej/kiosk-login/
+start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" --kiosk --app=http://10.0.0.108:8000/vydej/kiosk-login/
 
 echo.
 echo ============================================
 echo   ✅ SYSTÉM ÚSPĚŠNĚ SPUŠTĚN!
 echo ============================================
 echo.
-echo Django běží na: http://127.0.0.1:8000
+echo Django běží na: http://10.0.0.108:8000
 echo RFID Bridge:    http://localhost:3001
 echo.
 pause >nul

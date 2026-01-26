@@ -79,11 +79,4 @@ class Dotace(models.Model):
 
     def __str__(self):
         return f"Dotace {self.castka} Kč pro {self.uzivatel.username} z {self.datum}"
-        
-    def has_module_permission(self, request):
-        # schová celý modul (sekci) z levého menu
-        return False
-
-    def has_view_permission(self, request, obj=None):
-        # pokud chceš úplně znemožnit přístup
-        return False
+    

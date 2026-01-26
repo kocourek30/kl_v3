@@ -13,19 +13,13 @@ class VydajiciCas(models.Model):
 
     def __str__(self):
         return f"{self.druh_jidla} {self.cas_od.strftime('%H:%M')}–{self.cas_do.strftime('%H:%M')}"
-
-
+    
 class VydejSettings(models.Model):
-    timeout_seconds = models.PositiveIntegerField(
-        default=20,
-        verbose_name="Timeout výdeje (sekundy)",
-        help_text="Po kolika sekundách od nalezení objednávky se automaticky vydá."
-    )
+    timeout_seconds = models.IntegerField(default=30)
 
     class Meta:
         verbose_name = "Nastavení výdeje"
         verbose_name_plural = "Nastavení výdeje"
 
     def __str__(self):
-        return f"Timeout: {self.timeout_seconds}s"
-
+        return f"Nastavení (timeout {self.timeout_seconds}s)"
