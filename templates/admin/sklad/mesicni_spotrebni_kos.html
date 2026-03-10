@@ -1,0 +1,61 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+  <h1>Měsíční spotřební koš</h1>
+
+  <form method="get" class="form-inline">
+    {{ form.as_p }}
+    <button type="submit" class="button default">Spočítat</button>
+  </form>
+
+  {% if rows %}
+    <table class="table" style="margin-top:1em;">
+      <thead>
+        <tr>
+          <th>Skupina</th>
+          <th style="text-align:right;">Celkem (kg)</th>
+          <th style="text-align:right;">Strávníkoden</th>
+          <th style="text-align:right;">Na 1 strávníka (kg)</th>
+          <th style="text-align:right;">Norma (kg)</th>
+          <th style="text-align:right;">Plnění (%)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td style="text-align:right;">{{ row.celkem_kg }}</td>
+            <td style="text-align:right;">{{ row.stravnikodny }}</td>
+            <td style="text-align:right;">{{ row.na_stravnika|default:"-" }}</td>
+            <td style="text-align:right;">{{ row.norma|default:"-" }}</td>
+            <td style="text-align:right;">
+              {% if row.plneni is not None %}
+                {{ row.plneni|floatformat:1 }} %
+              {% else %}
+                -
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if circle_row %}
+      {% with p=circle_row.plneni|floatformat:0 %}
+        <h2>Graf plnění – {{ circle_row.label }} ({{ p }} %)</h2>
+        <div style="
+             --p: {{ p }};
+             width: 150px; height: 150px;
+             border-radius: 50%;
+             background:
+               conic-gradient(#28a745 calc(var(--p) * 1%), #eee 0);
+             display:flex; align-items:center; justify-content:center;
+             font-size: 1.4em; font-weight:bold;
+             margin-bottom: 2em;
+        ">
+          {{ p }}%
+        </div>
+      {% endwith %}
+    {% endif %}
+  {% endif %}
+{% endblock %}

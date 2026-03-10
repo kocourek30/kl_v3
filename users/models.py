@@ -8,6 +8,53 @@ from decimal import Decimal
 from objednavky.models import OrderItem, Order
 
 
+from django.db import models
+from django.contrib.auth.models import Group
+
+
+class StravovaciSkupina(models.Model):
+    TYP_VZDELAVANI = [
+        ("MS", "Mateřská škola"),
+        ("ZS1", "ZŠ 7–10 let"),
+        ("ZS2", "ZŠ 11–14 let"),
+        ("SS", "Střední škola"),
+        ("JINE", "Jiné"),
+    ]
+
+    kod = models.CharField(
+        max_length=20,
+        unique=True,
+        verbose_name="Kód skupiny",
+        help_text="Např. SS, ZS1, ZS2…"
+    )
+    nazev = models.CharField(
+        max_length=100,
+        verbose_name="Název skupiny",
+        help_text="Např. 'Střední škola – žáci'."
+    )
+    typ_vzdelavani = models.CharField(
+        max_length=10,
+        choices=TYP_VZDELAVANI,
+        default="SS",
+        verbose_name="Typ vzdělávání",
+    )
+    # volitelná vazba na Django Group, kterou už používáš pro dotace
+    django_group = models.OneToOneField(
+        Group,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="stravovaci_skupina",
+        verbose_name="Django skupina (pro dotace, oprávnění)",
+    )
+
+    class Meta:
+        verbose_name = "Stravovací skupina"
+        verbose_name_plural = "Stravovací skupiny"
+
+    def __str__(self):
+        return f"{self.nazev} ({self.kod})"
+
 
 
 class Vklad(models.Model):
@@ -38,6 +85,14 @@ class CustomUser(AbstractUser):
     )     
     osobni_cislo = models.CharField(max_length=100, blank=True, null=True, verbose_name=_("Osobní číslo"))
     alergeny = models.ManyToManyField('jidelnicek.Alergen', blank=True, verbose_name=_("Alergeny"))
+    stravovaci_skupina = models.ForeignKey(
+        StravovaciSkupina,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name=_("Stravovací skupina"),
+        help_text=_("Např. SŠ žák, ZŠ 1. stupeň…"),
+    )
 
     def __str__(self):
         return self.username

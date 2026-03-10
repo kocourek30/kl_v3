@@ -9,7 +9,7 @@ function connectRFIDBridge() {
     console.log('🔌 Připojuji k RFID Bridge...');
     
     // ✅ ROBUSTNÍ KONEKCE s fallbacky
-    socket = io('http://localhost:3001', {
+    socket = io('http://10.0.0.108:3001', {
         transports: ['websocket', 'polling'],
         timeout: 10000,
         reconnection: true,

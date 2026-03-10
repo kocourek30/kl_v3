@@ -3,44 +3,37 @@ import secrets
 from pathlib import Path
 from dotenv import load_dotenv
 
+
 print("DEBUG from env:", os.getenv('DJANGO_DEBUG'))
 print("SECRET from env:", os.getenv('DJANGO_SECRET_KEY'))
 
-
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load environment variables from .env file
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 # --- SECURITY ---
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 
-# Pokud není v env, použij dev key (jen pro vývoj)
 if not SECRET_KEY:
     SECRET_KEY = 'django-insecure-dev-key-temporary'
 
-# DEBUG musí být False pro produkci, True jen pro vývoj
 DEBUG = os.getenv('DJANGO_DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = ['*']
 
 # --- CLOUDFLARE & HTTPS FIX ---
-# Důležité: Cloudflare posílá hlavičku X-Forwarded-Proto
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
-# CSRF Trusted Origins - Cloudflare vyžaduje přesné domény
 CSRF_TRUSTED_ORIGINS = [
     'https://jidelna.kliknijidlo.cz',
     'http://jidelna.kliknijidlo.cz',
     'http://10.0.0.108:8000',
 ]
 
-# Aby vás Django neodhlásilo při přechodu mezi Cloudflare a NASem:
 if not DEBUG:
-    SESSION_COOKIE_SECURE = True   # Cookie se posílá jen přes HTTPS (Cloudflare)
+    SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_SSL_REDIRECT = True     # Django bude vědět, že je na HTTPS díky proxy hlavičce
+    SECURE_SSL_REDIRECT = True
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
@@ -54,7 +47,7 @@ SESSION_COOKIE_HTTPONLY = False
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = 'Lax'
-SESSION_SAVE_EVERY_REQUEST = True 
+SESSION_SAVE_EVERY_REQUEST = True
 SESSION_COOKIE_AGE = 86400  # 24 hodin
 
 # --- APPS ---
@@ -81,11 +74,9 @@ INSTALLED_APPS = [
     'reporty',
     'prepocty',
     'sklad',
-    
 ]
 
 # --- MIDDLEWARE ---
-# Pořadí je naprosto klíčové pro správné fungování session a static souborů
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -142,25 +133,22 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
-                'users.context_processors.user_balance', 
+                'users.context_processors.user_balance',
                 'canteen_settings.context_processors.footer_info',
             ],
         },
     },
 ]
 
-
 WSGI_APPLICATION = 'kliknijidlo.wsgi.application'
 
-# Database
-# Database configuration from environment
+# Database (duplicitní blok nechávám, jak máš – ale můžeš si ho sloučit)
 DATABASES = {
     'default': {
         'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.postgresql'),
         'NAME': os.getenv('DB_NAME', 'kliknijidlo_dev'),
         'USER': os.getenv('DB_USER', 'kliknijidlo_user'),
         'PASSWORD': os.getenv('DB_PASSWORD', 'dev_password_123'),
-
         'HOST': os.getenv('DB_HOST', 'db'),
         'PORT': os.getenv('DB_PORT', '5432'),
         'OPTIONS': {
@@ -169,14 +157,10 @@ DATABASES = {
     }
 }
 
-# Validate database password in production
 if not DEBUG and not DATABASES['default']['PASSWORD']:
     raise ValueError("DB_PASSWORD must be set in production!")
 
-
-
 # Password validation
-# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
@@ -195,15 +179,11 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-# Internationalization
-# https://docs.djangoproject.com/en/5.2/topics/i18n/
 LANGUAGE_CODE = 'cs-cz'
 TIME_ZONE = 'Europe/Prague'
 USE_I18N = True
 USE_TZ = True
 
-# Default primary key field type
-# https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Logging configuration
@@ -233,7 +213,7 @@ LOGGING = {
             'level': 'WARNING',
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': os.path.join(BASE_DIR, 'logs', 'django.log'),
-            'maxBytes': 1024 * 1024 * 10,  # 10MB
+            'maxBytes': 1024 * 1024 * 10,
             'backupCount': 5,
             'formatter': 'verbose',
         },
@@ -241,7 +221,7 @@ LOGGING = {
             'level': 'WARNING',
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': os.path.join(BASE_DIR, 'logs', 'security.log'),
-            'maxBytes': 1024 * 1024 * 10,  # 10MB
+            'maxBytes': 1024 * 1024 * 10,
             'backupCount': 5,
             'formatter': 'verbose',
             'filters': ['require_debug_false'],
@@ -276,7 +256,7 @@ LOGGING = {
     },
 }
 
-# Email configuration (for error notifications and admin alerts)
+# Email configuration
 if os.getenv('EMAIL_HOST'):
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
     EMAIL_HOST = os.getenv('EMAIL_HOST')
@@ -286,8 +266,7 @@ if os.getenv('EMAIL_HOST'):
     EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
     DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', os.getenv('EMAIL_HOST_USER'))
     SERVER_EMAIL = os.getenv('SERVER_EMAIL', DEFAULT_FROM_EMAIL)
-    
-    # Admin email for error notifications
+
     admin_email = os.getenv('ADMIN_EMAIL')
     if admin_email:
         ADMINS = [('Admin', admin_email)]
@@ -295,61 +274,62 @@ if os.getenv('EMAIL_HOST'):
 else:
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
-# File Upload Security
-FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB
-DATA_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880
+DATA_UPLOAD_MAX_MEMORY_SIZE = 5242880
 FILE_UPLOAD_PERMISSIONS = 0o644
 FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o755
 
-# Content Security (allowed file extensions for uploads if applicable)
-ALLOWED_UPLOAD_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.pdf', '.doc', '.docx', '.xls', '.xlsx']
+ALLOWED_UPLOAD_EXTENSIONS = [
+    '.jpg', '.jpeg', '.png', '.gif', '.pdf',
+    '.doc', '.docx', '.xls', '.xlsx',
+]
 
 # Jazzmin Admin Configuration
 JAZZMIN_SETTINGS = {
     "site_title": "KlikniJídlo Admin",
     "site_header": "KlikniJídlo",
     "site_brand": "Kliknijidlo.cz",
-    "show_ui_builder": DEBUG,  # Only show in development
-    
+    "show_ui_builder": DEBUG,
+
+    # >>> TADY JSOU DŮLEŽITÉ ŘÁDKY PRO TABY <<<
+    "changeform_format": "horizontal_tabs",
+    "changeform_format_overrides": {
+        # např. extra – kdybys chtěl něco jinak
+        # "jidelnicek.Jidlo": "vertical_tabs",
+        # "sklad.Vydejka": "horizontal_tabs",
+    },
+
     "icons": {
-        # Uživatelé & autentizace
         "auth.User": "fas fa-user-circle",
         "auth.Group": "fas fa-users-cog",
         "users.CustomUser": "fas fa-id-card-alt",
         "users.Vklad": "fas fa-cash-register",
-        
-        # Dotace
-        
+
         "dotace.DotacniPolitika": "fas fa-file-contract",
         "dotace.SkupinoveNastaveni": "fas fa-users-gear",
-        
-        # Jídelníčky & jídla
+
         "jidelnicek.Alergen": "fas fa-triangle-exclamation",
         "jidelnicek.DruhJidla": "fas fa-utensils",
         "jidelnicek.Jidelnicek": "fas fa-calendar-days",
         "jidelnicek.Jidlo": "fas fa-bowl-food",
-        
-        # Objednávky
+
         "objednavky.Order": "fas fa-shopping-basket",
         "objednavky.OrderItem": "fas fa-receipt",
-        
-        # Nastavení jídelny
+
         "canteen_settings.CanteenContact": "fas fa-building",
         "canteen_settings.GroupOrderLimit": "fas fa-user-friends",
         "canteen_settings.MealPickupTime": "fas fa-clock",
         "canteen_settings.OrderClosingTime": "fas fa-stopwatch",
         "canteen_settings.OperatingExceptions": "fas fa-triangle-exclamation",
         "canteen_settings.OperatingDays": "fas fa-circle-check",
-        
-        # Výdej jídel
+
         "vydej_jidel.VydajiciCas": "fas fa-clock-rotate-left",
         "vydej.Vydej": "fas fa-box-open",
         "vydej.VydejOrder": "fas fa-shopping-cart",
         "vydej.VydejniUctenka": "fas fa-receipt",
         "vydej.StornovaneObjednavky": "fas fa-trash-alt",
         "vydej.PrehledProKuchyni": "fas fa-kitchen-set",
-        
-        # Frontend
+
         "frontend.Page": "fas fa-file-lines",
         "frontend.Setting": "fas fa-sliders",
         "reporty": "fas fa-chart-mixed",
@@ -358,23 +338,18 @@ JAZZMIN_SETTINGS = {
         "sklad.StavSkladu": "fas fa-boxes-stacked",
         "sklad.RecepturaPolozka": "fas fa-list-ul",
         "sklad.SkladDashboard": "fas fa-warehouse",
-                # inventury (pracovní)
         "sklad.Inventura": "fas fa-clipboard-check",
         "sklad.PolozkaInventury": "fas fa-list-check",
-
-        # inventurní doklady (proxy model – report)
         "sklad.InventurniDoklad": "fas fa-file-invoice",
-        "sklad.PrijemSkladu": "fas fa-truck-loading",      # nebo 'fas fa-file-import'
+        "sklad.PrijemSkladu": "fas fa-truck-loading",
         "sklad.PolozkaPrijmu": "fas fa-plus-square",
-
 
         "reporty.ReportDummy": "fas fa-chart-pie",
         "objednavky.PriceRecalculationDetail": "fas fa-clipboard-check",
         "objednavky.PriceRecalculationLog": "fas fa-clipboard-list",
         "vydej_jidel.VydejSettings": "fas fa-stopwatch-20",
-
     },
-    
+
     "order_with_respect_to": [
         "users",
         "jidelnicek",
@@ -388,7 +363,7 @@ JAZZMIN_SETTINGS = {
         "prepocty",
         "auth",
     ],
-    
+
     "topmenu_links": [
         {
             "name": "🏠 Dashboard",
@@ -410,33 +385,40 @@ JAZZMIN_SETTINGS = {
         },
     ],
 
-    
     "custom_css": "css/custom-admin.css",
 
-    'custom_links': {
-        'prepocty': [  # ✅ Custom odkazy pod novou sekcí
-            {
-                'name': 'Spustit přepočet cen',
-                'url': 'admin:objednavky_order_price_recalculation',
-                'icon': 'fas fa-play-circle',
-            },
-            {
-                'name': 'Historie přepočtů',
-                'url': 'admin:objednavky_pricerecalculationlog_changelist',
-                'icon': 'fas fa-history',
-            },
-            {
-                'name': 'Detaily přepočtů',
-                'url': 'admin:objednavky_pricerecalculationdetail_changelist',
-                'icon': 'fas fa-list',
-            },
-        ]
-    },
-    
-    'hide_models': [
-        'prepocty.PrepoctyDummy',
-        'objednavky.PriceRecalculationLog',
-        'objednavky.PriceRecalculationDetail',
+"custom_links": {
+    "prepocty": [
+        {
+            "name": "Spustit přepočet cen",
+            "url": "admin:objednavky_order_price_recalculation",
+            "icon": "fas fa-play-circle",
+        },
+        {
+            "name": "Historie přepočtů",
+            "url": "admin:objednavky_pricerecalculationlog_changelist",
+            "icon": "fas fa-history",
+        },
+        {
+            "name": "Detaily přepočtů",
+            "url": "admin:objednavky_pricerecalculationdetail_changelist",
+            "icon": "fas fa-list",
+        },
+    ],
+    "sklad": [
+        {
+            "name": "Měsíční spotřební koš",
+            "url": "admin:sklad_mesicni_spotrebni_kos",
+            "icon": "fas fa-chart-pie",
+        },
+    ],
+},
+
+
+    "hide_models": [
+        "prepocty.PrepoctyDummy",
+        "objednavky.PriceRecalculationLog",
+        "objednavky.PriceRecalculationDetail",
     ],
 }
 
@@ -469,9 +451,9 @@ JAZZMIN_UI_TWEAKS = {
         "info": "btn-outline-info",
         "warning": "btn-outline-warning",
         "danger": "btn-outline-danger",
-        "success": "btn-outline-success"
+        "success": "btn-outline-success",
     },
-    "actions_sticky_top": False
+    "actions_sticky_top": False,
 }
 
 if os.getenv("DJANGO_DEBUG", "False") == "True":
@@ -485,21 +467,4 @@ if os.getenv("DJANGO_DEBUG", "False") == "True":
 # =============================================================================
 # SECURITY NOTES FOR PRODUCTION:
 # =============================================================================
-# 1. Change admin URL from /admin/ to something less predictable in urls.py
-#    Example: path('secure-admin-panel/', admin.site.urls)
-# 
-# 2. Consider adding django-axes for login attempt throttling:
-#    pip install django-axes
-#    https://django-axes.readthedocs.io/
-#
-# 3. Regular security updates:
-#    pip list --outdated
-#    pip install -U Django
-#
-# 4. Database backups:
-#    Set up automated daily backups with retention policy
-#
-# 5. Monitor logs regularly:
-#    tail -f logs/security.log
-#    tail -f logs/django.log
-# =============================================================================
+# ...

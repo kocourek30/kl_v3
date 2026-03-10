@@ -5,17 +5,20 @@ from django.http import JsonResponse
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.db.models import Sum
-
-from .models import CustomUser, Vklad
-from import_export.admin import ExportMixin, ImportMixin
-from import_export import resources
-from import_export.formats.base_formats import CSV
-from django.contrib.auth.models import Group
-from dotace.models import DotacniPolitika, SkupinoveNastaveni
-from django.utils.html import format_html
 from decimal import Decimal
 from django.shortcuts import render, redirect
 from django.contrib import messages
+
+from import_export.admin import ExportMixin, ImportMixin
+from import_export import resources
+from import_export.formats.base_formats import CSV
+
+from django.contrib.auth.models import Group
+from dotace.models import DotacniPolitika, SkupinoveNastaveni
+from django.utils.html import format_html
+
+from .models import CustomUser, Vklad, StravovaciSkupina
+from objednavky.models import OrderItem, Order
 
 
 class CustomCSV(CSV):
@@ -73,7 +76,16 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
 
     fieldsets = (
         UserAdmin.fieldsets[0],
-        (("Osobní údaje"), {"fields": ("first_name", "last_name", "email", "identifikacni_medium", "osobni_cislo")}),
+        (("Osobní údaje"), {
+            "fields": (
+                "first_name",
+                "last_name",
+                "email",
+                "identifikacni_medium",
+                "osobni_cislo",
+                "stravovaci_skupina",  # ← sem doplněno
+            )
+        }),
         (("Oprávnění"), {"fields": ("is_active", "is_staff", "is_superuser", "groups")}),
         (("Alergeny"), {"fields": ("alergeny",)}),
         (("Důležitá data"), {"fields": ("last_login", "date_joined")}),
@@ -89,6 +101,7 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
         'debit_limit',
         'cerpa_debit',
         'ma_nutnost_dobit',
+        'stravovaci_skupina',  # ← doplněno
     )
 
     search_fields = ('username', 'first_name', 'last_name', 'email', 'osobni_cislo')
@@ -97,8 +110,11 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
         (None, {
             "classes": ("wide",),
             "fields": (
-                "username", "password1", "password2", "first_name", "last_name", "email",
-                "identifikacni_medium", "osobni_cislo", "alergeny", "is_staff", "is_active", "groups"
+                "username", "password1", "password2",
+                "first_name", "last_name", "email",
+                "identifikacni_medium", "osobni_cislo",
+                "stravovaci_skupina",          # ← i do add formuláře
+                "alergeny", "is_staff", "is_active", "groups",
             ),
         }),
     )
@@ -261,3 +277,11 @@ class VkladAdmin(admin.ModelAdmin):
         else:
             raise ValidationError("Uživatel není přiřazen ke skupině, nelze vytvořit vklad.")
         super().save_model(request, obj, form, change)
+
+
+@admin.register(StravovaciSkupina)
+class StravovaciSkupinaAdmin(admin.ModelAdmin):
+    list_display = ("kod", "nazev", "typ_vzdelavani", "django_group")
+    list_filter = ("typ_vzdelavani",)
+    search_fields = ("kod", "nazev")
+
