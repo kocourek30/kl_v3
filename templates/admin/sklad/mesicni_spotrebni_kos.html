@@ -9,36 +9,28 @@
   </form>
 
   {% if rows %}
-    <table class="table" style="margin-top:1em;">
-      <thead>
-        <tr>
-          <th>Skupina</th>
-          <th style="text-align:right;">Celkem (kg)</th>
-          <th style="text-align:right;">Strávníkoden</th>
-          <th style="text-align:right;">Na 1 strávníka (kg)</th>
-          <th style="text-align:right;">Norma (kg)</th>
-          <th style="text-align:right;">Plnění (%)</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in rows %}
-          <tr>
-            <td>{{ row.label }}</td>
-            <td style="text-align:right;">{{ row.celkem_kg }}</td>
-            <td style="text-align:right;">{{ row.stravnikodny }}</td>
-            <td style="text-align:right;">{{ row.na_stravnika|default:"-" }}</td>
-            <td style="text-align:right;">{{ row.norma|default:"-" }}</td>
-            <td style="text-align:right;">
-              {% if row.plneni is not None %}
-                {{ row.plneni|floatformat:1 }} %
-              {% else %}
-                -
-              {% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <table class="table table-striped">
+  <thead>
+    <tr>
+      <th>Skupina potravin</th>
+      <th>Norma [g]</th>
+      <th>Skutečnost [g]</th>
+      <th>Rozdíl [g]</th>
+      <th>Skut. v %</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{{ r.skupina_nazev }}</td>
+        <td>{{ r.norma_g|floatformat:0 }}</td>
+        <td>{{ r.skutecnost_g|floatformat:0 }}</td>
+        <td>{{ r.rozdil_g|floatformat:0 }}</td>
+        <td>{{ r.skutecnost_pct|floatformat:2 }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
 
     {% if circle_row %}
       {% with p=circle_row.plneni|floatformat:0 %}

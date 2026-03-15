@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     'reporty',
     'prepocty',
     'sklad',
+    "pokladna",
 ]
 
 # --- MIDDLEWARE ---
@@ -290,16 +291,32 @@ JAZZMIN_SETTINGS = {
     "site_header": "KlikniJídlo",
     "site_brand": "Kliknijidlo.cz",
     "show_ui_builder": DEBUG,
-
-    # >>> TADY JSOU DŮLEŽITÉ ŘÁDKY PRO TABY <<<
+    "show_sidebar": False,          # sidebar vůbec nezobrazovat
+    "navigation_expanded": False,
     "changeform_format": "horizontal_tabs",
     "changeform_format_overrides": {
-        # např. extra – kdybys chtěl něco jinak
+        # příklady:
         # "jidelnicek.Jidlo": "vertical_tabs",
         # "sklad.Vydejka": "horizontal_tabs",
     },
+    "brand_logo": None,
 
     "icons": {
+        # === APP IKONY ===
+        "users": "fas fa-user-friends",
+        "jidelnicek": "fas fa-utensils",
+        "objednavky": "fas fa-shopping-cart",
+        "vydej": "fas fa-dolly",
+        "vydej_jidel": "fas fa-concierge-bell",
+        "dotace": "fas fa-file-contract",
+        "canteen_settings": "fas fa-gear",
+        "frontend": "fas fa-globe",
+        "reporty": "fas fa-chart-line",
+        "prepocty": "fas fa-calculator",
+        "sklad": "fas fa-warehouse",
+        "pokladna": "fas fa-cash-register",
+
+        # === MODEL IKONY (původní) ===
         "auth.User": "fas fa-user-circle",
         "auth.Group": "fas fa-users-cog",
         "users.CustomUser": "fas fa-id-card-alt",
@@ -332,8 +349,10 @@ JAZZMIN_SETTINGS = {
 
         "frontend.Page": "fas fa-file-lines",
         "frontend.Setting": "fas fa-sliders",
+
         "reporty": "fas fa-chart-mixed",
         "auth": "fas fa-shield-alt",
+
         "sklad.Surovina": "fas fa-carrot",
         "sklad.StavSkladu": "fas fa-boxes-stacked",
         "sklad.RecepturaPolozka": "fas fa-list-ul",
@@ -362,58 +381,62 @@ JAZZMIN_SETTINGS = {
         "reporty",
         "prepocty",
         "auth",
+        "sklad",
+        "pokladna",
     ],
 
+    # >>> HORNÍ HORIZONTÁLNÍ MENU <<<
     "topmenu_links": [
         {
-            "name": "🏠 Dashboard",
+            "name": "Dashboard Klikni jídlo",
             "url": "admin:index",
             "permissions": ["auth.view_user"],
             "icon": "fas fa-home",
         },
-        {
-            "name": "📊 Reporty",
-            "url": "admin:reporty_reportdummy_changelist",
-            "permissions": ["auth.view_user"],
-            "icon": "fas fa-chart-pie",
-        },
-        {
-            "name": "📦 Sklad",
-            "url": "admin:sklad_skladdashboard_changelist",
-            "permissions": ["auth.view_user"],
-            "icon": "fas fa-warehouse",
-        },
+
+        # Aplikace jako dropdowny
+        {"app": "users"},
+        {"app": "jidelnicek"},
+        {"app": "objednavky"},
+        {"app": "vydej"},
+        {"app": "vydej_jidel"},
+        {"app": "dotace"},
+        {"app": "canteen_settings"},
+        {"app": "frontend"},
+        {"app": "reporty"},
+        {"app": "prepocty"},
+        {"app": "sklad"},
+        {"app": "pokladna"},
     ],
 
     "custom_css": "css/custom-admin.css",
 
-"custom_links": {
-    "prepocty": [
-        {
-            "name": "Spustit přepočet cen",
-            "url": "admin:objednavky_order_price_recalculation",
-            "icon": "fas fa-play-circle",
-        },
-        {
-            "name": "Historie přepočtů",
-            "url": "admin:objednavky_pricerecalculationlog_changelist",
-            "icon": "fas fa-history",
-        },
-        {
-            "name": "Detaily přepočtů",
-            "url": "admin:objednavky_pricerecalculationdetail_changelist",
-            "icon": "fas fa-list",
-        },
-    ],
-    "sklad": [
-        {
-            "name": "Měsíční spotřební koš",
-            "url": "admin:sklad_mesicni_spotrebni_kos",
-            "icon": "fas fa-chart-pie",
-        },
-    ],
-},
-
+    "custom_links": {
+        "prepocty": [
+            {
+                "name": "Spustit přepočet cen",
+                "url": "admin:objednavky_order_price_recalculation",
+                "icon": "fas fa-play-circle",
+            },
+            {
+                "name": "Historie přepočtů",
+                "url": "admin:objednavky_pricerecalculationlog_changelist",
+                "icon": "fas fa-history",
+            },
+            {
+                "name": "Detaily přepočtů",
+                "url": "admin:objednavky_pricerecalculationdetail_changelist",
+                "icon": "fas fa-list",
+            },
+        ],
+        "sklad": [
+            {
+                "name": "Měsíční spotřební koš",
+                "url": "admin:sklad_mesicni_spotrebni_kos",
+                "icon": "fas fa-chart-pie",
+            },
+        ],
+    },
 
     "hide_models": [
         "prepocty.PrepoctyDummy",

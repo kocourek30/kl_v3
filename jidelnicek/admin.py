@@ -3,29 +3,19 @@ from django.contrib import admin
 from decimal import Decimal
 from django.db.models import Sum
 
+from django import forms
+from django.urls import path
+from django.shortcuts import render, redirect
+from django.contrib import messages
+
+import re
+from datetime import datetime, date
+
 from .models import Alergen, Jidlo, DruhJidla, Jidelnicek, PolozkaJidelnicku
 from dotace.models import DotacniPolitika, DotaceProJidelniskouSkupinu
 from sklad.admin import RecepturaPolozkaInline
+from pokladna.models import PLUPolozka, DPHSkupina, PLUKategorie
 
-from django import forms
-from django.urls import path
-from django.shortcuts import render, redirect
-from django.contrib import messages
-
-# ====== IMPORT TXT LOGIKA (z management commandu zkráceně) ======
-import re
-from datetime import datetime, date
-
-from django import forms
-from django.urls import path
-from django.shortcuts import render, redirect
-from django.contrib import messages
-
-from .models import Alergen, Jidlo, DruhJidla, Jidelnicek, PolozkaJidelnicku
-
-import re
-from datetime import datetime, date
-from jidelnicek.models import Jidlo, Jidelnicek, PolozkaJidelnicku, DruhJidla, Alergen
 
 # ====== IMPORT TXT LOGIKA ======
 
@@ -46,10 +36,6 @@ DEFAULT_PRICES = {
 def _map_meal_to_druh_name(meal_type: str, chod_num: int | None) -> str:
     """
     Mapování typu z TXT na název existujícího DruhJidla.
-    SNÍDANĚ + chod1 -> 'Snídaně 1'
-    SNÍDANĚ + chod2 -> 'Snídaně 2'
-    2.VEČEŘE        -> 'Pozdní večeře'
-    ostatní         -> titulek s první velkou (aby seděl na tvoje názvy).
     """
     if meal_type == "SNÍDANĚ":
         if chod_num == 1:
@@ -65,20 +51,8 @@ def _map_meal_to_druh_name(meal_type: str, chod_num: int | None) -> str:
 
 def parse_txt_to_structure(text: str) -> dict:
     """
-    Vrátí:
-    {
-      date(2026,1,26): {
-        "Snídaně 1": [("Housky, Máslo, Džem, Čaj, Kakao", ["1","6","7"])],
-        "Snídaně 2": [("Chléb, Pomazánka z paštiky, Zelenina, Čaj", ["1","7"])],
-        "Oběd":      [("Brokolicová polévka, Špagety po boloňsku, Ovoce, Voda se sirupem", [...])],
-        ...
-      },
-      ...
-    }
-
-    Tj. pro každý chod je jen jedno „jídlo“, do kterého jsou slité všechny položky chodu.
+    Vrátí strukturu jídelníčku podle dnů a druhů jídel.
     """
-    # odseknout konec s přáním
     text = text.split("PŘEJEME VÁM DOBROU CHUŤ")[0]
 
     period = re.search(r"od:\s*(\d{2}\.\d{2}\.\d{4})\s*do:\s*(\d{2}\.\d{2}\.\d{4})", text)
@@ -88,7 +62,7 @@ def parse_txt_to_structure(text: str) -> dict:
     start_date = datetime.strptime(period.group(1), "%d.%m.%Y").date()
     end_date = datetime.strptime(period.group(2), "%d.%m.%Y").date()
 
-    # Rozdělení po dnech – zdroj má "Pondělí 26. leden 2026" bez odřádkování
+    # Rozdělení po dnech
     day_pattern = r"(Pondělí|Úterý|Středa|Čtvrtek|Pátek|Sobota|Neděle)\s+\d{2}\.\s+leden\s+\d{4}"
     day_blocks = re.split(day_pattern, text)
 
@@ -117,7 +91,7 @@ def parse_txt_to_structure(text: str) -> dict:
             if not current_meal:
                 continue
 
-            # chody: SNÍDANĚchod 1: ... chod 2: ...
+            # chody
             chody_raw = re.split(r"chod\s*\d*:", part)
             chod_num = 0
             for chod_content in chody_raw:
@@ -131,7 +105,6 @@ def parse_txt_to_structure(text: str) -> dict:
                     chod_num if current_meal == "SNÍDANĚ" else None
                 )
 
-                # položky v rámci jednoho chodu: " - Housky (1)- Máslo (7)- Džem- Čaj- Kakao (6 7)"
                 items_raw = re.split(r"\s*-\s+", chod_content)
                 item_names = []
                 alerg_ids_set = set()
@@ -155,7 +128,6 @@ def parse_txt_to_structure(text: str) -> dict:
                 if not item_names:
                     continue
 
-                # název jídla = všechny položky chodu spojené čárkou
                 jidlo_nazev = ", ".join(item_names)
                 alerg_ids = sorted(alerg_ids_set, key=lambda x: (x.rstrip("B"), x.endswith("B")))
 
@@ -169,12 +141,7 @@ def parse_txt_to_structure(text: str) -> dict:
 
 def import_menu_structure(menu_by_date: dict, logger=None):
     """
-    - Pro každé datum vytvoří / najde Jídelníček (platnost_od=platnost_do=datum).
-    - DruhJidla NEzakládá – jen páruje na existující názvy.
-      Pokud druh neexistuje, řádek přeskočí.
-    - Jídlo se zakládá (pokud neexistuje pro daný druh).
-    - Cena se nastaví podle DEFAULT_PRICES podle názvu druhu.
-    - Alergeny se přiřazují podle ID.
+    Importuje strukturu do modelů Jidelnicek / Jidlo / PolozkaJidelnicku.
     """
     druh_cache = {}
     alergen_cache = {}
@@ -197,7 +164,6 @@ def import_menu_structure(menu_by_date: dict, logger=None):
             log_info(f"Vytvořen nový Jídelníček pro {datum}.")
 
         for druh_nazev, polozky in druhy.items():
-            # DruhJidla – POUZE EXISTUJÍCÍ, jinak přeskočit
             if druh_nazev not in druh_cache:
                 try:
                     druh = DruhJidla.objects.get(nazev=druh_nazev)
@@ -221,7 +187,6 @@ def import_menu_structure(menu_by_date: dict, logger=None):
                     defaults={"cena": default_price or Decimal("0")},
                 )
 
-                # Pokud chceš při každém importu přepsat cenu podle aktuálního nastavení:
                 if default_price is not None and not created_jidlo:
                     if jidlo.cena != default_price:
                         jidlo.cena = default_price
@@ -250,7 +215,8 @@ class TxtImportForm(forms.Form):
     soubor = forms.FileField(label="TXT jídelníček")
 
 
-# ====== DOTEK PŮVODNÍHO ADMINA ======
+# ====== PŮVODNÍ ADMIN + AUTO‑PLU ======
+
 
 @admin.register(DruhJidla)
 class DruhJidlaAdmin(admin.ModelAdmin):
@@ -276,6 +242,7 @@ class JidloAdmin(admin.ModelAdmin):
     search_fields = ('nazev',)
     filter_horizontal = ('alergeny',)
     inlines = [RecepturaPolozkaInline]
+    actions = ["vygenerovat_plu_pro_jidla"]
 
     def alergeny_list(self, obj):
         return ", ".join([a.nazev for a in obj.alergeny.all()])
@@ -329,6 +296,51 @@ class JidloAdmin(admin.ModelAdmin):
 
     ceny_po_dotacich.short_description = "Ceny po dotacích"
 
+    # ==== AUTO‑PLU ====
+
+    def _ensure_plu_for_jidlo(self, jidlo):
+        # DPH 12 %
+        dph_12, _ = DPHSkupina.objects.get_or_create(
+            sazba=12,
+            defaults={"nazev": "Jídlo 12 %"},
+        )
+        # výchozí kategorie
+        kategorie_menu, _ = PLUKategorie.objects.get_or_create(
+            nazev="Jídelna"
+        )
+
+        plu, created = PLUPolozka.objects.get_or_create(
+            jidlo=jidlo,
+            defaults={
+                "nazev": jidlo.nazev,
+                "cena": jidlo.cena,
+                "dph_skupina": dph_12,
+                "kategorie": kategorie_menu,
+                "typ": PLUPolozka.TYP_RECEPTURA,
+                "aktivni": True,
+            },
+        )
+
+        if not created:
+            plu.nazev = jidlo.nazev
+            plu.cena = jidlo.cena
+            plu.dph_skupina = dph_12
+            if plu.kategorie is None:
+                plu.kategorie = kategorie_menu
+            plu.aktivni = True
+            plu.save(
+                update_fields=["nazev", "cena", "dph_skupina", "kategorie", "aktivni"]
+            )
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        self._ensure_plu_for_jidlo(obj)
+
+    @admin.action(description="Vygenerovat / aktualizovat PLU pro vybraná jídla")
+    def vygenerovat_plu_pro_jidla(self, request, queryset):
+        for jidlo in queryset:
+            self._ensure_plu_for_jidlo(jidlo)
+
 
 class PolozkaJidelnickuInline(admin.TabularInline):
     model = PolozkaJidelnicku
@@ -367,7 +379,6 @@ class JidelnicekAdmin(admin.ModelAdmin):
         """
         return format_html(table_html)
 
-    # URL pro import v adminu
     def get_urls(self):
         urls = super().get_urls()
         my_urls = [
@@ -387,7 +398,7 @@ class JidelnicekAdmin(admin.ModelAdmin):
                 content = f.read().decode("utf-8", errors="ignore")
                 try:
                     menu_by_date = parse_txt_to_structure(content)
-                    import_menu_structure(menu_by_date, logger=None)  # logger klidně None
+                    import_menu_structure(menu_by_date, logger=None)
                 except Exception as e:
                     messages.error(request, f"Chyba při importu: {e}")
                 else:
@@ -404,19 +415,8 @@ class JidelnicekAdmin(admin.ModelAdmin):
         return render(request, "admin/jidelnicek_import_txt.html", context)
 
 
-@admin.register(Alergen)
-class AlergenAdmin(admin.ModelAdmin):
-    list_display = ('nazev', 'icon_preview')
-    search_fields = ('nazev',)
-
-    def icon_preview(self, obj):
-        if hasattr(obj, 'ikona') and obj.ikona:
-            return format_html('<i class="{}"></i>', obj.ikona)
-        return ""
-    icon_preview.short_description = 'Ikona'
-    icon_preview.admin_order_field = 'ikona'
-
-    def save_model(self, request, obj, form, change):
-        if not obj.ikona:
-            obj.ikona = 'fas fa-exclamation-triangle'
-        super().save_model(request, obj, form, change)
+@admin.register(PolozkaJidelnicku)
+class PolozkaJidelnickuAdmin(admin.ModelAdmin):
+    list_display = ("jidelnicek", "druh_jidla", "jidlo")
+    list_filter = ("jidelnicek", "druh_jidla")
+    search_fields = ("jidlo__nazev",)

@@ -48,17 +48,19 @@ from .models import (
     PolozkaVydejky,
     NormaSpotrebnihoKose,
 )
-
+from .services import (
+    spocitej_spotrebu_sk_mesic,
+    priprav_radky_spotrebi_kos_tabulka,
+)
 
 # -------------------------------------------------------------------
 # Měsíční report spotřebního koše
 # -------------------------------------------------------------------
 
-from .models import NormaSpotrebnihoKose
 
 @admin.register(NormaSpotrebnihoKose)
 class NormaSKAdmin(admin.ModelAdmin):
-    list_display = ("stravovaci_skupina", "skupina_sk", "norma_kg_mesic")
+    list_display = ("stravovaci_skupina", "skupina_sk", "norma_g_mesic")
     list_filter = ("stravovaci_skupina", "skupina_sk")
     search_fields = ("stravovaci_skupina__nazev",)
 
@@ -72,27 +74,8 @@ class MesicniSKForm(forms.Form):
         queryset=StravovaciSkupina.objects.all(),
         required=False,
         label="Stravovací skupina",
+        help_text="Vyber skupinu strávníků. Bez výběru se tabulka nepočítá.",
     )
-
-
-def spocitej_spotrebu_sk_mesic(rok: int, mesic: int, stravovaci_skupina=None):
-    qs = (
-        PohybSkladu.objects.filter(
-            typ="VYDEJ",
-            vydejka__datum__year=rok,
-            vydejka__datum__month=mesic,
-        )
-        .select_related("surovina", "vydejka")
-    )
-    if stravovaci_skupina is not None:
-        qs = qs.filter(vydejka__stravovaci_skupina=stravovaci_skupina)
-
-    vysledky = defaultdict(Decimal)
-    for pohyb in qs:
-        sk = pohyb.surovina.skupina_sk
-        koef = pohyb.surovina.koeficient_sk or Decimal("1.0")
-        vysledky[sk] += pohyb.mnozstvi * koef
-    return vysledky
 
 
 def spocitej_stravnikodny_mesic(rok: int, mesic: int, stravovaci_skupina=None):
@@ -115,6 +98,7 @@ def spocitej_stravnikodny_mesic(rok: int, mesic: int, stravovaci_skupina=None):
 # Generování výdejky z objednávek + teoretická spotřeba
 # -------------------------------------------------------------------
 
+
 @transaction.atomic
 def generate_vydejka_from_orders(datum, stravovaci_skupina, typ_stravy: str = "OBED"):
     vydejka, created = Vydejka.objects.get_or_create(
@@ -134,7 +118,9 @@ def generate_vydejka_from_orders(datum, stravovaci_skupina, typ_stravy: str = "O
         jidlo = item.menu_item.jidlo
         pocet_porci = Decimal(item.quantity)
         for pol in jidlo.receptura.all():
-            suroviny_mnozstvi[pol.surovina_id] += pol.mnozstvi_na_porci * pocet_porci
+            suroviny_mnozstvi[pol.surovina_id] += (
+                pol.mnozstvi_na_porci * pocet_porci
+            )
         vydejka.jidla.add(jidlo)
 
     vydejka.polozky.all().delete()
@@ -183,6 +169,7 @@ def spocitej_spotrebu_pro_vydejku(vydejka: Vydejka):
 # Skladový dashboard + měsíční spotřební koš
 # -------------------------------------------------------------------
 
+
 @admin.register(SkladDashboard)
 class SkladDashboardAdmin(admin.ModelAdmin):
     change_list_template = "admin/sklad/dashboard.html"
@@ -220,55 +207,25 @@ class SkladDashboardAdmin(admin.ModelAdmin):
             mesic = form.cleaned_data["mesic"]
             skupina = form.cleaned_data["stravovaci_skupina"]
 
-            # 1) celková spotřeba v kg za měsíc
-            spotreba = spocitej_spotrebu_sk_mesic(rok, mesic, skupina)
-
-            # 2) počet strávníkoden
-            stravnikodny = spocitej_stravnikodny_mesic(rok, mesic, skupina) or Decimal("0")
-
-            # 3) načíst normy
-            normy_qs = NormaSpotrebnihoKose.objects.all()
             if skupina is not None:
-                normy_qs = normy_qs.filter(stravovaci_skupina=skupina)
-            normy_dict = {
-                (n.stravovaci_skupina_id, n.skupina_sk): n.norma_kg_mesic
-                for n in normy_qs
-            }
+                # 1) počet strávníkoden (porcí) za měsíc
+                stravnikodny = spocitej_stravnikodny_mesic(rok, mesic, skupina)
 
-            rows = []
-            skupiny_sk = dict(Surovina.SKUPINA_SK)
-            sk_id = skupina.id if skupina else None
-
-            for kod, label in skupiny_sk.items():
-                celkem_kg = spotreba.get(kod, Decimal("0"))
-                if stravnikodny > 0:
-                    na_stravnika = celkem_kg / stravnikodny
-                else:
-                    na_stravnika = Decimal("0")
-
-                norma = normy_dict.get((sk_id, kod)) if sk_id else None
-                if norma and norma > 0:
-                    plneni = (na_stravnika / norma) * Decimal("100")
-                else:
-                    plneni = None
-
-                rows.append(
-                    {
-                        "kod": kod,
-                        "label": label,
-                        "celkem_kg": celkem_kg,
-                        "stravnikodny": stravnikodny,
-                        "na_stravnika": na_stravnika,
-                        "norma": norma,
-                        "plneni": plneni,
-                    }
+                # 2) řádky tabulky – vše v gramech
+                rows = priprav_radky_spotrebi_kos_tabulka(
+                    rok=rok,
+                    mesic=mesic,
+                    stravovaci_skupina=skupina,
+                    pocet_stravniku=int(stravnikodny),
                 )
 
-            # vybereme řádek pro kruhový graf (první s plněním)
-            for r in rows:
-                if r["plneni"] is not None:
-                    circle_row = r
-                    break
+                # 3) vyber řádek pro případný graf
+                for r in rows:
+                    if r["norma_g"] or r["skutecnost_g"]:
+                        circle_row = r
+                        break
+            else:
+                rows = []
 
         context = dict(
             self.admin_site.each_context(request),
@@ -362,6 +319,7 @@ class SkladDashboardAdmin(admin.ModelAdmin):
 # -------------------------------------------------------------------
 # Základní sklad
 # -------------------------------------------------------------------
+
 
 @admin.register(Surovina)
 class SurovinaAdmin(admin.ModelAdmin):
@@ -827,7 +785,11 @@ def vydejka_pdf_view(request, vydejka_id):
         )
         elements = []
 
-        sk = vydejka.stravovaci_skupina.kod if vydejka.stravovaci_skupina else "bez skupiny"
+        sk = (
+            vydejka.stravovaci_skupina.kod
+            if vydejka.stravovaci_skupina
+            else "bez skupiny"
+        )
         elements.append(
             Paragraph(
                 f"Výdejka #{vydejka.id} – {vydejka.datum.strftime('%d.%m.%Y')} ({sk})",
@@ -867,8 +829,14 @@ def vydejka_pdf_view(request, vydejka_id):
     )
     elements = []
 
-    sk = vydejka.stravovaci_skupina.kod if vydejka.stravovaci_skupina else "bez skupiny"
-    nadpis = f"Výdejka #{vydejka.id} – {vydejka.datum.strftime('%d.%m.%Y')} ({sk})"
+    sk = (
+        vydejka.stravovaci_skupina.kod
+        if vydejka.stravovaci_skupina
+        else "bez skupiny"
+    )
+    nadpis = (
+        f"Výdejka #{vydejka.id} – {vydejka.datum.strftime('%d.%m.%Y')} ({sk})"
+    )
     elements.append(Paragraph(nadpis, styles["Title"]))
     elements.append(Spacer(1, 0.3 * cm))
     elements.append(
@@ -938,5 +906,7 @@ def vydejka_pdf_view(request, vydejka_id):
     buffer.close()
 
     response = HttpResponse(pdf, content_type="application/pdf")
-    response["Content-Disposition"] = f'attachment; filename="vydejka_{vydejka.id}.pdf"'
+    response["Content-Disposition"] = (
+        f'attachment; filename="vydejka_{vydejka.id}.pdf"'
+    )
     return response

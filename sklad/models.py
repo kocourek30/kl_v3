@@ -8,6 +8,10 @@ from jidelnicek.models import Jidlo
 from users.models import StravovaciSkupina
 
 
+GRAMS_PER_KG = Decimal("1000")
+ML_PER_L = Decimal("1000")
+
+
 class Surovina(models.Model):
     JEDNOTKY = [
         ("kg", "Kilogram"),
@@ -66,6 +70,20 @@ class Surovina(models.Model):
 
     def __str__(self):
         return f"{self.nazev} ({self.jednotka})"
+
+    def mnozstvi_do_gramu(self, mnozstvi: Decimal) -> Decimal:
+        """
+        Přepočet daného množství suroviny na gramy pro spotřební koš.
+        """
+        if self.jednotka == "kg":
+            return mnozstvi * GRAMS_PER_KG
+        if self.jednotka == "l":
+            # pro tekuté věci typu mléko – 1 l ~ 1000 g
+            return mnozstvi * ML_PER_L
+        if self.jednotka == "ks":
+            # dočasně: kusy bereme jako „gramy“; případně rozšíříme
+            return mnozstvi
+        return mnozstvi
 
 
 class StavSkladu(models.Model):
@@ -438,20 +456,26 @@ class PolozkaVydejky(models.Model):
             f"{self.vydejka} – {self.mnozstvi} "
             f"{self.surovina.jednotka} {self.surovina.nazev}"
         )
+
+
 class ReportSpotrebniKos(models.Model):
     """
     Pseudo-model pro měsíční report spotřebního koše v adminu.
     """
+
     class Meta:
         managed = False
         verbose_name = "Report spotřebního koše"
         verbose_name_plural = "Report spotřebního koše"
 
+
 class NormaSpotrebnihoKose(models.Model):
     """
     Měsíční norma spotřebního koše na 1 strávníka
     pro danou skupinu SK a stravovací skupinu.
+    Hodnota je v gramech / strávník / měsíc.
     """
+
     stravovaci_skupina = models.ForeignKey(
         StravovaciSkupina,
         on_delete=models.CASCADE,
@@ -462,10 +486,10 @@ class NormaSpotrebnihoKose(models.Model):
         choices=Surovina.SKUPINA_SK,
         verbose_name="Skupina spotřebního koše",
     )
-    norma_kg_mesic = models.DecimalField(
-        max_digits=6,
-        decimal_places=3,
-        verbose_name="Norma (kg na 1 strávníka za měsíc)",
+    norma_g_mesic = models.DecimalField(
+        max_digits=8,
+        decimal_places=1,
+        verbose_name="Norma (g na 1 strávníka za měsíc)",
     )
 
     class Meta:
@@ -474,4 +498,56 @@ class NormaSpotrebnihoKose(models.Model):
         unique_together = ("stravovaci_skupina", "skupina_sk")
 
     def __str__(self):
-        return f"{self.stravovaci_skupina} – {self.get_skupina_sk_display()}: {self.norma_kg_mesic} kg"
+        return (
+            f"{self.stravovaci_skupina} – {self.get_skupina_sk_display()}: "
+            f"{self.norma_g_mesic} g"
+        )
+
+# sklad/models.py
+from users.models import StravovaciSkupina
+
+class ToleranceSpotrebnihoKose(models.Model):
+    """
+    Povolené rozmezí plnění SK v % pro danou stravovací skupinu.
+    Např. MASO 75–125, TUKY 75–100, OVO 75–None (bez horní hranice).
+    """
+
+    stravovaci_skupina = models.ForeignKey(
+        StravovaciSkupina,
+        on_delete=models.CASCADE,
+        verbose_name="Stravovací skupina",
+        related_name="tolerance_sk",
+    )
+    skupina_sk = models.CharField(
+        max_length=10,
+        choices=Surovina.SKUPINA_SK,
+        verbose_name="Skupina spotřebního koše",
+    )
+    min_pct = models.DecimalField(
+        max_digits=5,
+        decimal_places=1,
+        verbose_name="Minimální % plnění",
+        help_text="Dolní hranice tolerance v % (např. 75.0).",
+    )
+    max_pct = models.DecimalField(
+        max_digits=5,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        verbose_name="Maximální % plnění",
+        help_text="Horní hranice tolerance v %; prázdné = bez horní hranice.",
+    )
+
+    class Meta:
+        verbose_name = "Tolerance spotřebního koše"
+        verbose_name_plural = "Tolerance spotřebního koše"
+        unique_together = ("stravovaci_skupina", "skupina_sk")
+
+    def __str__(self):
+        if self.max_pct is None:
+            return f"{self.stravovaci_skupina} – {self.skupina_sk}: {self.min_pct}–∞ %"
+        return (
+            f"{self.stravovaci_skupina} – {self.skupina_sk}: "
+            f"{self.min_pct}–{self.max_pct} %"
+        )
+

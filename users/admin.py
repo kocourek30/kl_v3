@@ -19,6 +19,18 @@ from django.utils.html import format_html
 
 from .models import CustomUser, Vklad, StravovaciSkupina
 from objednavky.models import OrderItem, Order
+from sklad.models import ToleranceSpotrebnihoKose
+
+
+
+class ToleranceSKInline(admin.TabularInline):
+    model = ToleranceSpotrebnihoKose
+    extra = 0
+    min_num = 0
+    verbose_name = "Tolerance skupiny SK"
+    verbose_name_plural = "Tolerance spotřebního koše"
+    fields = ("skupina_sk", "min_pct", "max_pct")
+
 
 
 class CustomCSV(CSV):
@@ -284,4 +296,6 @@ class StravovaciSkupinaAdmin(admin.ModelAdmin):
     list_display = ("kod", "nazev", "typ_vzdelavani", "django_group")
     list_filter = ("typ_vzdelavani",)
     search_fields = ("kod", "nazev")
+    inlines = [ToleranceSKInline]  # ← DOPLNIT
+
 

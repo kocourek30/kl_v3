@@ -14,7 +14,8 @@ urlpatterns = [
     path('users/', include('users.urls', namespace='users')),
     path('vydej/', include('vydej_frontend.urls')),  
     path('accounts/profile/', RedirectView.as_view(url='/jidelnicek/dashboard/', permanent=False)),
-    
+    path("pokladna/", include("pokladna.urls")),
+
     
 ] 
 
