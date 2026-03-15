@@ -1,3 +1,81 @@
+/* schovat logo v horním navbaru */
 #jazzy-navbar img.brand-image {
     display: none !important;
+}
+
+/* ===== Normální sidebar ===== */
+
+#jazzy-logo.brand-link {
+    background-color: #ffffff !important;
+    background-image: none !important;
+    height: 50px !important;                /* nižší pruh, ať nepřekrývá menu */
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    padding-bottom: 0.25rem !important; /* malý dolní okraj pro lepší vertikální zarovnání loga */
+}
+
+#jazzy-logo .brand-image {
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    max-height: auto !important;            /* o něco méně než výška pruhu */
+    max-width: 90% !important;              /* malý vnitřní okraj */
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
+    opacity: 1 !important;
+}
+
+#jazzy-logo .brand-image.img-circle {
+    border-radius: 0 !important;
+}
+
+/* ===== Zmenšený (collapsed) sidebar ===== */
+
+.sidebar-mini.sidebar-collapse #jazzy-logo.brand-link {
+    height: 56px !important;                /* nižší pruh pro úzký sidebar */
+}
+
+.sidebar-mini.sidebar-collapse #jazzy-logo .brand-image {
+    max-height: 24px !important;            /* menší logo */
+    max-width: 100% !important;             /* využije šířku úzkého sidebaru */
+}
+
+/* Základní barva sidebaru (pozadí) */
+.main-sidebar,
+.main-sidebar .brand-link {
+    background-color: #343a40 !important;   /* nechávám tmavé pozadí */
+}
+
+/* Primární barva aktivní položky + hover (tvá oranžová) */
+.nav-sidebar .nav-link.active,
+.nav-sidebar > .nav-item.menu-open > .nav-link,
+.nav-sidebar .nav-link:hover {
+    background-color: #ff8800 !important;   /* sekundární barva */
+    color: #ffffff !important;
+}
+
+/* Ikony v aktivní/hover položce bílé */
+.nav-sidebar .nav-link.active .nav-icon,
+.nav-sidebar .nav-link:hover .nav-icon {
+    color: #ffffff !important;
+}
+
+/* Text submenu (dětské položky) na tmavém pozadí */
+.nav-sidebar .nav-treeview .nav-link {
+    background-color: transparent !important;
+    color: #f8f9fa !important;
+}
+
+/* Aktivní položka v nav-treeview (vnořené menu) */
+.nav-sidebar .nav-treeview .nav-link.active,
+.nav-sidebar .nav-treeview .nav-link:hover {
+    background-color: #ff8800 !important;
+    color: #ffffff !important;
+}
+
+/* Malý levý proužek u aktivní app (pokud ho Jazzmin vykresluje) */
+.nav-sidebar .nav-link.active {
+    border-left: 3px solid #ff8800 !important;
 }

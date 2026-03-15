@@ -45,6 +45,26 @@ class Surovina(models.Model):
         verbose_name="Jednotka",
     )
 
+    # volitelná průměrná/poslední cena za MJ pro rychlé přepočty
+    prumerna_cena_za_jednotku = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="Průměrná cena za jednotku",
+        help_text="Volitelné; může se aktualizovat z příjemek.",
+    )
+
+    # pro přepočet kusů na gramy v SK
+    hmotnost_ks_g = models.DecimalField(
+        max_digits=8,
+        decimal_places=1,
+        null=True,
+        blank=True,
+        verbose_name="Hmotnost 1 ks v gramech",
+        help_text="Použije se při výpočtu spotřebního koše pro jednotku 'ks'.",
+    )
+
     # Metadata pro spotřební koš
     skupina_sk = models.CharField(
         max_length=10,
@@ -81,10 +101,11 @@ class Surovina(models.Model):
             # pro tekuté věci typu mléko – 1 l ~ 1000 g
             return mnozstvi * ML_PER_L
         if self.jednotka == "ks":
-            # dočasně: kusy bereme jako „gramy“; případně rozšíříme
+            if self.hmotnost_ks_g:
+                return mnozstvi * self.hmotnost_ks_g
+            # fallback: kusy bereme jako „gramy“
             return mnozstvi
         return mnozstvi
-
 
 class StavSkladu(models.Model):
     surovina = models.OneToOneField(
@@ -139,6 +160,15 @@ class PohybSkladu(models.Model):
         decimal_places=3,
         verbose_name="Množství (kladné číslo)",
     )
+    # volitelné: cena za MJ v okamžiku pohybu (pro finanční historii)
+    cena_za_jednotku = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="Cena za jednotku",
+        help_text="Pro finanční evidenci skladu; u výdeje obvykle průměrná cena.",
+    )
     vydejka = models.ForeignKey(
         "Vydejka",
         on_delete=models.SET_NULL,
@@ -167,7 +197,16 @@ class PohybSkladu(models.Model):
         ordering = ["-datum"]
 
     def __str__(self):
-        return f"{self.get_typ_display()} – {self.mnozstvi} {self.surovina.jednotka} {self.surovina.nazev}"
+        return (
+            f"{self.get_typ_display()} – {self.mnozstvi} "
+            f"{self.surovina.jednotka} {self.surovina.nazev}"
+        )
+
+    @property
+    def celkova_cena(self):
+        if self.cena_za_jednotku is None:
+            return None
+        return (self.cena_za_jednotku or Decimal("0")) * (self.mnozstvi or Decimal("0"))
 
 
 class SkladDashboard(models.Model):
@@ -226,6 +265,12 @@ class PrijemSkladu(models.Model):
         blank=True,
         verbose_name="Poznámka",
     )
+    cislo_dokladu = models.CharField(
+        max_length=50,
+        blank=True,
+        verbose_name="Číslo dokladu",
+        help_text="Číslo faktury / dodacího listu (nepovinné).",
+    )
     vytvoril = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -244,6 +289,16 @@ class PrijemSkladu(models.Model):
 
     def __str__(self):
         return f"Příjem #{self.id} – {self.datum.strftime('%d.%m.%Y')}"
+
+    @property
+    def celkova_cena(self):
+        agg = self.polozky.aggregate(
+            suma=models.Sum(
+                models.F("mnozstvi") * models.F("jednotkova_cena"),
+                output_field=models.DecimalField(max_digits=12, decimal_places=2),
+            )
+        )
+        return agg["suma"] or Decimal("0")
 
 
 class PolozkaPrijmu(models.Model):
@@ -264,6 +319,12 @@ class PolozkaPrijmu(models.Model):
         verbose_name="Množství",
         help_text="Ve stejné jednotce jako surovina.",
     )
+    jednotkova_cena = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        verbose_name="Jednotková cena",
+        help_text="Cena za 1 MJ (bez DPH nebo dle dohody).",
+    )
 
     class Meta:
         verbose_name = "Položka příjmu"
@@ -271,6 +332,10 @@ class PolozkaPrijmu(models.Model):
 
     def __str__(self):
         return f"{self.mnozstvi} {self.surovina.jednotka} {self.surovina.nazev}"
+
+    @property
+    def celkova_cena(self):
+        return (self.jednotkova_cena or Decimal("0")) * (self.mnozstvi or Decimal("0"))
 
 
 class Inventura(models.Model):
@@ -550,4 +615,13 @@ class ToleranceSpotrebnihoKose(models.Model):
             f"{self.stravovaci_skupina} – {self.skupina_sk}: "
             f"{self.min_pct}–{self.max_pct} %"
         )
+
+class ReportNakladySkladu(models.Model):
+    """
+    Pseudo-model pro report nákladů na suroviny v adminu.
+    """
+    class Meta:
+        managed = False
+        verbose_name = "Report nákladů na suroviny"
+        verbose_name_plural = "Report nákladů na suroviny"
 

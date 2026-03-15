@@ -1,0 +1,82 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="row mb-4">
+    <div class="col">
+      <h1 class="mb-2">Přepočty cen</h1>
+      <p class="text-muted">
+        Nástroje pro přepočet cen jídel a přehled historie přepočtů.
+      </p>
+    </div>
+  </div>
+
+  <div class="row">
+    <!-- Karta: Spustit přepočet cen -->
+    <div class="col-md-4 mb-3">
+      <div class="card border-success h-100 shadow-sm">
+        <div class="card-body d-flex flex-column">
+          <h5 class="card-title">
+            <i class="fas fa-play-circle text-success me-2"></i>
+            Spustit přepočet cen
+          </h5>
+          <p class="card-text text-muted">
+            Spustí znovuvýpočet prodejných cen jídel podle aktuálních nákladů
+            na suroviny.
+          </p>
+          <div class="mt-auto">
+            <a href="{% url 'admin:objednavky_order_price_recalculation' %}"
+               class="btn btn-success">
+              Spustit přepočet
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Karta: Historie přepočtů -->
+    <div class="col-md-4 mb-3">
+      <div class="card border-primary h-100 shadow-sm">
+        <div class="card-body d-flex flex-column">
+          <h5 class="card-title">
+            <i class="fas fa-history text-primary me-2"></i>
+            Historie přepočtů
+          </h5>
+          <p class="card-text text-muted">
+            Seznam všech proběhlých přepočtů včetně času, uživatele
+            a základních souhrnných informací.
+          </p>
+          <div class="mt-auto">
+            <a href="{% url 'admin:objednavky_pricerecalculationlog_changelist' %}"
+               class="btn btn-outline-primary">
+              Otevřít historii
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Karta: Detaily přepočtů -->
+    <div class="col-md-4 mb-3">
+      <div class="card border-info h-100 shadow-sm">
+        <div class="card-body d-flex flex-column">
+          <h5 class="card-title">
+            <i class="fas fa-list text-info me-2"></i>
+            Detaily přepočtů
+          </h5>
+          <p class="card-text text-muted">
+            Detailní záznamy o změnách cen jednotlivých jídel v rámci
+            jednotlivých přepočtů.
+          </p>
+          <div class="mt-auto">
+            <a href="{% url 'admin:objednavky_pricerecalculationdetail_changelist' %}"
+               class="btn btn-outline-info">
+              Zobrazit detaily
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -16,6 +16,8 @@ from django.urls import path
 from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import never_cache
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -47,14 +49,93 @@ from .models import (
     Vydejka,
     PolozkaVydejky,
     NormaSpotrebnihoKose,
+    ReportNakladySkladu,
 )
+
 from .services import (
     spocitej_spotrebu_sk_mesic,
     priprav_radky_spotrebi_kos_tabulka,
+    spocitej_naklady_mesic,
+    priprav_naklady_podle_skupin_sk,
 )
 
+from .forms import SpotrebniKosForm
+
+
+class MesicniNakladyForm(forms.Form):
+    rok = forms.IntegerField(label="Rok")
+    mesic = forms.IntegerField(min_value=1, max_value=12, label="Měsíc")
+    stravovaci_skupina = forms.ModelChoiceField(
+        queryset=StravovaciSkupina.objects.all(),
+        required=False,
+        label="Stravovací skupina",
+        help_text="Volitelné – bez výběru se počítají náklady za všechny skupiny.",
+    )
+
+
+@admin.register(ReportNakladySkladu)
+class ReportNakladySkladuAdmin(admin.ModelAdmin):
+    """
+    Pseudo-model pro zobrazení reportu v adminu.
+    """
+
+    def get_queryset(self, request):
+        return ReportNakladySkladu.objects.none()
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_staff
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path(
+                "",
+                self.admin_site.admin_view(self.report_view),
+                name="sklad_report_naklady",
+            ),
+        ]
+        return custom + urls
+
+    def report_view(self, request):
+        from datetime import date
+
+        today = date.today()
+        initial = {"rok": today.year, "mesic": today.month}
+        form = MesicniNakladyForm(request.GET or None, initial=initial)
+
+        souhrnne_naklady = None
+        naklady_podle_sk = None
+
+        if form.is_valid():
+            rok = form.cleaned_data["rok"]
+            mesic = form.cleaned_data["mesic"]
+            skupina = form.cleaned_data["stravovaci_skupina"]
+
+            souhrnne_naklady = spocitej_naklady_mesic(rok, mesic, skupina)
+            naklady_podle_sk = priprav_naklady_podle_skupin_sk(rok, mesic, skupina)
+
+        context = dict(
+            self.admin_site.each_context(request),
+            title="Report nákladů na suroviny",
+            form=form,
+            souhrnne_naklady=souhrnne_naklady,
+            naklady_podle_sk=naklady_podle_sk,
+        )
+        return TemplateResponse(
+            request,
+            "admin/sklad/report_naklady.html",
+            context,
+        )
+
+
 # -------------------------------------------------------------------
-# Měsíční report spotřebního koše
+# Měsíční report spotřebního koše – definice norem
 # -------------------------------------------------------------------
 
 
@@ -166,15 +247,17 @@ def spocitej_spotrebu_pro_vydejku(vydejka: Vydejka):
 
 
 # -------------------------------------------------------------------
-# Skladový dashboard + měsíční spotřební koš
+# Skladový dashboard + měsíční / libovolný spotřební koš
 # -------------------------------------------------------------------
 
 
 @admin.register(SkladDashboard)
 class SkladDashboardAdmin(admin.ModelAdmin):
+    # defaultní dashboard (denní přehled) – tvoje původní šablona
     change_list_template = "admin/sklad/dashboard.html"
 
     def get_queryset(self, request):
+        # pseudo-model
         return SkladDashboard.objects.none()
 
     def has_add_permission(self, request):
@@ -190,42 +273,89 @@ class SkladDashboardAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         custom = [
             path(
-                "spotrebni-kos/",
-                self.admin_site.admin_view(self.mesicni_spotrebni_kos_view),
+                "mesicni-spotrebni-kos/",
+                self.admin_site.admin_view(self.spotrebni_kos_view),
                 name="sklad_mesicni_spotrebni_kos",
             ),
         ]
         return custom + urls
 
-    def mesicni_spotrebni_kos_view(self, request):
-        form = MesicniSKForm(request.GET or None)
-        rows = None
+    @method_decorator(never_cache)
+    def spotrebni_kos_view(self, request):
+        """
+        Report spotřebního koše za zvolené období:
+        - period_type == "month": používá rok+měsíc z formuláře
+        - period_type == "range": používá date_from/date_to
+        """
+        form = SpotrebniKosForm(request.GET or None)
+
+        rows = []
         circle_row = None
 
         if form.is_valid():
-            rok = form.cleaned_data["rok"]
-            mesic = form.cleaned_data["mesic"]
-            skupina = form.cleaned_data["stravovaci_skupina"]
+            # zjistíme zvolený typ období
+            period_type = form.cleaned_data.get("period_type")
 
-            if skupina is not None:
-                # 1) počet strávníkoden (porcí) za měsíc
-                stravnikodny = spocitej_stravnikodny_mesic(rok, mesic, skupina)
+            # z formuláře si vždy vezmeme normalizované období
+            date_from, date_to, label = form.get_period()
 
-                # 2) řádky tabulky – vše v gramech
-                rows = priprav_radky_spotrebi_kos_tabulka(
-                    rok=rok,
-                    mesic=mesic,
-                    stravovaci_skupina=skupina,
-                    pocet_stravniku=int(stravnikodny),
-                )
+            # případná stravovací skupina (pokud ji ve formu máš)
+            stravovaci_skupina = form.cleaned_data.get("stravovaci_skupina")
 
-                # 3) vyber řádek pro případný graf
-                for r in rows:
-                    if r["norma_g"] or r["skutecnost_g"]:
-                        circle_row = r
-                        break
+            # --------------------------------------------------------
+            # 1) spočítat strávníkodny (porce) za dané období
+            # --------------------------------------------------------
+            qs = OrderItem.objects.filter(
+                order__datum_vydeje__gte=date_from,
+                order__datum_vydeje__lte=date_to,
+            )
+            if stravovaci_skupina is not None:
+                qs = qs.filter(order__user__stravovaci_skupina=stravovaci_skupina)
+
+            stravnikodny = qs.aggregate(celkem=Sum("quantity"))["celkem"] or 0
+
+            # --------------------------------------------------------
+            # 2) připravit řádky tabulky spotřebního koše
+            # --------------------------------------------------------
+            # Původní měsíční logika používá rok/mesic – pro měsíční režim
+            # je vezmeme z formuláře, pro rozsah použijeme začátek období.
+            if period_type == form.PERIOD_MONTH:
+                rok = form.cleaned_data["year"]
+                mesic = form.cleaned_data["month"]
             else:
-                rows = []
+                rok = date_from.year
+                mesic = date_from.month
+
+            # Zatím předpokládáme, že připrav_radky_spotrebi_kos_tabulka
+            # umí minimálně (rok, mesic, stravovaci_skupina, pocet_stravniku)
+            # a následně ji rozšíříme i o date_from/date_to.
+            rows = priprav_radky_spotrebi_kos_tabulka(
+                rok=rok,
+                mesic=mesic,
+                stravovaci_skupina=stravovaci_skupina,
+                pocet_stravniku=int(stravnikodny),
+                # po úpravě funkce doplníme:
+                # date_from=date_from,
+                # date_to=date_to,
+            )
+
+            # --------------------------------------------------------
+            # 3) vybrat řádek pro „kruh“ plnění
+            # --------------------------------------------------------
+            for r in rows:
+                norma = r.get("norma_g")
+                skutecnost = r.get("skutecnost_g")
+                if norma or skutecnost:
+                    plneni = r.get("skutecnost_pct")
+                    circle_row = type(
+                        "Row",
+                        (),
+                        {
+                            "label": label,
+                            "plneni": plneni,
+                        },
+                    )()
+                    break
 
         context = dict(
             self.admin_site.each_context(request),
@@ -240,81 +370,6 @@ class SkladDashboardAdmin(admin.ModelAdmin):
             context,
         )
 
-    def changelist_view(self, request, extra_context=None):
-        extra_context = extra_context or {}
-
-        date_str = request.GET.get("date")
-        if date_str:
-            try:
-                target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-            except ValueError:
-                target_date = timezone.localdate()
-        else:
-            target_date = timezone.localdate()
-
-        items_all = OrderItem.objects.select_related(
-            "menu_item__jidlo"
-        ).filter(order__datum_vydeje=target_date)
-        items_issued = items_all.filter(vydano=True)
-
-        expected = defaultdict(lambda: 0)
-        real = defaultdict(lambda: 0)
-
-        for item in items_all.prefetch_related(
-            "menu_item__jidlo__receptura__surovina"
-        ):
-            jidlo = item.menu_item.jidlo
-            quantity = item.quantity
-            for pol in jidlo.receptura.all():
-                key = pol.surovina_id
-                mnozstvi = pol.mnozstvi_na_porci * quantity
-                expected[key] += mnozstvi
-
-        for item in items_issued.prefetch_related(
-            "menu_item__jidlo__receptura__surovina"
-        ):
-            jidlo = item.menu_item.jidlo
-            quantity = item.quantity
-            for pol in jidlo.receptura.all():
-                key = pol.surovina_id
-                mnozstvi = pol.mnozstvi_na_porci * quantity
-                real[key] += mnozstvi
-
-        rows = []
-        suroviny = Surovina.objects.select_related("stav").all()
-        suroviny_by_id = {s.id: s for s in suroviny}
-
-        for surovina_id, exp in expected.items():
-            s = suroviny_by_id.get(surovina_id)
-            if not s:
-                continue
-            real_mnozstvi = real.get(surovina_id, 0)
-            stav = getattr(s, "stav", None)
-            stav_mnozstvi = stav.mnozstvi if stav else None
-            min_mnozstvi = stav.min_mnozstvi if stav else None
-            pod_min = (
-                stav is not None
-                and stav_mnozstvi is not None
-                and min_mnozstvi is not None
-                and stav_mnozstvi < min_mnozstvi
-            )
-
-            rows.append(
-                {
-                    "surovina": s,
-                    "expected": exp,
-                    "real": real_mnozstvi,
-                    "stav": stav_mnozstvi,
-                    "min": min_mnozstvi,
-                    "pod_min": pod_min,
-                }
-            )
-
-        extra_context["target_date"] = target_date
-        extra_context["rows"] = rows
-
-        return super().changelist_view(request, extra_context=extra_context)
-
 
 # -------------------------------------------------------------------
 # Základní sklad
@@ -323,10 +378,34 @@ class SkladDashboardAdmin(admin.ModelAdmin):
 
 @admin.register(Surovina)
 class SurovinaAdmin(admin.ModelAdmin):
-    list_display = ("nazev", "jednotka", "skupina_sk", "koeficient_sk")
+    list_display = (
+        "nazev",
+        "jednotka",
+        "skupina_sk",
+        "koeficient_sk",
+        "hmotnost_ks_g_display",
+        "prumerna_cena_za_jednotku",
+    )
     list_filter = ("jednotka", "skupina_sk")
     search_fields = ("nazev",)
-    fields = ("nazev", "jednotka", "skupina_sk", "koeficient_sk")
+    fields = (
+        "nazev",
+        "jednotka",
+        "skupina_sk",
+        "koeficient_sk",
+        "hmotnost_ks_g",
+        "prumerna_cena_za_jednotku",
+    )
+    readonly_fields = ("prumerna_cena_za_jednotku",)
+
+    def hmotnost_ks_g_display(self, obj):
+        if obj.jednotka != "ks":
+            return "-"
+        if obj.hmotnost_ks_g is None:
+            return "nenastaveno"
+        return f"{obj.hmotnost_ks_g} g"
+
+    hmotnost_ks_g_display.short_description = "g / ks"
 
 
 @admin.register(StavSkladu)
@@ -386,20 +465,44 @@ class PrijemSkladuAdmin(admin.ModelAdmin):
     def response_change(self, request, obj):
         if obj.uzavreny:
             for pol in obj.polozky.select_related("surovina").all():
-                stav, _ = StavSkladu.objects.get_or_create(
-                    surovina=pol.surovina,
-                    defaults={"mnozstvi": 0, "min_mnozstvi": 0},
+                surovina = pol.surovina
+
+                stav, _ = StavSkladu.objects.select_for_update().get_or_create(
+                    surovina=surovina,
+                    defaults={"mnozstvi": Decimal("0"), "min_mnozstvi": Decimal("0")},
                 )
-                stav.mnozstvi = stav.mnozstvi + pol.mnozstvi
+
+                st_mnozstvi = stav.mnozstvi or Decimal("0")
+                st_cena = surovina.prumerna_cena_za_jednotku or Decimal("0")
+
+                pr_mnozstvi = pol.mnozstvi or Decimal("0")
+                pr_cena = pol.jednotkova_cena or Decimal("0")
+
+                nove_mnozstvi = st_mnozstvi + pr_mnozstvi
+
+                if nove_mnozstvi > 0 and pr_cena is not None:
+                    if st_mnozstvi > 0 and st_cena is not None:
+                        nova_cena = (
+                            st_mnozstvi * st_cena + pr_mnozstvi * pr_cena
+                        ) / nove_mnozstvi
+                    else:
+                        nova_cena = pr_cena
+
+                    surovina.prumerna_cena_za_jednotku = nova_cena
+                    surovina.save(update_fields=["prumerna_cena_za_jednotku"])
+
+                stav.mnozstvi = nove_mnozstvi
                 stav.save(update_fields=["mnozstvi"])
 
                 PohybSkladu.objects.create(
-                    surovina=pol.surovina,
+                    surovina=surovina,
                     typ="PRIJEM",
-                    mnozstvi=pol.mnozstvi,
+                    mnozstvi=pr_mnozstvi,
+                    cena_za_jednotku=pr_cena,
                     prijem=obj,
                     poznamka=f"Příjem #{obj.id}",
                 )
+
         return super().response_change(request, obj)
 
     @transaction.atomic
@@ -439,15 +542,17 @@ class InventuraAdmin(admin.ModelAdmin):
             self._napln_polozky_ze_stavu(obj)
 
     def _napln_polozky_ze_stavu(self, inventura):
-        stavy = StavSkladu.objects.select_related("surovina").all()
+        suroviny = Surovina.objects.select_related("stav").all()
         polozky = []
-        for stav in stavy:
+        for s in suroviny:
+            stav = getattr(s, "stav", None)
+            stav_mnozstvi = stav.mnozstvi if stav else Decimal("0")
             polozky.append(
                 PolozkaInventury(
                     inventura=inventura,
-                    surovina=stav.surovina,
-                    stav_pred=stav.mnozstvi,
-                    fyzicky_stav=stav.mnozstvi,
+                    surovina=s,
+                    stav_pred=stav_mnozstvi,
+                    fyzicky_stav=stav_mnozstvi,
                     rozdil=Decimal("0"),
                 )
             )
@@ -455,16 +560,14 @@ class InventuraAdmin(admin.ModelAdmin):
 
     @transaction.atomic
     def response_change(self, request, obj):
-        if "uzavrena" in obj.__dict__ and obj.uzavrena:
-            prev = Inventura.objects.get(pk=obj.pk)
-            if not prev.uzavrena:
-                for pol in obj.polozky.select_related("surovina").all():
-                    stav, _ = StavSkladu.objects.get_or_create(
-                        surovina=pol.surovina,
-                        defaults={"mnozstvi": 0, "min_mnozstvi": 0},
-                    )
-                    stav.mnozstvi = pol.fyzicky_stav
-                    stav.save(update_fields=["mnozstvi"])
+        if obj.uzavrena:
+            for pol in obj.polozky.select_related("surovina").all():
+                stav, _ = StavSkladu.objects.get_or_create(
+                    surovina=pol.surovina,
+                    defaults={"mnozstvi": 0, "min_mnozstvi": 0},
+                )
+                stav.mnozstvi = pol.fyzicky_stav
+                stav.save(update_fields=["mnozstvi"])
         return super().response_change(request, obj)
 
 
@@ -600,9 +703,10 @@ class VydejkaAdmin(admin.ModelAdmin):
     @admin.action(
         description="Uzavřít výdejky a promítnout do skladu (podle teoretické spotřeby)"
     )
+    @transaction.atomic
     def uzavrit_a_odepsat_ze_skladu(self, request, queryset):
         uzavreno = 0
-        for vydejka in queryset:
+        for vydejka in queryset.select_for_update():
             if vydejka.uzavrena:
                 continue
 
@@ -612,25 +716,28 @@ class VydejkaAdmin(admin.ModelAdmin):
                 if mnozstvi <= 0:
                     continue
 
-                surovina = Surovina.objects.get(pk=surovina_id)
+                surovina = Surovina.objects.select_related("stav").get(pk=surovina_id)
+                prumerna_cena = surovina.prumerna_cena_za_jednotku
 
-                stav, _ = StavSkladu.objects.get_or_create(
+                stav, _ = StavSkladu.objects.select_for_update().get_or_create(
                     surovina=surovina,
-                    defaults={"mnozstvi": Decimal("0")},
+                    defaults={"mnozstvi": Decimal("0"), "min_mnozstvi": Decimal("0")},
                 )
-                stav.mnozstvi = (stav.mnozstvi or Decimal("0")) - mnozstvi
-                stav.save()
+
+                stav.mnozstvi = (stav.mnozstvi or Decimal("0")) - (mnozstvi or Decimal("0"))
+                stav.save(update_fields=["mnozstvi"])
 
                 PohybSkladu.objects.create(
                     surovina=surovina,
                     typ="VYDEJ",
                     mnozstvi=mnozstvi,
+                    cena_za_jednotku=prumerna_cena,
                     vydejka=vydejka,
                     poznamka=f"Výdej podle výdejky #{vydejka.id}",
                 )
 
             vydejka.uzavrena = True
-            vydejka.save()
+            vydejka.save(update_fields=["uzavrena"])
             uzavreno += 1
 
         self.message_user(

@@ -3,17 +3,12 @@ import secrets
 from pathlib import Path
 from dotenv import load_dotenv
 
-
-print("DEBUG from env:", os.getenv('DJANGO_DEBUG'))
-print("SECRET from env:", os.getenv('DJANGO_SECRET_KEY'))
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 # --- SECURITY ---
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
-
 if not SECRET_KEY:
     SECRET_KEY = 'django-insecure-dev-key-temporary'
 
@@ -89,7 +84,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# --- DATABASE ---
+# --- DATABASE (default: Postgres, v DEBUG dole přepnuto na SQLite) ---
 DATABASES = {
     'default': {
         'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.postgresql'),
@@ -103,6 +98,9 @@ DATABASES = {
         },
     }
 }
+
+if not DEBUG and not DATABASES['default']['PASSWORD']:
+    raise ValueError("DB_PASSWORD must be set in production!")
 
 # --- STATIC & MEDIA ---
 STATIC_URL = '/static/'
@@ -141,26 +139,6 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'kliknijidlo.wsgi.application'
-
-# Database (duplicitní blok nechávám, jak máš – ale můžeš si ho sloučit)
-DATABASES = {
-    'default': {
-        'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.postgresql'),
-        'NAME': os.getenv('DB_NAME', 'kliknijidlo_dev'),
-        'USER': os.getenv('DB_USER', 'kliknijidlo_user'),
-        'PASSWORD': os.getenv('DB_PASSWORD', 'dev_password_123'),
-        'HOST': os.getenv('DB_HOST', 'db'),
-        'PORT': os.getenv('DB_PORT', '5432'),
-        'OPTIONS': {
-            'sslmode': os.getenv('DB_SSLMODE', 'prefer'),
-        },
-    }
-}
-
-if not DEBUG and not DATABASES['default']['PASSWORD']:
-    raise ValueError("DB_PASSWORD must be set in production!")
-
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -179,13 +157,6 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
-
-LANGUAGE_CODE = 'cs-cz'
-TIME_ZONE = 'Europe/Prague'
-USE_I18N = True
-USE_TZ = True
-
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Logging configuration
 LOGGING = {
@@ -289,20 +260,25 @@ ALLOWED_UPLOAD_EXTENSIONS = [
 JAZZMIN_SETTINGS = {
     "site_title": "KlikniJídlo Admin",
     "site_header": "KlikniJídlo",
-    "site_brand": "Kliknijidlo.cz",
+    "site_brand": "",
+    # logo v top baru – soubor dej do static/img/kliknijidlo-logo.png
+    "site_logo": "images/kliknijidlo-logo.png",
     "show_ui_builder": DEBUG,
-    "show_sidebar": False,          # sidebar vůbec nezobrazovat
+    # sidebar chceme, aby v appce zůstával kontext
+    "show_sidebar": True,
     "navigation_expanded": False,
     "changeform_format": "horizontal_tabs",
     "changeform_format_overrides": {
-        # příklady:
-        # "jidelnicek.Jidlo": "vertical_tabs",
+        # např.: "jidelnicek.Jidlo": "vertical_tabs",
         # "sklad.Vydejka": "horizontal_tabs",
     },
     "brand_logo": None,
 
+   
+
     "icons": {
         # === APP IKONY ===
+        "auth": "fas fa-shield-alt",
         "users": "fas fa-user-friends",
         "jidelnicek": "fas fa-utensils",
         "objednavky": "fas fa-shopping-cart",
@@ -311,63 +287,99 @@ JAZZMIN_SETTINGS = {
         "dotace": "fas fa-file-contract",
         "canteen_settings": "fas fa-gear",
         "frontend": "fas fa-globe",
-        "reporty": "fas fa-chart-line",
+        "reporty": "fas fa-chart-mixed",
         "prepocty": "fas fa-calculator",
         "sklad": "fas fa-warehouse",
         "pokladna": "fas fa-cash-register",
+        "import_export": "fas fa-file-import",
+        "widget_tweaks": "fas fa-wand-magic-sparkles",
+        "vydej_frontend": "fas fa-window-restore",
 
-        # === MODEL IKONY (původní) ===
-        "auth.User": "fas fa-user-circle",
-        "auth.Group": "fas fa-users-cog",
-        "users.CustomUser": "fas fa-id-card-alt",
+        # === USERS ===
+        "users.StravovaciSkupina": "fas fa-users",
         "users.Vklad": "fas fa-cash-register",
+        "users.CustomUser": "fas fa-id-card-alt",
 
-        "dotace.DotacniPolitika": "fas fa-file-contract",
-        "dotace.SkupinoveNastaveni": "fas fa-users-gear",
-
+        # === JIDELNICEK ===
         "jidelnicek.Alergen": "fas fa-triangle-exclamation",
         "jidelnicek.DruhJidla": "fas fa-utensils",
-        "jidelnicek.Jidelnicek": "fas fa-calendar-days",
         "jidelnicek.Jidlo": "fas fa-bowl-food",
+        "jidelnicek.Jidelnicek": "fas fa-calendar-days",
+        "jidelnicek.PolozkaJidelnicku": "fas fa-list-ul",
 
+        # === OBJEDNAVKY ===
         "objednavky.Order": "fas fa-shopping-basket",
         "objednavky.OrderItem": "fas fa-receipt",
+        "objednavky.UserRFID": "fas fa-id-card",
+        "objednavky.PriceRecalculationLog": "fas fa-clipboard-list",
+        "objednavky.PriceRecalculationDetail": "fas fa-clipboard-check",
 
+        # === VYDEJ ===
+        "vydej.VydejOrder": "fas fa-shopping-cart",
+        "vydej.PrehledProKuchyni": "fas fa-kitchen-set",
+        "vydej.VydejSettings": "fas fa-sliders-h",
+        "vydej.VydejniUctenka": "fas fa-receipt",
+        "vydej.PolozkaUctenky": "fas fa-list-ol",
+        "vydej.StornovaneObjednavky": "fas fa-trash-alt",
+
+        # === VYDEJ_JIDEL ===
+        "vydej_jidel.VydajiciCas": "fas fa-clock-rotate-left",
+        "vydej_jidel.VydejSettings": "fas fa-stopwatch-20",
+
+        # === DOTACE ===
+        "dotace.DotacniPolitika": "fas fa-file-contract",
+        "dotace.DotaceProJidelniskouSkupinu": "fas fa-hand-holding-heart",
+        "dotace.SkupinoveNastaveni": "fas fa-users-gear",
+        "dotace.Dotace": "fas fa-piggy-bank",
+
+        # === CANTEEN_SETTINGS ===
         "canteen_settings.CanteenContact": "fas fa-building",
+        "canteen_settings.OrderClosingTime": "fas fa-stopwatch",
         "canteen_settings.GroupOrderLimit": "fas fa-user-friends",
         "canteen_settings.MealPickupTime": "fas fa-clock",
-        "canteen_settings.OrderClosingTime": "fas fa-stopwatch",
-        "canteen_settings.OperatingExceptions": "fas fa-triangle-exclamation",
         "canteen_settings.OperatingDays": "fas fa-circle-check",
+        "canteen_settings.OperatingExceptions": "fas fa-triangle-exclamation",
 
-        "vydej_jidel.VydajiciCas": "fas fa-clock-rotate-left",
-        "vydej.Vydej": "fas fa-box-open",
-        "vydej.VydejOrder": "fas fa-shopping-cart",
-        "vydej.VydejniUctenka": "fas fa-receipt",
-        "vydej.StornovaneObjednavky": "fas fa-trash-alt",
-        "vydej.PrehledProKuchyni": "fas fa-kitchen-set",
+        # === FRONTEND ===
+        # žádné modely (zatím) – app ikona už je výše
 
-        "frontend.Page": "fas fa-file-lines",
-        "frontend.Setting": "fas fa-sliders",
+        # === REPORTY / PREPOCTY ===
+        "reporty.ReportDummy": "fas fa-chart-pie",
+        "prepocty.PrepoctyDummy": "fas fa-calculator",
 
-        "reporty": "fas fa-chart-mixed",
-        "auth": "fas fa-shield-alt",
-
+        # === SKLAD ===
         "sklad.Surovina": "fas fa-carrot",
         "sklad.StavSkladu": "fas fa-boxes-stacked",
-        "sklad.RecepturaPolozka": "fas fa-list-ul",
+        "sklad.PohybSkladu": "fas fa-right-left",
         "sklad.SkladDashboard": "fas fa-warehouse",
+        "sklad.RecepturaPolozka": "fas fa-list-ul",
+        "sklad.PrijemSkladu": "fas fa-truck-loading",
+        "sklad.PolozkaPrijmu": "fas fa-plus-square",
         "sklad.Inventura": "fas fa-clipboard-check",
         "sklad.PolozkaInventury": "fas fa-list-check",
         "sklad.InventurniDoklad": "fas fa-file-invoice",
-        "sklad.PrijemSkladu": "fas fa-truck-loading",
-        "sklad.PolozkaPrijmu": "fas fa-plus-square",
+        "sklad.Vydejka": "fas fa-boxes-packing",
+        "sklad.PolozkaVydejky": "fas fa-list-ol",
+        "sklad.ReportSpotrebniKos": "fas fa-chart-pie",
+        "sklad.NormaSpotrebnihoKose": "fas fa-scale-balanced",
+        "sklad.ToleranceSpotrebnihoKose": "fas fa-sliders",
+        "sklad.ReportNakladySkladu": "fas fa-money-bill-trend-up",
 
-        "reporty.ReportDummy": "fas fa-chart-pie",
-        "objednavky.PriceRecalculationDetail": "fas fa-clipboard-check",
-        "objednavky.PriceRecalculationLog": "fas fa-clipboard-list",
-        "vydej_jidel.VydejSettings": "fas fa-stopwatch-20",
+        # === POKLADNA ===
+        "pokladna.DPHSkupina": "fas fa-percent",
+        "pokladna.PLUKategorie": "fas fa-layer-group",
+        "pokladna.PLUPolozka": "fas fa-barcode",
+        "pokladna.Pokladna": "fas fa-cash-register",
+        "pokladna.PokladniDoklad": "fas fa-file-invoice-dollar",
+        "pokladna.PokladniPolozka": "fas fa-list-ol",
+        "pokladna.PokladnaTile": "fas fa-square",
+
+        # === AUTH fallback ===
+        "auth.User": "fas fa-user-circle",
+        "auth.Group": "fas fa-users-cog",
     },
+
+
 
     "order_with_respect_to": [
         "users",
@@ -385,28 +397,72 @@ JAZZMIN_SETTINGS = {
         "pokladna",
     ],
 
-    # >>> HORNÍ HORIZONTÁLNÍ MENU <<<
+    # >>> HORNÍ HORIZONTÁLNÍ MENU – tlačítka na dashboardy appek <<<
     "topmenu_links": [
         {
-            "name": "Dashboard Klikni jídlo",
+            "name": "Dashboard",
             "url": "admin:index",
             "permissions": ["auth.view_user"],
             "icon": "fas fa-home",
         },
-
-        # Aplikace jako dropdowny
-        {"app": "users"},
-        {"app": "jidelnicek"},
-        {"app": "objednavky"},
-        {"app": "vydej"},
-        {"app": "vydej_jidel"},
-        {"app": "dotace"},
-        {"app": "canteen_settings"},
-        {"app": "frontend"},
-        {"app": "reporty"},
-        {"app": "prepocty"},
-        {"app": "sklad"},
-        {"app": "pokladna"},
+        # každá appka míří na svůj „dashboard“ (changelist daného pseudo‑modelu)
+        {
+            "name": "Uživatelé",
+            "url": "admin:users_customuser_changelist",
+            "icon": "fas fa-user-friends",
+        },
+        {
+            "name": "Jídelníček",
+            "url": "admin:jidelnicek_jidelnicek_changelist",
+            "icon": "fas fa-utensils",
+        },
+        {
+            "name": "Objednávky",
+            "url": "admin:objednavky_order_changelist",
+            "icon": "fas fa-shopping-cart",
+        },
+        {
+            "name": "Výdej",
+            "url": "admin:vydej_prehledprokuchyni_changelist",
+            "icon": "fas fa-dolly",
+        },
+        {
+            "name": "Výdej jídelna",
+            "url": "admin:vydej_jidel_vydejsettings_change",
+            "icon": "fas fa-concierge-bell",
+        },
+        {
+            "name": "Dotace",
+            "url": "admin:dotace_dotacnipolitika_changelist",
+            "icon": "fas fa-file-contract",
+        },
+        {
+            "name": "Nastavení jídelny",
+            "url": "admin:canteen_settings_canteencontact_changelist",
+            "icon": "fas fa-gear",
+        },
+        {
+            "name": "Frontend",
+            "url": "admin:frontend_page_changelist",
+            "icon": "fas fa-globe",
+        },
+        {
+            "name": "Reporty",
+            "url": "admin:reporty_reportdummy_changelist",
+            "icon": "fas fa-chart-line",
+        },
+        {
+            "name": "Přepočty",
+            "url": "admin:prepocty_prepoctydummy_changelist",
+            "icon": "fas fa-calculator",
+        },
+        {
+            "name": "Sklad",
+            "url": "admin:sklad_skladdashboard_changelist",
+            "icon": "fas fa-warehouse",
+        },
+        # Pokladnu si doplníš podle modelu, který chceš jako vstupní
+        # {"name": "Pokladna", "url": "admin:pokladna_xxx_changelist", "icon": "fas fa-cash-register"},
     ],
 
     "custom_css": "css/custom-admin.css",
@@ -479,6 +535,7 @@ JAZZMIN_UI_TWEAKS = {
     "actions_sticky_top": False,
 }
 
+# DEBUG: lokální SQLite místo Postgresu
 if os.getenv("DJANGO_DEBUG", "False") == "True":
     DATABASES = {
         "default": {
