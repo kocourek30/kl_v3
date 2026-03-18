@@ -17,6 +17,7 @@ SKUPINY_SK_PORADI = [
     ("RYBY", "ryby"),
     ("MLEX", "mléko a mléčné výrobky"),
     ("OBIL", "obiloviny"),
+    ("COBIL", "celozrnné obiloviny"),
     ("LUST", "luštěniny"),
     ("ZEL", "zelenina"),
     ("OVO", "ovoce"),
@@ -59,6 +60,7 @@ def spocitej_spotrebu_sk_mesic(rok: int, mesic: int, stravovaci_skupina=None):
         koef = s.koeficient_sk or Decimal("1")
         sk_gramy = mnozstvi_g * koef
 
+        # celozrnné obiloviny – pokud máš podíl, můžeš později rozdělit OBIL/COBIL
         vysledky[s.skupina_sk] += sk_gramy
 
     return vysledky
@@ -101,7 +103,7 @@ def priprav_radky_spotrebi_kos_tabulka(
     # 1) SKUTEČNOST – dvě větve podle toho, zda máme date_from/date_to
     # ------------------------------------------------------------
     if date_from and date_to:
-        # režim libovolného období – počítáme z objednávek
+        # režim libovolného období – počítáme z objednávek + receptur
         qs_orders = OrderItem.objects.filter(
             order__datum_vydeje__gte=date_from,
             order__datum_vydeje__lte=date_to,
@@ -203,6 +205,97 @@ def priprav_radky_spotrebi_kos_tabulka(
         )
 
     return radky
+
+
+# -------------------------------------------------------------------
+# Doplňkové výpočty – masné výrobky, bio, volný cukr
+# -------------------------------------------------------------------
+
+
+def spocitej_podil_masnych_vyrobku(date_from, date_to, stravovaci_skupina=None):
+    """
+    Podíl masných výrobků v rámci skupiny MASO.
+    Vrací (celkem_maso_g, masne_vyrobky_g, podil_pct).
+    """
+    qs = PohybSkladu.objects.filter(
+        typ="VYDEJ",
+        datum__gte=date_from,
+        datum__lte=date_to,
+        surovina__skupina_sk="MASO",
+    ).select_related("surovina")
+
+    if stravovaci_skupina:
+        qs = qs.filter(vydejka__stravovaci_skupina=stravovaci_skupina)
+
+    celkem_maso = Decimal("0")
+    celkem_mv = Decimal("0")
+
+    for p in qs:
+        mnozstvi_g = p.surovina.mnozstvi_do_gramu(p.mnozstvi or Decimal("0"))
+        koef = p.surovina.koeficient_sk or Decimal("1")
+        g = mnozstvi_g * koef
+        celkem_maso += g
+        if p.surovina.je_masny_vyrobek:
+            celkem_mv += g
+
+    podil = celkem_mv / celkem_maso * Decimal("100") if celkem_maso > 0 else Decimal("0")
+    return celkem_maso, celkem_mv, podil
+
+
+def spocitej_podil_bio(date_from, date_to, stravovaci_skupina=None):
+    """
+    Podíl biopotravin z celkové spotřeby (v gramech).
+    Vrací (bio_g, celkem_g, podil_pct).
+    """
+    qs = PohybSkladu.objects.filter(
+        typ="VYDEJ",
+        datum__gte=date_from,
+        datum__lte=date_to,
+    ).select_related("surovina")
+
+    if stravovaci_skupina:
+        qs = qs.filter(vydejka__stravovaci_skupina=stravovaci_skupina)
+
+    celkem = Decimal("0")
+    celkem_bio = Decimal("0")
+
+    for p in qs:
+        mnozstvi_g = p.surovina.mnozstvi_do_gramu(p.mnozstvi or Decimal("0"))
+        koef = p.surovina.koeficient_sk or Decimal("1")
+        g = mnozstvi_g * koef
+        celkem += g
+        if p.surovina.je_bio:
+            celkem_bio += g
+
+    podil = celkem_bio / celkem * Decimal("100") if celkem > 0 else Decimal("0")
+    return celkem_bio, celkem, podil
+
+
+def spocitej_volny_cukr(date_from, date_to, stravovaci_skupina=None):
+    """
+    Celkové množství volného cukru (g) za období v surovinách CUKR
+    podle pole volny_cukr_na_100g.
+    """
+    qs = PohybSkladu.objects.filter(
+        typ="VYDEJ",
+        datum__gte=date_from,
+        datum__lte=date_to,
+        surovina__skupina_sk="CUKR",
+    ).select_related("surovina")
+
+    if stravovaci_skupina:
+        qs = qs.filter(vydejka__stravovaci_skupina=stravovaci_skupina)
+
+    celkem_volny_cukr = Decimal("0")
+
+    for p in qs:
+        mnozstvi_g = p.surovina.mnozstvi_do_gramu(p.mnozstvi or Decimal("0"))
+        if p.surovina.volny_cukr_na_100g:
+            celkem_volny_cukr += (
+                mnozstvi_g * p.surovina.volny_cukr_na_100g / Decimal("100")
+            )
+
+    return celkem_volny_cukr
 
 
 # -------------------------------------------------------------------

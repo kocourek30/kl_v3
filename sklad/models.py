@@ -19,19 +19,20 @@ class Surovina(models.Model):
         ("ks", "Kus"),
     ]
 
-    # Skupiny spotřebního koše – podle vyhlášky (zjednodušeně)
+    # Skupiny spotřebního koše – rozšířené podle nové metodiky
     SKUPINA_SK = [
         ("NONE", "Nezapočítávat do spotřebního koše"),
         ("MASO", "Maso"),
         ("RYBY", "Ryby"),
         ("MLEX", "Mléko a mléčné výrobky"),
         ("OBIL", "Obiloviny"),
+        ("COBIL", "Celozrnné obiloviny a pseudoobiloviny"),
         ("LUST", "Luštěniny"),
         ("ZEL", "Zelenina"),
         ("OVO", "Ovoce"),
         ("BRAM", "Brambory"),
-        ("TUKY", "Tuky"),
-        ("CUKR", "Cukr"),
+        ("TUKY", "Tuky volné"),
+        ("CUKR", "Cukr volný"),
     ]
 
     nazev = models.CharField(
@@ -84,6 +85,39 @@ class Surovina(models.Model):
         ),
     )
 
+    # je to masný výrobek / polotovar (limit max. 20 % v rámci MASO)
+    je_masny_vyrobek = models.BooleanField(
+        default=False,
+        verbose_name="Masný výrobek / polotovar",
+        help_text="Použije se pro výpočet podílu masných výrobků v mase.",
+    )
+
+    # bio označení (pro výpočet podílu biopotravin)
+    je_bio = models.BooleanField(
+        default=False,
+        verbose_name="Biopotravina",
+        help_text="Započítává se do podílu bio potravin dle vyhlášky.",
+    )
+
+    # podíl celozrnné složky u produktů typu pečivo/těstoviny (0–1)
+    podil_celozrnne_slozky = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        verbose_name="Podíl celozrnné složky",
+        help_text="Např. 0.30 pro 30 % celozrnné mouky v produktu.",
+    )
+
+    # volný cukr (g na 100 g výrobku) – pro skupinu CUKR
+    volny_cukr_na_100g = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Volný cukr na 100 g",
+        help_text="Pouze přidané cukry, med, sirupy apod., dle metodiky.",
+    )
+
     class Meta:
         verbose_name = "Surovina"
         verbose_name_plural = "Suroviny"
@@ -106,6 +140,7 @@ class Surovina(models.Model):
             # fallback: kusy bereme jako „gramy“
             return mnozstvi
         return mnozstvi
+
 
 class StavSkladu(models.Model):
     surovina = models.OneToOneField(
@@ -568,8 +603,6 @@ class NormaSpotrebnihoKose(models.Model):
             f"{self.norma_g_mesic} g"
         )
 
-# sklad/models.py
-from users.models import StravovaciSkupina
 
 class ToleranceSpotrebnihoKose(models.Model):
     """
@@ -616,12 +649,13 @@ class ToleranceSpotrebnihoKose(models.Model):
             f"{self.min_pct}–{self.max_pct} %"
         )
 
+
 class ReportNakladySkladu(models.Model):
     """
     Pseudo-model pro report nákladů na suroviny v adminu.
     """
+
     class Meta:
         managed = False
         verbose_name = "Report nákladů na suroviny"
         verbose_name_plural = "Report nákladů na suroviny"
-
