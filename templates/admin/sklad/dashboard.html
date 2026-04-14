@@ -35,6 +35,121 @@
 {% endblock %}
 
 {% block result_list %}
+<div class="row">
+  <div class="col-lg-6">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>
+          <i class="fas fa-hourglass-half"></i>
+          Suroviny s končícím datem spotřeby
+        </span>
+        <small class="text-muted">do {{ expirace_do|date:"d.m.Y" }}</small>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-striped mb-0">
+            <thead class="thead-light">
+              <tr>
+                <th>Surovina</th>
+                <th>Šarže</th>
+                <th>Spotřeba</th>
+                <th>Stav</th>
+                <th>Příjemka</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for pol in expirace_polozky %}
+                <tr class="{% if pol.datum_spotreby < target_date %}table-danger{% else %}table-warning{% endif %}">
+                  <td>
+                    <strong>{{ pol.surovina.nazev }}</strong>
+                    <small class="text-muted">({{ pol.surovina.jednotka }})</small>
+                  </td>
+                  <td>
+                    {% if pol.sarze %}
+                      {{ pol.sarze }}
+                    {% else %}
+                      <span class="text-muted">–</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {{ pol.datum_spotreby|date:"d.m.Y" }}
+                    {% if pol.datum_spotreby < target_date %}
+                      <span class="badge badge-danger ml-1">Po spotřebě</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ pol.surovina.stav.mnozstvi }} {{ pol.surovina.jednotka }}</td>
+                  <td>
+                    #{{ pol.prijem_id }}
+                    {% if pol.prijem.dodavatel %}
+                      <small class="text-muted">/ {{ pol.prijem.dodavatel }}</small>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="5" class="text-center text-muted py-3">
+                    <i class="fas fa-check-circle"></i>
+                    Žádné suroviny s blížícím se datem spotřeby.
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card mb-3">
+      <div class="card-header">
+        <i class="fas fa-bell"></i>
+        Upozornění na minimální zásobu
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-striped mb-0">
+            <thead class="thead-light">
+              <tr>
+                <th>Surovina</th>
+                <th>Stav</th>
+                <th>Minimum</th>
+                <th>Stav</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in minimum_alerty %}
+                <tr class="{% if row.pod_min %}table-danger{% else %}table-warning{% endif %}">
+                  <td>
+                    <strong>{{ row.surovina.nazev }}</strong>
+                    <small class="text-muted">({{ row.surovina.jednotka }})</small>
+                  </td>
+                  <td>{{ row.mnozstvi }} {{ row.surovina.jednotka }}</td>
+                  <td>{{ row.minimum }} {{ row.surovina.jednotka }}</td>
+                  <td>
+                    {% if row.pod_min %}
+                      <span class="badge badge-danger">Pod minimem</span>
+                    {% else %}
+                      <span class="badge badge-warning">Blízko minima</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="4" class="text-center text-muted py-3">
+                    <i class="fas fa-check-circle"></i>
+                    Žádná surovina se neblíží minimální zásobě.
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="card">
   <div class="card-header d-flex justify-content-between align-items-center">
     <span>
@@ -59,7 +174,7 @@
         </thead>
         <tbody>
           {% for row in rows %}
-            <tr class="{% if row.pod_min %}table-danger{% endif %}">
+            <tr class="{% if row.pod_min %}table-danger{% elif row.blizko_min %}table-warning{% endif %}">
               <td>
                 <strong>{{ row.surovina.nazev }}</strong>
                 <small class="text-muted">
@@ -81,6 +196,10 @@
                   {% if row.pod_min %}
                     <span class="badge badge-danger ml-1">
                       <i class="fas fa-exclamation-triangle"></i> Pod minimem
+                    </span>
+                  {% elif row.blizko_min %}
+                    <span class="badge badge-warning ml-1">
+                      <i class="fas fa-bell"></i> Blízko minima
                     </span>
                   {% endif %}
                 {% else %}

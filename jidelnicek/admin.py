@@ -240,10 +240,53 @@ class DruhJidlaAdmin(admin.ModelAdmin):
 class JidloAdmin(admin.ModelAdmin):
     list_display = ('nazev', 'druh', 'cena', 'alergeny_list', 'ceny_po_dotacich', 'ma_komponenty')
     search_fields = ('nazev',)
-    list_filter = ('druh',)
+    list_filter = (
+        'druh',
+        'sk_rybi_pokrm',
+        'sk_bezmasy_pokrm',
+        'sk_sladky_pokrm',
+        'sk_slazeny_napoj',
+    )
     filter_horizontal = ('alergeny',)
     inlines = [JidloKomponentaInline, RecepturaPolozkaInline]
     actions = ["vygenerovat_plu_pro_jidla"]
+    fieldsets = (
+        (
+            "Základní údaje",
+            {
+                "fields": (
+                    "nazev",
+                    "druh",
+                    "cena",
+                    "alergeny",
+                    "ikona",
+                    "foto",
+                ),
+            },
+        ),
+        (
+            "Nutriční údaje",
+            {
+                "classes": ("collapse",),
+                "fields": ("kcal", "bílkoviny", "tuky", "sacharidy"),
+            },
+        ),
+        (
+            "Spotřební koš 2025",
+            {
+                "fields": (
+                    "sk_rybi_pokrm",
+                    "sk_bezmasy_pokrm",
+                    "sk_bile_maso",
+                    "sk_cervene_maso",
+                    "sk_sladky_pokrm",
+                    "sk_jemne_pecivo",
+                    "sk_dezert_s_volnym_cukrem",
+                    "sk_slazeny_napoj",
+                ),
+            },
+        ),
+    )
 
     def ma_komponenty(self, obj):
         return obj.komponenty_jidla.exists()

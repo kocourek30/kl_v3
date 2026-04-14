@@ -72,6 +72,20 @@ class Jidlo(models.Model):
     bílkoviny = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, verbose_name="Bílkoviny (g)")
     tuky = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, verbose_name="Tuky (g)")
     sacharidy = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, verbose_name="Sacharidy (g)")
+    sk_rybi_pokrm = models.BooleanField(default=False, verbose_name="Spotřební koš: rybí pokrm")
+    sk_bezmasy_pokrm = models.BooleanField(default=False, verbose_name="Spotřební koš: bezmasý pokrm")
+    sk_bile_maso = models.BooleanField(default=False, verbose_name="Spotřební koš: bílé maso")
+    sk_cervene_maso = models.BooleanField(default=False, verbose_name="Spotřební koš: červené maso")
+    sk_sladky_pokrm = models.BooleanField(default=False, verbose_name="Spotřební koš: sladký pokrm")
+    sk_jemne_pecivo = models.BooleanField(default=False, verbose_name="Spotřební koš: jemné pečivo")
+    sk_dezert_s_volnym_cukrem = models.BooleanField(
+        default=False,
+        verbose_name="Spotřební koš: dezert s volným cukrem",
+    )
+    sk_slazeny_napoj = models.BooleanField(
+        default=False,
+        verbose_name="Spotřební koš: nápoj s volným cukrem",
+    )
 
     foto = models.ImageField(
         upload_to="jidla/",

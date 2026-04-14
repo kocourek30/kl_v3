@@ -7,7 +7,7 @@
     <div class="col">
       <h1 class="mb-2">Měsíční spotřební koš</h1>
       <p class="text-muted">
-        Přehled plnění norem spotřebního koše za zvolené období.
+        Legislativní přehled podle vyhlášky č. 107/2005 Sb. ve znění účinném od 1. 9. 2025.
       </p>
     </div>
   </div>
@@ -146,6 +146,73 @@
   {% endif %}
 
   {% if rows %}
+  {% if souhrn %}
+  <div class="row mb-4">
+    <div class="col">
+      <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <strong>Souhrn období</strong>
+          <div>
+            <a class="btn btn-sm btn-outline-success" href="{% url 'admin:sklad_mesicni_spotrebni_kos_xls' %}?{{ export_query }}">
+              Stáhnout XLS
+            </a>
+            <a class="btn btn-sm btn-outline-danger" href="{% url 'admin:sklad_mesicni_spotrebni_kos_pdf' %}?{{ export_query }}">
+              Stáhnout PDF
+            </a>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-4"><strong>Počet jídel:</strong> {{ souhrn.pocet_jidel|floatformat:0 }}</div>
+            <div class="col-md-4"><strong>Počet strávníků:</strong> {{ souhrn.pocet_stravniku }}</div>
+            <div class="col-md-4"><strong>Počet výdejek:</strong> {{ souhrn.pocet_vydejek }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if legislativni_ukazatele %}
+  <div class="row mb-4">
+    <div class="col">
+      <div class="card shadow-sm">
+        <div class="card-header">
+          <strong>Legislativní ukazatele</strong>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-3"><strong>Bio:</strong> {{ legislativni_ukazatele.bio_pct|floatformat:2 }} %</div>
+            <div class="col-md-3"><strong>Sezónní:</strong> {{ legislativni_ukazatele.sezonni_pct|floatformat:2 }} %</div>
+            <div class="col-md-3"><strong>Sterilované / kompot:</strong> {{ legislativni_ukazatele.sterilovane_pct|floatformat:2 }} %</div>
+            <div class="col-md-3"><strong>Masné výrobky:</strong> {{ legislativni_ukazatele.masne_vyrobky_pct|floatformat:2 }} %</div>
+          </div>
+          {% if legislativni_ukazatele.zakazane_suroviny %}
+            <div class="alert alert-danger mt-3 mb-0">
+              Zakázané suroviny: {{ legislativni_ukazatele.zakazane_suroviny|join:", " }}
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if kontroly_jidelnicku.varovani %}
+  <div class="row mb-4">
+    <div class="col">
+      <div class="alert alert-warning">
+        <strong>Kontroly jídelníčku:</strong>
+        <ul class="mb-0">
+          {% for varovani in kontroly_jidelnicku.varovani %}
+            <li>{{ varovani }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Tabulka výsledků -->
   <div class="row">
     <div class="col">
@@ -163,16 +230,33 @@
                   <th class="text-end">Skutečnost [g]</th>
                   <th class="text-end">Rozdíl [g]</th>
                   <th class="text-end">Skut. v %</th>
+                  <th class="text-end">Limit</th>
+                  <th>Stav</th>
                 </tr>
               </thead>
               <tbody>
                 {% for r in rows %}
-                  <tr>
+                  <tr class="{% if r.stav == 'pod_limitem' or r.stav == 'nad_limitem' %}table-warning{% endif %}">
                     <td>{{ r.skupina_nazev }}</td>
                     <td class="text-end">{{ r.norma_g|floatformat:0 }}</td>
                     <td class="text-end">{{ r.skutecnost_g|floatformat:0 }}</td>
                     <td class="text-end">{{ r.rozdil_g|floatformat:0 }}</td>
                     <td class="text-end">{{ r.skutecnost_pct|floatformat:2 }}</td>
+                    <td class="text-end">
+                      {{ r.min_pct|floatformat:0 }} %
+                      {% if r.max_pct %}- {{ r.max_pct|floatformat:0 }} %{% else %}+{% endif %}
+                    </td>
+                    <td>
+                      {% if r.stav == "ok" %}
+                        <span class="badge badge-success">V pořádku</span>
+                      {% elif r.stav == "pod_limitem" %}
+                        <span class="badge badge-warning">Pod limitem</span>
+                      {% elif r.stav == "nad_limitem" %}
+                        <span class="badge badge-warning">Nad limitem</span>
+                      {% else %}
+                        <span class="badge badge-secondary">Bez normy</span>
+                      {% endif %}
+                    </td>
                   </tr>
                 {% endfor %}
               </tbody>
