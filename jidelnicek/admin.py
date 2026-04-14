@@ -13,7 +13,7 @@ from datetime import datetime, date
 
 from .models import Alergen, Jidlo, DruhJidla, Jidelnicek, PolozkaJidelnicku
 from dotace.models import DotacniPolitika, DotaceProJidelniskouSkupinu
-from sklad.admin import RecepturaPolozkaInline
+from sklad.admin import RecepturaPolozkaInline, JidloKomponentaInline
 from pokladna.models import PLUPolozka, DPHSkupina, PLUKategorie
 
 
@@ -238,11 +238,17 @@ class DruhJidlaAdmin(admin.ModelAdmin):
 
 @admin.register(Jidlo)
 class JidloAdmin(admin.ModelAdmin):
-    list_display = ('nazev', 'cena', 'alergeny_list', 'ceny_po_dotacich')
+    list_display = ('nazev', 'druh', 'cena', 'alergeny_list', 'ceny_po_dotacich', 'ma_komponenty')
     search_fields = ('nazev',)
+    list_filter = ('druh',)
     filter_horizontal = ('alergeny',)
-    inlines = [RecepturaPolozkaInline]
+    inlines = [JidloKomponentaInline, RecepturaPolozkaInline]
     actions = ["vygenerovat_plu_pro_jidla"]
+
+    def ma_komponenty(self, obj):
+        return obj.komponenty_jidla.exists()
+    ma_komponenty.boolean = True
+    ma_komponenty.short_description = "Komponenty?"
 
     def alergeny_list(self, obj):
         return ", ".join([a.nazev for a in obj.alergeny.all()])

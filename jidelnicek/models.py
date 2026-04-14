@@ -118,15 +118,34 @@ class Jidlo(models.Model):
     def vypocitej_spotrebu_surovin(self, pocet_porci: int):
         """
         Vrátí dict {surovina: celkové_mnozstvi} pro daný počet porcí.
-        Nic neodečítá ze skladu, jen počítá.
+
+        Priorita:
+        1) nové komponenty Jidlo -> Komponenta -> Surovina
+        2) fallback na starou přímou recepturu Jidlo -> RecepturaPolozka
         """
-        from sklad.models import RecepturaPolozka  # import uvnitř kvůli cyklickým závislostem
+        from sklad.models import JidloKomponenta, RecepturaPolozka
 
         spotreba = {}
-        polozky = self.receptura.select_related("surovina").all()
 
+        komponenty = (
+            self.komponenty_jidla
+            .select_related("komponenta")
+            .prefetch_related("komponenta__suroviny__surovina")
+            .all()
+        )
+
+        if komponenty.exists():
+            for vazba in komponenty:
+                nasobek = vazba.mnozstvi_nasobek or Decimal("1")
+                for pol in vazba.komponenta.suroviny.all():
+                    celkem = (pol.mnozstvi_na_porci or Decimal("0")) * nasobek * Decimal(pocet_porci)
+                    spotreba[pol.surovina] = spotreba.get(pol.surovina, Decimal("0")) + celkem
+            return spotreba
+
+        # fallback na původní přímou recepturu
+        polozky = self.receptura.select_related("surovina").all()
         for pol in polozky:
-            celkem = pol.mnozstvi_na_porci * Decimal(pocet_porci)
+            celkem = (pol.mnozstvi_na_porci or Decimal("0")) * Decimal(pocet_porci)
             spotreba[pol.surovina] = spotreba.get(pol.surovina, Decimal("0")) + celkem
 
         return spotreba

@@ -1,19 +1,16 @@
-from datetime import datetime, date
+from datetime import date
 from decimal import Decimal
-from collections import defaultdict
 from io import BytesIO
 import os
 
 from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
-from django.db import transaction
 from django.db.models import Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.template.response import TemplateResponse
 from django.urls import path
-from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.decorators import method_decorator
@@ -43,6 +40,9 @@ from .models import (
     StavSkladu,
     PohybSkladu,
     RecepturaPolozka,
+    KomponentaJidla,
+    KomponentaSurovina,
+    JidloKomponenta,
     PrijemSkladu,
     PolozkaPrijmu,
     Inventura,
@@ -56,6 +56,15 @@ from .models import (
 )
 
 from .services import (
+    generate_vydejka_from_orders,
+    objednavky_rekap_data,
+    get_order_items_for_vydejka,
+    najdi_nedostatecne_stavy_pro_vydejku,
+    uzavri_prijem,
+    uzavri_vydejku,
+    uzavri_inventuru,
+    validace_surovin_pro_sk,
+    spocitej_stravnikodny_obdobi,
     spocitej_spotrebu_sk_mesic,
     priprav_radky_spotrebi_kos_tabulka,
     spocitej_naklady_mesic,
@@ -66,6 +75,72 @@ from .services import (
 )
 
 from .forms import SpotrebniKosForm
+
+
+def _prepare_uzavreni_po_ulozeni(model, obj, change):
+    """
+    Admin nejdřív ukládá model a až potom inline položky.
+    Pokud uživatel zaškrtne uzavření, necháme doklad dočasně otevřený
+    a skladovou službu zavoláme až po uložení všech položek.
+    """
+    puvodni_uzavreny = False
+    if change and obj.pk:
+        puvodni_uzavreny = bool(
+            model.objects
+            .filter(pk=obj.pk)
+            .values_list("uzavreny", flat=True)
+            .first()
+        )
+
+    uzavrit_po_ulozeni = bool(obj.uzavreny and not puvodni_uzavreny)
+    obj._puvodni_uzavreny = puvodni_uzavreny
+    obj._uzavrit_po_ulozeni = uzavrit_po_ulozeni
+
+    if uzavrit_po_ulozeni:
+        obj.uzavreny = False
+        if hasattr(obj, "uzavren_at"):
+            obj.uzavren_at = None
+        if hasattr(obj, "uzavrel"):
+            obj.uzavrel = None
+
+    return obj
+
+
+def _dopln_vydejku_z_objednavek_pokud_je_prazdna(vydejka):
+    if not vydejka.polozky.exists():
+        generate_vydejka_from_orders(
+            datum=vydejka.datum,
+            stravovaci_skupina=vydejka.stravovaci_skupina,
+            typ_stravy=vydejka.typ_stravy,
+        )
+
+
+def _upozorni_na_nedostatecne_stavy(request, vydejka):
+    nedostatky = najdi_nedostatecne_stavy_pro_vydejku(vydejka)
+    if not nedostatky:
+        return
+
+    popis = ", ".join(
+        f"{radek['surovina'].nazev}: chybí {radek['chybi']} {radek['surovina'].jednotka}"
+        for radek in nedostatky[:8]
+    )
+    if len(nedostatky) > 8:
+        popis += f" a dalších {len(nedostatky) - 8}"
+
+    messages.warning(
+        request,
+        f"Výdejka #{vydejka.id} odepsala některé suroviny do mínusu: {popis}.",
+    )
+
+
+def _stav_dokladu_text(obj):
+    if not obj:
+        return "Rozpracováno"
+    if getattr(obj, "stornovano", False):
+        return "Stornováno"
+    if getattr(obj, "uzavreny", False):
+        return "Uzavřeno a promítnuto do skladu"
+    return "Rozpracováno, sklad ještě nebyl změněn"
 
 
 # -------------------------------------------------------------------
@@ -197,84 +272,6 @@ def spocitej_stravnikodny_mesic(rok: int, mesic: int, stravovaci_skupina=None):
 
 
 # -------------------------------------------------------------------
-# Generování výdejky z objednávek + teoretická spotřeba
-# -------------------------------------------------------------------
-
-
-@transaction.atomic
-def generate_vydejka_from_orders(datum, stravovaci_skupina, typ_stravy: str = "OBED"):
-    vydejka, created = Vydejka.objects.get_or_create(
-        datum=datum,
-        stravovaci_skupina=stravovaci_skupina,
-        typ_stravy=typ_stravy,
-        defaults={"popis": "Generováno z objednávek", "uzavrena": False},
-    )
-
-    qs = OrderItem.objects.select_related("menu_item__jidlo").filter(
-        order__datum_vydeje=datum,
-    )
-
-    suroviny_mnozstvi = defaultdict(lambda: Decimal("0"))
-
-    for item in qs.prefetch_related("menu_item__jidlo__receptura__surovina"):
-        jidlo = item.menu_item.jidlo
-        pocet_porci = Decimal(item.quantity)
-        for pol in jidlo.receptura.all():
-            suroviny_mnozstvi[pol.surovina_id] += (
-                pol.mnozstvi_na_porci * pocet_porci
-            )
-        vydejka.jidla.add(jidlo)
-
-    vydejka.polozky.all().delete()
-
-    suroviny = {
-        s.id: s
-        for s in Surovina.objects.filter(id__in=suroviny_mnozstvi.keys())
-    }
-
-    for surovina_id, mnozstvi in suroviny_mnozstvi.items():
-        if mnozstvi <= 0:
-            continue
-        PolozkaVydejky.objects.create(
-            vydejka=vydejka,
-            surovina=suroviny[surovina_id],
-            mnozstvi=mnozstvi,
-        )
-
-    return vydejka, created
-
-
-def spocitej_spotrebu_pro_vydejku(vydejka: Vydejka):
-    order_items = (
-        OrderItem.objects
-        .select_related("menu_item__jidlo", "order__user")
-        .filter(order__datum_vydeje=vydejka.datum)
-    )
-
-    spotreba = defaultdict(Decimal)
-
-    for item in order_items:
-        jidlo = item.menu_item.jidlo
-        pocet_porci = Decimal(item.quantity)
-
-        receptura = RecepturaPolozka.objects.filter(jidlo=jidlo).select_related(
-            "surovina"
-        )
-        for r in receptura:
-            celkem = (r.mnozstvi_na_porci or Decimal("0")) * pocet_porci
-            spotreba[r.surovina_id] += celkem
-
-    return spotreba
-
-
-# -------------------------------------------------------------------
-# Skladový dashboard (denní přehled) + starší měsíční SK view
-# -------------------------------------------------------------------
-
-
-
-
-# -------------------------------------------------------------------
 # Nový přehled spotřebního koše (perioda z formuláře SpotrebniKosForm)
 # -------------------------------------------------------------------
 
@@ -315,13 +312,13 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
         maso_stat = None
         bio_stat = None
         volny_cukr_g = None
+        data_warnings = validace_surovin_pro_sk()
 
         if form.is_valid():
             date_from, date_to, label = form.get_period()
             stravovaci_skupina = form.cleaned_data.get("stravovaci_skupina")
 
             if stravovaci_skupina:
-                # strávníkodny v období
                 qs = OrderItem.objects.filter(
                     order__datum_vydeje__gte=date_from,
                     order__datum_vydeje__lte=date_to,
@@ -329,7 +326,6 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
                 )
                 stravnikodny = qs.aggregate(celkem=Sum("quantity"))["celkem"] or 0
 
-                # pro normu použijeme rok/měsíc začátku období
                 rok = date_from.year
                 mesic = date_from.month
 
@@ -343,7 +339,7 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
                 )
 
                 for r in rows:
-                    if r["norma_g"] or r["skutecnost_g"]:
+                    if r.get("norma_g") or r.get("skutecnost_g"):
                         circle_row = type(
                             "Row",
                             (),
@@ -373,6 +369,7 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
             maso_stat=maso_stat,
             bio_stat=bio_stat,
             volny_cukr_g=volny_cukr_g,
+            data_warnings=data_warnings,
         )
         return TemplateResponse(
             request,
@@ -468,9 +465,18 @@ class PohybSkladuAdmin(admin.ModelAdmin):
         if obj.prijem_id:
             url = f"/admin/sklad/prijemskladu/{obj.prijem_id}/change/"
             return format_html('<a href="{}">Příjem #{}</a>', url, obj.prijem_id)
+        if getattr(obj, "inventura_id", None):
+            url = f"/admin/sklad/inventura/{obj.inventura_id}/change/"
+            return format_html('<a href="{}">Inventura #{}</a>', url, obj.inventura_id)
         return "-"
 
     doklad_link.short_description = "Doklad"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 class RecepturaPolozkaInline(admin.TabularInline):
@@ -478,138 +484,99 @@ class RecepturaPolozkaInline(admin.TabularInline):
     extra = 1
 
 
+class KomponentaSurovinaInline(admin.TabularInline):
+    model = KomponentaSurovina
+    extra = 1
+    autocomplete_fields = ("surovina",)
+
+
+class JidloKomponentaInline(admin.TabularInline):
+    model = JidloKomponenta
+    extra = 1
+    autocomplete_fields = ("komponenta",)
+    ordering = ("poradi", "id")
+
+
 class PolozkaPrijmuInline(admin.TabularInline):
     model = PolozkaPrijmu
     extra = 1
+    autocomplete_fields = ("surovina",)
 
+    def get_extra(self, request, obj=None, **kwargs):
+        if obj and obj.uzavreny:
+            return 0
+        return super().get_extra(request, obj, **kwargs)
 
-@admin.register(PrijemSkladu)
-class PrijemSkladuAdmin(admin.ModelAdmin):
-    list_display = ("id", "datum", "vytvoril", "uzavreny")
-    list_filter = ("uzavreny", "datum")
-    inlines = [PolozkaPrijmuInline]
-    readonly_fields = ("vytvoril",)
+    def has_add_permission(self, request, obj=None):
+        if obj and obj.uzavreny:
+            return False
+        return super().has_add_permission(request, obj)
 
-    def save_model(self, request, obj, form, change):
-        if not obj.pk and not obj.vytvoril:
-            obj.vytvoril = request.user
-        super().save_model(request, obj, form, change)
+    def has_change_permission(self, request, obj=None):
+        if obj and obj.uzavreny:
+            return False
+        return super().has_change_permission(request, obj)
 
-    @transaction.atomic
-    def response_change(self, request, obj):
-        if obj.uzavreny:
-            for pol in obj.polozky.select_related("surovina").all():
-                surovina = pol.surovina
-
-                stav, _ = StavSkladu.objects.select_for_update().get_or_create(
-                    surovina=surovina,
-                    defaults={"mnozstvi": Decimal("0"), "min_mnozstvi": Decimal("0")},
-                )
-
-                # původní stav
-                st_mnozstvi = stav.mnozstvi or Decimal("0")
-                st_cena = surovina.prumerna_cena_za_jednotku or Decimal("0")
-
-                pr_mnozstvi = pol.mnozstvi or Decimal("0")
-                pr_cena = pol.jednotkova_cena or Decimal("0")
-
-                nove_mnozstvi = st_mnozstvi + pr_mnozstvi
-
-                if nove_mnozstvi > 0 and pr_cena is not None:
-                    # vážený průměr
-                    if st_mnozstvi > 0 and st_cena is not None:
-                        nova_cena = (
-                            st_mnozstvi * st_cena + pr_mnozstvi * pr_cena
-                        ) / nove_mnozstvi
-                    else:
-                        # sklad byl prázdný nebo bez ceny -> vezmeme cenu z příjmu
-                        nova_cena = pr_cena
-
-                    surovina.prumerna_cena_za_jednotku = nova_cena
-                    surovina.save(update_fields=["prumerna_cena_za_jednotku"])
-
-                # aktualizace množství na skladě
-                stav.mnozstvi = nove_mnozstvi
-                stav.save(update_fields=["mnozstvi"])
-
-                # pohyb s cenou za jednotku
-                PohybSkladu.objects.create(
-                    surovina=surovina,
-                    typ="PRIJEM",
-                    mnozstvi=pr_mnozstvi,
-                    cena_za_jednotku=pr_cena,
-                    prijem=obj,
-                    poznamka=f"Příjem #{obj.id}",
-                )
-
-        return super().response_change(request, obj)
-
-    @transaction.atomic
-    def delete_model(self, request, obj):
-        for pohyb in obj.pohyby.all():
-            stav = StavSkladu.objects.select_for_update().get(
-                surovina=pohyb.surovina
-            )
-            stav.mnozstvi = stav.mnozstvi - pohyb.mnozstvi
-            stav.save(update_fields=["mnozstvi"])
-        obj.pohyby.all().delete()
-        super().delete_model(request, obj)
+    def has_delete_permission(self, request, obj=None):
+        if obj and obj.uzavreny:
+            return False
+        return super().has_delete_permission(request, obj)
 
 
 class PolozkaInventuryInline(admin.TabularInline):
     model = PolozkaInventury
     extra = 0
     readonly_fields = ("stav_pred", "rozdil")
+    autocomplete_fields = ("surovina",)
+
+    def has_add_permission(self, request, obj=None):
+        if obj and obj.uzavreny:
+            return False
+        return super().has_add_permission(request, obj)
+
+    def has_change_permission(self, request, obj=None):
+        if obj and obj.uzavreny:
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj and obj.uzavreny:
+            return False
+        return super().has_delete_permission(request, obj)
 
 
-@admin.register(Inventura)
-class InventuraAdmin(admin.ModelAdmin):
-    list_display = ("id", "datum", "vytvoril", "uzavrena")
-    list_filter = ("uzavrena", "datum")
-    readonly_fields = ("vytvoril",)
-    inlines = [PolozkaInventuryInline]
+class PohybSkladuInlineBase(admin.TabularInline):
+    model = PohybSkladu
+    extra = 0
+    can_delete = False
+    fields = ("datum", "surovina", "typ", "mnozstvi", "cena_za_jednotku", "poznamka")
+    readonly_fields = fields
+    verbose_name = "Skladový pohyb"
+    verbose_name_plural = "Skladové pohyby"
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
     def has_delete_permission(self, request, obj=None):
         return False
 
-    def save_model(self, request, obj, form, change):
-        if not obj.pk and not obj.vytvoril:
-            obj.vytvoril = request.user
-        super().save_model(request, obj, form, change)
+    def has_view_permission(self, request, obj=None):
+        return True
 
-        if not change:
-            self._napln_polozky_ze_stavu(obj)
 
-    def _napln_polozky_ze_stavu(self, inventura):
-        # vezmeme všechny suroviny, i ty bez stavu
-        suroviny = Surovina.objects.select_related("stav").all()
-        polozky = []
-        for s in suroviny:
-            stav = getattr(s, "stav", None)
-            stav_mnozstvi = stav.mnozstvi if stav else Decimal("0")
-            polozky.append(
-                PolozkaInventury(
-                    inventura=inventura,
-                    surovina=s,
-                    stav_pred=stav_mnozstvi,
-                    fyzicky_stav=stav_mnozstvi,
-                    rozdil=Decimal("0"),
-                )
-            )
-        PolozkaInventury.objects.bulk_create(polozky)
+class PohybPrijmuInline(PohybSkladuInlineBase):
+    fk_name = "prijem"
 
-    @transaction.atomic
-    def response_change(self, request, obj):
-        if obj.uzavrena:
-            # vždy při uložení uzavřené inventury přepiš stav skladu
-            for pol in obj.polozky.select_related("surovina").all():
-                stav, _ = StavSkladu.objects.get_or_create(
-                    surovina=pol.surovina,
-                    defaults={"mnozstvi": 0, "min_mnozstvi": 0},
-                )
-                stav.mnozstvi = pol.fyzicky_stav
-                stav.save(update_fields=["mnozstvi"])
-        return super().response_change(request, obj)
+
+class PohybVydejkyInline(PohybSkladuInlineBase):
+    fk_name = "vydejka"
+
+
+class PohybInventuryInline(PohybSkladuInlineBase):
+    fk_name = "inventura"
 
 
 class PolozkaInventuryReadOnlyInline(admin.TabularInline):
@@ -626,18 +593,161 @@ class PolozkaInventuryReadOnlyInline(admin.TabularInline):
         return False
 
 
+@admin.register(KomponentaJidla)
+class KomponentaJidlaAdmin(admin.ModelAdmin):
+    list_display = ("nazev", "typ", "aktivni", "porce_text")
+    list_filter = ("typ", "aktivni")
+    search_fields = ("nazev",)
+    inlines = [KomponentaSurovinaInline]
+
+
+@admin.register(PrijemSkladu)
+class PrijemSkladuAdmin(admin.ModelAdmin):
+    list_display = ("id", "datum", "vytvoril", "uzavreny", "uzavren_at", "uzavrel")
+    list_filter = ("uzavreny", "datum")
+    inlines = [PolozkaPrijmuInline, PohybPrijmuInline]
+    readonly_fields = ("stav_dokladu", "vytvoril", "uzavren_at", "uzavrel")
+    fieldsets = (
+        (
+            "Základní údaje",
+            {
+                "fields": ("datum", "popis"),
+            },
+        ),
+        (
+            "Stav a audit",
+            {
+                "fields": ("stav_dokladu", "uzavreny", "vytvoril", "uzavren_at", "uzavrel"),
+            },
+        ),
+    )
+
+    def stav_dokladu(self, obj):
+        return _stav_dokladu_text(obj)
+
+    stav_dokladu.short_description = "Stav dokladu"
+
+    def save_model(self, request, obj, form, change):
+        if not obj.pk and not obj.vytvoril:
+            obj.vytvoril = request.user
+        super().save_model(request, obj, form, change)
+
+    def save_form(self, request, form, change):
+        obj = super().save_form(request, form, change)
+        return _prepare_uzavreni_po_ulozeni(PrijemSkladu, obj, change)
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        obj = form.instance
+
+        if getattr(obj, "_uzavrit_po_ulozeni", False):
+            uzavri_prijem(obj, user=request.user)
+
+    def get_readonly_fields(self, request, obj=None):
+        ro = list(super().get_readonly_fields(request, obj))
+        if obj and obj.uzavreny:
+            ro += ["datum", "popis", "uzavreny"]
+        return ro
+
+    def has_delete_permission(self, request, obj=None):
+        if obj and obj.uzavreny:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def has_change_permission(self, request, obj=None):
+        if obj and obj.uzavreny:
+            return False
+        return super().has_change_permission(request, obj)
+
+
+@admin.register(Inventura)
+class InventuraAdmin(admin.ModelAdmin):
+    list_display = ("id", "datum", "vytvoril", "uzavreny", "uzavren_at", "uzavrel")
+    list_filter = ("uzavreny", "datum")
+    readonly_fields = ("stav_dokladu", "vytvoril", "uzavren_at", "uzavrel")
+    inlines = [PolozkaInventuryInline, PohybInventuryInline]
+    fieldsets = (
+        (
+            "Základní údaje",
+            {
+                "fields": ("datum", "popis"),
+            },
+        ),
+        (
+            "Stav a audit",
+            {
+                "fields": ("stav_dokladu", "uzavreny", "vytvoril", "uzavren_at", "uzavrel"),
+            },
+        ),
+    )
+
+    def stav_dokladu(self, obj):
+        return _stav_dokladu_text(obj)
+
+    stav_dokladu.short_description = "Stav dokladu"
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def save_model(self, request, obj, form, change):
+        if not obj.pk and not obj.vytvoril:
+            obj.vytvoril = request.user
+        super().save_model(request, obj, form, change)
+
+        if not change:
+            self._napln_polozky_ze_stavu(obj)
+
+    def save_form(self, request, form, change):
+        obj = super().save_form(request, form, change)
+        return _prepare_uzavreni_po_ulozeni(Inventura, obj, change)
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        obj = form.instance
+
+        if getattr(obj, "_uzavrit_po_ulozeni", False):
+            uzavri_inventuru(obj, user=request.user)
+
+    def _napln_polozky_ze_stavu(self, inventura):
+        suroviny = Surovina.objects.select_related("stav").all()
+        polozky = []
+        for s in suroviny:
+            stav = getattr(s, "stav", None)
+            stav_mnozstvi = stav.mnozstvi if stav else Decimal("0")
+            polozky.append(
+                PolozkaInventury(
+                    inventura=inventura,
+                    surovina=s,
+                    stav_pred=stav_mnozstvi,
+                    fyzicky_stav=stav_mnozstvi,
+                    rozdil=Decimal("0"),
+                )
+            )
+        PolozkaInventury.objects.bulk_create(polozky)
+
+    def get_readonly_fields(self, request, obj=None):
+        ro = list(super().get_readonly_fields(request, obj))
+        if obj and obj.uzavreny:
+            ro += ["datum", "popis", "uzavreny"]
+        return ro
+
+    def has_change_permission(self, request, obj=None):
+        if obj and obj.uzavreny:
+            return False
+        return super().has_change_permission(request, obj)
+
+
 @admin.register(InventurniDoklad)
 class InventurniDokladAdmin(admin.ModelAdmin):
     list_display = ("id", "datum", "vytvoril", "pocet_polozek")
     list_filter = ("datum",)
     search_fields = ("id", "vytvoril__username")
     inlines = [PolozkaInventuryReadOnlyInline]
-
-    readonly_fields = ("datum", "popis", "vytvoril", "uzavrena")
+    readonly_fields = ("datum", "popis", "vytvoril", "uzavreny", "uzavren_at", "uzavrel")
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        return qs.filter(uzavrena=True)
+        return qs.filter(uzavreny=True)
 
     def has_add_permission(self, request):
         return False
@@ -654,18 +764,21 @@ class InventurniDokladAdmin(admin.ModelAdmin):
     pocet_polozek.short_description = "Počet položek"
 
 
-class PolozkaVydejkyInline(admin.TabularInline):
-    model = PolozkaVydejky
-    extra = 1
-
-
 @admin.register(Vydejka)
 class VydejkaAdmin(admin.ModelAdmin):
-    list_display = ("id", "datum", "stravovaci_skupina", "typ_stravy", "uzavrena")
-    list_filter = ("typ_stravy", "stravovaci_skupina", "datum", "uzavrena")
+    list_display = (
+        "id",
+        "datum",
+        "stravovaci_skupina",
+        "typ_stravy",
+        "uzavreny",
+        "uzavren_at",
+        "uzavrel",
+    )
+    list_filter = ("typ_stravy", "stravovaci_skupina", "datum", "uzavreny")
     search_fields = ("id", "stravovaci_skupina__nazev", "popis")
-    readonly_fields = ("vytvoril",)
-    inlines = [PolozkaVydejkyInline]
+    readonly_fields = ("stav_dokladu", "vytvoril", "uzavren_at", "uzavrel")
+    inlines = [PohybVydejkyInline]
 
     fieldsets = (
         (
@@ -684,14 +797,14 @@ class VydejkaAdmin(admin.ModelAdmin):
         (
             "Stav a audit",
             {
-                "fields": ("uzavrena", "vytvoril"),
+                "fields": ("stav_dokladu", "uzavreny", "vytvoril", "uzavren_at", "uzavrel"),
             },
         ),
     )
 
     actions = [
         "akce_vygenerovat_z_objednavek",
-        "uzavrit_a_odepsat_ze_skladu",
+        "uzavrit_vydejky",
     ]
 
     def get_urls(self):
@@ -705,93 +818,50 @@ class VydejkaAdmin(admin.ModelAdmin):
         ]
         return custom_urls + urls
 
+    def stav_dokladu(self, obj):
+        return _stav_dokladu_text(obj)
+
+    stav_dokladu.short_description = "Stav dokladu"
+
     def save_model(self, request, obj, form, change):
         if not obj.pk and not obj.vytvoril:
             obj.vytvoril = request.user
         super().save_model(request, obj, form, change)
 
-    @transaction.atomic
-    def response_change(self, request, obj):
-        if obj.uzavrena:
-            for pol in obj.polozky.select_related("surovina").all():
-                stav, _ = StavSkladu.objects.get_or_create(
-                    surovina=pol.surovina,
-                    defaults={"mnozstvi": 0, "min_mnozstvi": 0},
-                )
-                stav.mnozstvi = stav.mnozstvi - pol.mnozstvi
-                stav.save(update_fields=["mnozstvi"])
+    def save_form(self, request, form, change):
+        obj = super().save_form(request, form, change)
+        return _prepare_uzavreni_po_ulozeni(Vydejka, obj, change)
 
-                PohybSkladu.objects.create(
-                    surovina=pol.surovina,
-                    typ="VYDEJ",
-                    mnozstvi=pol.mnozstvi,
-                    vydejka=obj,
-                    poznamka=f"Výdejka #{obj.id}",
-                )
-        return super().response_change(request, obj)
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        obj = form.instance
 
-    @transaction.atomic
-    def delete_model(self, request, obj):
-        for pohyb in obj.pohyby.all():
-            stav = StavSkladu.objects.select_for_update().get(
-                surovina=pohyb.surovina
-            )
-            stav.mnozstvi = stav.mnozstvi + pohyb.mnozstvi
-            stav.save(update_fields=["mnozstvi"])
-        obj.pohyby.all().delete()
-        super().delete_model(request, obj)
+        if getattr(obj, "_uzavrit_po_ulozeni", False):
+            _dopln_vydejku_z_objednavek_pokud_je_prazdna(obj)
+            _upozorni_na_nedostatecne_stavy(request, obj)
+            uzavri_vydejku(obj, user=request.user)
 
-    @admin.action(
-        description="Uzavřít výdejky a promítnout do skladu (podle teoretické spotřeby)"
-    )
-    @transaction.atomic
-    def uzavrit_a_odepsat_ze_skladu(self, request, queryset):
+    @admin.action(description="Uzavřít výdejky a promítnout do skladu")
+    def uzavrit_vydejky(self, request, queryset):
         uzavreno = 0
-        for vydejka in queryset.select_for_update():
-            if vydejka.uzavrena:
-                continue
-
-            spotreba = spocitej_spotrebu_pro_vydejku(vydejka)
-
-            for surovina_id, mnozstvi in spotreba.items():
-                if mnozstvi <= 0:
-                    continue
-
-                surovina = Surovina.objects.select_related("stav").get(pk=surovina_id)
-
-                prumerna_cena = surovina.prumerna_cena_za_jednotku
-
-                stav, _ = StavSkladu.objects.select_for_update().get_or_create(
-                    surovina=surovina,
-                    defaults={"mnozstvi": Decimal("0"), "min_mnozstvi": Decimal("0")},
-                )
-
-                stav.mnozstvi = (stav.mnozstvi or Decimal("0")) - (mnozstvi or Decimal("0"))
-                stav.save(update_fields=["mnozstvi"])
-
-                PohybSkladu.objects.create(
-                    surovina=surovina,
-                    typ="VYDEJ",
-                    mnozstvi=mnozstvi,
-                    cena_za_jednotku=prumerna_cena,
-                    vydejka=vydejka,
-                    poznamka=f"Výdej podle výdejky #{vydejka.id}",
-                )
-
-            vydejka.uzavrena = True
-            vydejka.save(update_fields=["uzavrena"])
-            uzavreno += 1
+        for vydejka in queryset:
+            if not vydejka.uzavreny:
+                _dopln_vydejku_z_objednavek_pokud_je_prazdna(vydejka)
+                _upozorni_na_nedostatecne_stavy(request, vydejka)
+            if uzavri_vydejku(vydejka, user=request.user):
+                uzavreno += 1
 
         self.message_user(
-            request, f"Uzavřeno a promítnuto do skladu: {uzavreno} výdejek."
+            request,
+            f"Uzavřeno a promítnuto do skladu: {uzavreno} výdejek.",
         )
 
-    @admin.action(
-        description="Vygenerovat / přepočítat z objednávek pro zvolené výdejky"
-    )
+    @admin.action(description="Vygenerovat / přepočítat z objednávek pro zvolené výdejky")
     def akce_vygenerovat_z_objednavek(self, request, queryset):
         pocet = 0
         for vydejka in queryset:
+            if vydejka.uzavreny:
+                continue
             generate_vydejka_from_orders(
                 datum=vydejka.datum,
                 stravovaci_skupina=vydejka.stravovaci_skupina,
@@ -803,6 +873,22 @@ class VydejkaAdmin(admin.ModelAdmin):
             request,
             f"Výdejky byly vygenerovány/přepočítány z objednávek ({pocet} ks).",
         )
+
+    def get_readonly_fields(self, request, obj=None):
+        ro = list(super().get_readonly_fields(request, obj))
+        if obj and obj.uzavreny:
+            ro += ["datum", "stravovaci_skupina", "typ_stravy", "popis", "uzavreny"]
+        return ro
+
+    def has_delete_permission(self, request, obj=None):
+        if obj and obj.uzavreny:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def has_change_permission(self, request, obj=None):
+        if obj and obj.uzavreny:
+            return False
+        return super().has_change_permission(request, obj)
 
     def get_fieldsets(self, request, obj=None):
         fieldsets = list(super().get_fieldsets(request, obj))
@@ -830,32 +916,22 @@ class VydejkaAdmin(admin.ModelAdmin):
         if not obj or not obj.pk:
             return "Ulož výdejku, aby bylo co spočítat."
 
-        order_items = (
-            OrderItem.objects
-            .select_related("menu_item__jidlo", "order__user")
-            .filter(order__datum_vydeje=obj.datum)
-        )
+        order_items = get_order_items_for_vydejka(obj)
 
         debug = [
             f"datum: {obj.datum}",
             f"typ_stravy: {obj.typ_stravy}",
             f"stravovaci_skupina: {obj.stravovaci_skupina}",
-            f"order_items po datu: {order_items.count()}",
+            f"order_items po filtrech: {order_items.count()}",
         ]
 
         if not order_items.exists():
             return mark_safe(
                 "<br>".join(escape(line) for line in debug)
-                + "<br><strong>Pro tento den nejsou žádné objednávky.</strong>"
+                + "<br><strong>Pro tento filtr nejsou žádné objednávky.</strong>"
             )
 
-        porce_per_jidlo = defaultdict(Decimal)
-        jidla = {}
-
-        for item in order_items:
-            jidlo = item.menu_item.jidlo
-            jidla[jidlo.id] = jidlo
-            porce_per_jidlo[jidlo.id] += Decimal(item.quantity)
+        porce_per_jidlo, jidla, detail = objednavky_rekap_data(obj)
 
         bloky = []
 
@@ -870,42 +946,54 @@ class VydejkaAdmin(admin.ModelAdmin):
                 "</h4>"
             )
 
-            suroviny_rows = []
-            for pol in jidlo.receptura.select_related("surovina").all():
-                celk_mnozstvi = pol.mnozstvi_na_porci * pocet_porci
-                suroviny_rows.append(
-                    "<tr>"
-                    f"<td>{pol.surovina.nazev}</td>"
-                    f"<td style='text-align:right;'>{pol.mnozstvi_na_porci} "
-                    f"{pol.surovina.jednotka}</td>"
-                    f"<td style='text-align:right;'>{celk_mnozstvi} "
-                    f"{pol.surovina.jednotka}</td>"
-                    "</tr>"
-                )
+            komponenty_html = []
 
-            if suroviny_rows:
-                table_html = (
-                    '<table class="table" style="width: 100%; margin-bottom: 0.5em;">'
-                    "<thead>"
-                    "<tr>"
-                    "<th>Surovina</th>"
-                    '<th style="text-align:right;">Na 1 porci</th>'
-                    '<th style="text-align:right;">Celkem pro všechny porce</th>'
-                    "</tr>"
-                    "</thead>"
-                    "<tbody>"
-                    + "".join(suroviny_rows)
-                    + "</tbody>"
-                    "</table>"
-                )
-            else:
-                table_html = "<p style='color:#888;'>Jídlo nemá vyplněnou recepturu.</p>"
+            for blok in detail.get(jidlo_id, []):
+                komponenta = blok["komponenta"]
+                radky = blok["radky"]
 
-            bloky.append(header_html + table_html)
+                if komponenta:
+                    komponenty_html.append(
+                        f"<h5 style='margin: .5em 0; color:#444;'>{escape(komponenta.nazev)}</h5>"
+                    )
 
-        return mark_safe("".join(bloky))
+                if radky:
+                    rows_html = []
+                    for row in radky:
+                        rows_html.append(
+                            "<tr>"
+                            f"<td>{escape(row['surovina'].nazev)}</td>"
+                            f"<td style='text-align:right;'>{row['na_porci']} {escape(row['surovina'].jednotka)}</td>"
+                            f"<td style='text-align:right;'>{row['celkem']} {escape(row['surovina'].jednotka)}</td>"
+                            "</tr>"
+                        )
 
-    objednavky_rekap.short_description = "Rekapitulace jídel a surovin"
+                    komponenty_html.append(
+                        '<div style="width:100%; max-width:none; overflow-x:auto;">'
+                        '<table class="table" style="width:100%; max-width:none; table-layout:auto; margin-bottom: 1em;">'
+                        "<thead>"
+                        "<tr>"
+                        "<th style='width:40%;'>Surovina</th>"
+                        '<th style="text-align:right; width:30%;">Na 1 porci</th>'
+                        '<th style="text-align:right; width:30%;">Celkem pro všechny porce</th>'
+                        "</tr>"
+                        "</thead>"
+                        "<tbody>"
+                        + "".join(rows_html)
+                        + "</tbody>"
+                        "</table>"
+                        "</div>"
+                    )
+                else:
+                    komponenty_html.append("<p style='color:#888;'>Komponenta nemá suroviny.</p>")
+
+            bloky.append(header_html + "".join(komponenty_html))
+
+        return mark_safe(
+            "<div style='width:100%; max-width:none;'>"
+            + "".join(bloky)
+            + "</div>"
+        )
 
 
 def vydejka_pdf_view(request, vydejka_id):
@@ -921,11 +1009,7 @@ def vydejka_pdf_view(request, vydejka_id):
     styles["Title"].fontName = "DejaVuSans"
     styles["Heading2"].fontName = "DejaVuSans"
 
-    order_items = (
-        OrderItem.objects
-        .select_related("menu_item__jidlo", "order__user")
-        .filter(order__datum_vydeje=vydejka.datum)
-    )
+    order_items = get_order_items_for_vydejka(vydejka)
 
     if not order_items.exists():
         buffer = BytesIO()
@@ -947,7 +1031,7 @@ def vydejka_pdf_view(request, vydejka_id):
         )
         elements.append(Spacer(1, 0.5 * cm))
         elements.append(
-            Paragraph("Pro tento den nejsou žádné objednávky.", styles["Normal"])
+            Paragraph("Pro tento filtr nejsou žádné objednávky.", styles["Normal"])
         )
 
         doc.build(elements)
@@ -955,17 +1039,10 @@ def vydejka_pdf_view(request, vydejka_id):
         buffer.close()
 
         response = HttpResponse(pdf, content_type="application/pdf")
-        response["Content-Disposition"] = (
-            f'attachment; filename="vydejka_{vydejka.id}.pdf"'
-        )
+        response["Content-Disposition"] = f'attachment; filename="vydejka_{vydejka.id}.pdf"'
         return response
 
-    porce_per_jidlo = defaultdict(Decimal)
-    jidla = {}
-    for item in order_items:
-        jidlo = item.menu_item.jidlo
-        jidla[jidlo.id] = jidlo
-        porce_per_jidlo[jidlo.id] += Decimal(item.quantity)
+    porce_per_jidlo, jidla, detail = objednavky_rekap_data(vydejka)
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(
@@ -983,9 +1060,7 @@ def vydejka_pdf_view(request, vydejka_id):
         if vydejka.stravovaci_skupina
         else "bez skupiny"
     )
-    nadpis = (
-        f"Výdejka #{vydejka.id} – {vydejka.datum.strftime('%d.%m.%Y')} ({sk})"
-    )
+    nadpis = f"Výdejka #{vydejka.id} – {vydejka.datum.strftime('%d.%m.%Y')} ({sk})"
     elements.append(Paragraph(nadpis, styles["Title"]))
     elements.append(Spacer(1, 0.3 * cm))
     elements.append(
@@ -1005,57 +1080,63 @@ def vydejka_pdf_view(request, vydejka_id):
                 styles["Heading2"],
             )
         )
+        elements.append(Spacer(1, 0.2 * cm))
+
+        for blok in detail.get(jidlo_id, []):
+            komponenta = blok["komponenta"]
+            radky = blok["radky"]
+
+            if komponenta:
+                elements.append(
+                    Paragraph(
+                        f"<b>{escape(komponenta.nazev)}</b>",
+                        styles["Normal"],
+                    )
+                )
+                elements.append(Spacer(1, 0.15 * cm))
+
+            if radky:
+                data = [["Surovina", "Na 1 porci", "Celkem"]]
+                for row in radky:
+                    surovina = row["surovina"]
+                    data.append([
+                        surovina.nazev,
+                        f"{row['na_porci']:.3f} {surovina.jednotka}",
+                        f"{row['celkem']:.3f} {surovina.jednotka}",
+                    ])
+
+                table = Table(data, colWidths=[7 * cm, 4 * cm, 5 * cm])
+                table.setStyle(
+                    TableStyle(
+                        [
+                            ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                            ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+                            ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans"),
+                            ("FONTNAME", (0, 1), (-1, -1), "DejaVuSans"),
+                            ("FONTSIZE", (0, 0), (-1, -1), 9),
+                            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+                            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                        ]
+                    )
+                )
+                elements.append(table)
+            else:
+                elements.append(
+                    Paragraph(
+                        "<i>Komponenta nemá vyplněné suroviny.</i>",
+                        styles["Normal"],
+                    )
+                )
+
+            elements.append(Spacer(1, 0.4 * cm))
+
         elements.append(Spacer(1, 0.3 * cm))
-
-        receptura = RecepturaPolozka.objects.filter(jidlo=jidlo).select_related(
-            "surovina"
-        )
-
-        if receptura.exists():
-            data = [["Surovina", "Na 1 porci", "Celkem pro všechny porce"]]
-            for r in receptura.order_by("surovina__nazev"):
-                na_porci = r.mnozstvi_na_porci
-                celkem = na_porci * pocet_porci
-                data.append(
-                    [
-                        r.surovina.nazev,
-                        f"{na_porci:.3f} {r.surovina.jednotka}",
-                        f"{celkem:.3f} {r.surovina.jednotka}",
-                    ]
-                )
-
-            table = Table(data, colWidths=[7 * cm, 4 * cm, 5 * cm])
-            table.setStyle(
-                TableStyle(
-                    [
-                        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                        ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
-                        ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans"),
-                        ("FONTNAME", (0, 1), (-1, -1), "DejaVuSans"),
-                        ("FONTSIZE", (0, 0), (-1, -1), 9),
-                        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-                        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                    ]
-                )
-            )
-            elements.append(table)
-        else:
-            elements.append(
-                Paragraph(
-                    "<i>Jídlo nemá vyplněnou recepturu.</i>",
-                    styles["Normal"],
-                )
-            )
-
-        elements.append(Spacer(1, 0.6 * cm))
 
     doc.build(elements)
     pdf = buffer.getvalue()
     buffer.close()
 
     response = HttpResponse(pdf, content_type="application/pdf")
-    response["Content-Disposition"] = (
-        f'attachment; filename="vydejka_{vydejka.id}.pdf"'
-    )
+    response["Content-Disposition"] = f'attachment; filename="vydejka_{vydejka.id}.pdf"'
     return response
