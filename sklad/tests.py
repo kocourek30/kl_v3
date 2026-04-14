@@ -23,7 +23,9 @@ from .models import (
     PolozkaVydejky,
     PrijemSkladu,
     NormaSpotrebnihoKose,
+    OdpisExpirace,
     SkladDashboard,
+    SarzeSkladu,
     StavSkladu,
     Surovina,
     Vydejka,
@@ -37,6 +39,7 @@ from .services import (
     spocitej_souhrn_spotrebniho_kose,
     spocitej_zapocitatelnou_hmotnost_sk,
     stav_skladu_k_datu,
+    uzavri_odpis_expirace,
     stornuj_prijem,
     stornuj_inventuru,
     stornuj_vydejku,
@@ -65,11 +68,25 @@ class SkladovePohybyTests(TestCase):
             email="admin@example.test",
         )
 
+    def pridej_sarzi(self, surovina, mnozstvi, datum_spotreby=None, sarze="TEST"):
+        return SarzeSkladu.objects.create(
+            surovina=surovina,
+            sarze=sarze,
+            typ_data_spotreby="POUZITELNOST",
+            datum_spotreby=datum_spotreby or date(2099, 1, 1),
+            mnozstvi_prijato=mnozstvi,
+            mnozstvi_zbyva=mnozstvi,
+            cena_za_jednotku=surovina.prumerna_cena_za_jednotku or Decimal("1.0000"),
+            stav=SarzeSkladu.STAV_POUZITELNA,
+        )
+
     def test_vydejka_z_objednavek_odecte_komponentove_suroviny_idempotentne(self):
         mouka = Surovina.objects.create(nazev="Mouka", jednotka="g")
         voda = Surovina.objects.create(nazev="Voda", jednotka="ml")
         StavSkladu.objects.create(surovina=mouka, mnozstvi=Decimal("1000.000"))
         StavSkladu.objects.create(surovina=voda, mnozstvi=Decimal("500.000"))
+        self.pridej_sarzi(mouka, Decimal("1000.000"), sarze="MOUKA-1")
+        self.pridej_sarzi(voda, Decimal("500.000"), sarze="VODA-1")
 
         komponenta = KomponentaJidla.objects.create(
             nazev="Testovaci omacka",
@@ -278,6 +295,7 @@ class SkladovePohybyTests(TestCase):
 
         mouka = Surovina.objects.create(nazev="Mouka", jednotka="g")
         StavSkladu.objects.create(surovina=mouka, mnozstvi=Decimal("1000.000"))
+        self.pridej_sarzi(mouka, Decimal("1000.000"), sarze="MOUKA-ADMIN")
         komponenta = KomponentaJidla.objects.create(
             nazev="Testovaci zaklad",
             typ=KomponentaJidla.TYP_OSTATNI,
@@ -338,7 +356,7 @@ class SkladovePohybyTests(TestCase):
             datum=self.datum,
             uzavreny=True,
         )
-        PolozkaPrijmu.objects.create(
+        polozka_prijmu = PolozkaPrijmu.objects.create(
             prijem=prijem,
             surovina=mleko,
             pocet_baleni=Decimal("1.000"),
@@ -347,6 +365,17 @@ class SkladovePohybyTests(TestCase):
             cena_za_baleni_bez_dph=Decimal("100.0000"),
             sarze="EXP-1",
             datum_spotreby=self.datum + timedelta(days=5),
+        )
+        SarzeSkladu.objects.create(
+            surovina=mleko,
+            polozka_prijmu=polozka_prijmu,
+            sarze="EXP-1",
+            typ_data_spotreby="POUZITELNOST",
+            datum_spotreby=self.datum + timedelta(days=5),
+            mnozstvi_prijato=Decimal("5.000"),
+            mnozstvi_zbyva=Decimal("5.000"),
+            cena_za_jednotku=Decimal("20.0000"),
+            stav=SarzeSkladu.STAV_POUZITELNA,
         )
 
         model_admin = SkladSpotrebniKosAdmin(SkladDashboard, admin.site)
@@ -362,6 +391,7 @@ class SkladovePohybyTests(TestCase):
     def test_storno_vydejky_vrati_suroviny_na_sklad(self):
         mouka = Surovina.objects.create(nazev="Mouka", jednotka="g", prumerna_cena_za_jednotku=Decimal("2.0000"))
         StavSkladu.objects.create(surovina=mouka, mnozstvi=Decimal("1000.000"))
+        self.pridej_sarzi(mouka, Decimal("1000.000"), sarze="MOUKA-STORNO")
         vydejka = Vydejka.objects.create(
             datum=self.datum,
             stravovaci_skupina=self.skupina,
@@ -380,6 +410,7 @@ class SkladovePohybyTests(TestCase):
     def test_po_stornu_lze_vytvorit_novou_vydejku_pro_stejny_den_skupinu_a_typ(self):
         mouka = Surovina.objects.create(nazev="Mouka po stornu", jednotka="g")
         StavSkladu.objects.create(surovina=mouka, mnozstvi=Decimal("1000.000"))
+        self.pridej_sarzi(mouka, Decimal("1000.000"), sarze="MOUKA-STORNO-2")
         vydejka = Vydejka.objects.create(
             datum=self.datum,
             stravovaci_skupina=self.skupina,
@@ -460,6 +491,7 @@ class SkladovePohybyTests(TestCase):
     def test_naklady_mesic_pocita_vydeje_a_storno_vydeje_jako_korekci(self):
         mouka = Surovina.objects.create(nazev="Mouka", jednotka="g", prumerna_cena_za_jednotku=Decimal("2.0000"))
         StavSkladu.objects.create(surovina=mouka, mnozstvi=Decimal("1000.000"))
+        self.pridej_sarzi(mouka, Decimal("1000.000"), sarze="MOUKA-NAKLADY")
         vydejka = Vydejka.objects.create(
             datum=self.datum,
             stravovaci_skupina=self.skupina,
@@ -493,6 +525,7 @@ class SkladovePohybyTests(TestCase):
             koeficient_zapoctu_sk=Decimal("1.0000"),
         )
         StavSkladu.objects.create(surovina=maso, mnozstvi=Decimal("1000.000"))
+        self.pridej_sarzi(maso, Decimal("1000.000"), sarze="MASO-SK")
         NormaSpotrebnihoKose.objects.create(
             vekova_kategorie=NormaSpotrebnihoKose.VEK_15_PLUS,
             typ_jidla=NormaSpotrebnihoKose.TYP_OBED,
@@ -556,6 +589,7 @@ class SkladovePohybyTests(TestCase):
             koeficient_ciste_hmotnosti_sk=Decimal("1.0000"),
             koeficient_zapoctu_sk=Decimal("1.0000"),
         )
+        self.pridej_sarzi(mleko, Decimal("100.000"), sarze="MLEKO-LEGACY")
         NormaSpotrebnihoKose.objects.create(
             vekova_kategorie=NormaSpotrebnihoKose.VEK_15_PLUS,
             typ_jidla=NormaSpotrebnihoKose.TYP_OBED,
@@ -622,6 +656,7 @@ class SkladovePohybyTests(TestCase):
             koeficient_ciste_hmotnosti_sk=Decimal("1.0000"),
             koeficient_zapoctu_sk=Decimal("1.0000"),
         )
+        self.pridej_sarzi(maso, Decimal("240.000"), sarze="MASO-BEZ-SKUPINY")
         NormaSpotrebnihoKose.objects.create(
             vekova_kategorie=NormaSpotrebnihoKose.VEK_15_PLUS,
             typ_jidla=NormaSpotrebnihoKose.TYP_OBED,
@@ -670,6 +705,39 @@ class SkladovePohybyTests(TestCase):
         self.assertEqual(maso_row["skutecnost_g"], Decimal("240.00000000000"))
         self.assertEqual(souhrn["pocet_jidel"], Decimal("3"))
         self.assertEqual(souhrn["pocet_vydejek"], 1)
+
+    def test_prosla_sarze_se_nepouzije_a_odpis_expirace_ji_odepise(self):
+        mleko = Surovina.objects.create(nazev="Mléko expirace", jednotka="l")
+        StavSkladu.objects.create(surovina=mleko, mnozstvi=Decimal("8.000"))
+        self.pridej_sarzi(
+            mleko,
+            Decimal("5.000"),
+            datum_spotreby=self.datum - timedelta(days=1),
+            sarze="EXP",
+        )
+        self.pridej_sarzi(
+            mleko,
+            Decimal("3.000"),
+            datum_spotreby=self.datum + timedelta(days=10),
+            sarze="OK",
+        )
+
+        vydejka = Vydejka.objects.create(datum=self.datum)
+        PolozkaVydejky.objects.create(vydejka=vydejka, surovina=mleko, mnozstvi=Decimal("4.000"))
+
+        with self.assertRaises(ValidationError):
+            uzavri_vydejku(vydejka, user=self.user)
+
+        odpis = OdpisExpirace.objects.create(datum=self.datum, popis="Test expirace")
+        self.assertTrue(uzavri_odpis_expirace(odpis, user=self.user))
+
+        exp_sarze = SarzeSkladu.objects.get(sarze="EXP")
+        ok_sarze = SarzeSkladu.objects.get(sarze="OK")
+        self.assertEqual(exp_sarze.stav, SarzeSkladu.STAV_ODEPSANA)
+        self.assertEqual(exp_sarze.mnozstvi_zbyva, Decimal("0"))
+        self.assertEqual(ok_sarze.mnozstvi_zbyva, Decimal("3.000"))
+        self.assertEqual(StavSkladu.objects.get(surovina=mleko).mnozstvi, Decimal("3.000"))
+        self.assertEqual(PohybSkladu.objects.filter(odpis_expirace=odpis).count(), 1)
 
     def test_uzavri_inventuru_vytvori_rozdilovy_pohyb_a_prepise_stav_idempotentne(self):
         cukr = Surovina.objects.create(nazev="Cukr", jednotka="kg")

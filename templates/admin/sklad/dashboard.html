@@ -73,15 +73,21 @@
                   </td>
                   <td>
                     {{ pol.datum_spotreby|date:"d.m.Y" }}
-                    {% if pol.datum_spotreby < target_date %}
+                    {% if pol.stav == "EXPIROVANA" %}
                       <span class="badge badge-danger ml-1">Po spotřebě</span>
+                    {% elif pol.stav == "KARANTENA" %}
+                      <span class="badge badge-warning ml-1">Karanténa</span>
                     {% endif %}
                   </td>
-                  <td>{{ pol.surovina.stav.mnozstvi }} {{ pol.surovina.jednotka }}</td>
+                  <td>{{ pol.mnozstvi_zbyva }} {{ pol.surovina.jednotka }}</td>
                   <td>
-                    #{{ pol.prijem_id }}
-                    {% if pol.prijem.dodavatel %}
-                      <small class="text-muted">/ {{ pol.prijem.dodavatel }}</small>
+                    {% if pol.polozka_prijmu.prijem_id %}
+                      #{{ pol.polozka_prijmu.prijem_id }}
+                    {% else %}
+                      <span class="text-muted">–</span>
+                    {% endif %}
+                    {% if pol.polozka_prijmu.prijem.dodavatel %}
+                      <small class="text-muted">/ {{ pol.polozka_prijmu.prijem.dodavatel }}</small>
                     {% endif %}
                   </td>
                 </tr>

@@ -56,6 +56,8 @@ from .models import (
     NormaSpotrebnihoKose,
     ReportNakladySkladu,
     ToleranceSpotrebnihoKose,
+    SarzeSkladu,
+    OdpisExpirace,
 )
 
 from .services import (
@@ -70,6 +72,8 @@ from .services import (
     stornuj_prijem,
     stornuj_vydejku,
     stornuj_inventuru,
+    uzavri_odpis_expirace,
+    aktualizuj_stavy_sarzi,
     validace_surovin_pro_sk,
     spocitej_stravnikodny_obdobi,
     spocitej_spotrebu_sk_mesic,
@@ -306,16 +310,20 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
 
     def _dashboard_expirace(self, target_date):
         expirace_do = target_date + timedelta(days=self.expirace_varovani_dnu)
+        aktualizuj_stavy_sarzi(dnes=target_date)
         return (
-            PolozkaPrijmu.objects
+            SarzeSkladu.objects
             .filter(
                 datum_spotreby__isnull=False,
                 datum_spotreby__lte=expirace_do,
-                prijem__uzavreny=True,
-                prijem__stornovano=False,
-                surovina__stav__mnozstvi__gt=0,
+                mnozstvi_zbyva__gt=0,
+                stav__in=[
+                    SarzeSkladu.STAV_POUZITELNA,
+                    SarzeSkladu.STAV_KARANTENA,
+                    SarzeSkladu.STAV_EXPIROVANA,
+                ],
             )
-            .select_related("surovina", "surovina__stav", "prijem", "prijem__dodavatel")
+            .select_related("surovina", "polozka_prijmu", "polozka_prijmu__prijem", "polozka_prijmu__prijem__dodavatel")
             .order_by("datum_spotreby", "surovina__nazev", "id")[:20]
         )
 
@@ -729,7 +737,7 @@ class DodavatelAdmin(admin.ModelAdmin):
 
 @admin.register(PohybSkladu)
 class PohybSkladuAdmin(admin.ModelAdmin):
-    list_display = ("datum", "surovina", "typ", "mnozstvi", "doklad_link", "poznamka")
+    list_display = ("datum", "surovina", "typ", "mnozstvi", "sarze_skladu", "doklad_link", "poznamka")
     list_filter = ("typ", "datum", "surovina")
     search_fields = ("surovina__nazev", "vydejka__id", "prijem__id", "poznamka")
     date_hierarchy = "datum"
@@ -744,6 +752,9 @@ class PohybSkladuAdmin(admin.ModelAdmin):
         if getattr(obj, "inventura_id", None):
             url = f"/admin/sklad/inventura/{obj.inventura_id}/change/"
             return format_html('<a href="{}">Inventura #{}</a>', url, obj.inventura_id)
+        if getattr(obj, "odpis_expirace_id", None):
+            url = f"/admin/sklad/odpisexpirace/{obj.odpis_expirace_id}/change/"
+            return format_html('<a href="{}">Odpis expirace #{}</a>', url, obj.odpis_expirace_id)
         return "-"
 
     doklad_link.short_description = "Doklad"
@@ -752,6 +763,42 @@ class PohybSkladuAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(SarzeSkladu)
+class SarzeSkladuAdmin(admin.ModelAdmin):
+    list_display = (
+        "surovina",
+        "sarze",
+        "typ_data_spotreby",
+        "datum_spotreby",
+        "mnozstvi_zbyva",
+        "stav",
+    )
+    list_filter = ("stav", "typ_data_spotreby", "datum_spotreby", "surovina")
+    search_fields = ("surovina__nazev", "sarze", "poznamka")
+    readonly_fields = (
+        "surovina",
+        "polozka_prijmu",
+        "sarze",
+        "typ_data_spotreby",
+        "datum_spotreby",
+        "mnozstvi_prijato",
+        "mnozstvi_zbyva",
+        "cena_za_jednotku",
+        "stav",
+        "poznamka",
+    )
+    date_hierarchy = "datum_spotreby"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_staff
+
+    def has_delete_permission(self, request, obj=None):
         return False
 
 
@@ -807,7 +854,7 @@ class PolozkaPrijmuInline(admin.StackedInline):
             "Šarže a trvanlivost",
             {
                 "fields": (
-                    ("sarze", "datum_spotreby"),
+                    ("sarze", "typ_data_spotreby", "datum_spotreby"),
                 ),
             },
         ),
@@ -908,6 +955,10 @@ class PohybVydejkyInline(PohybSkladuInlineBase):
 
 class PohybInventuryInline(PohybSkladuInlineBase):
     fk_name = "inventura"
+
+
+class PohybOdpisuExpiraceInline(PohybSkladuInlineBase):
+    fk_name = "odpis_expirace"
 
 
 class PolozkaInventuryReadOnlyInline(admin.TabularInline):
@@ -1165,6 +1216,52 @@ class InventuraAdmin(admin.ModelAdmin):
             except ValidationError as exc:
                 messages.error(request, f"Inventura #{inventura.id}: {' '.join(exc.messages)}")
         messages.success(request, f"Stornováno inventur: {stornovano}.")
+
+
+@admin.register(OdpisExpirace)
+class OdpisExpiraceAdmin(admin.ModelAdmin):
+    list_display = ("id", "datum", "vytvoril", "uzavreny", "stornovano", "uzavren_at", "uzavrel")
+    list_filter = ("uzavreny", "stornovano", "datum")
+    readonly_fields = ("vytvoril", "uzavren_at", "uzavrel", "stornovano", "stornovano_at")
+    inlines = [PohybOdpisuExpiraceInline]
+    fieldsets = (
+        ("Základní údaje", {"fields": ("datum", "popis")}),
+        ("Stav a audit", {"fields": ("uzavreny", "stornovano", "vytvoril", "uzavren_at", "uzavrel", "stornovano_at")}),
+    )
+
+    def save_model(self, request, obj, form, change):
+        if not obj.pk and not obj.vytvoril:
+            obj.vytvoril = request.user
+        super().save_model(request, obj, form, change)
+
+    def save_form(self, request, form, change):
+        obj = super().save_form(request, form, change)
+        return _prepare_uzavreni_po_ulozeni(OdpisExpirace, obj, change)
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        obj = form.instance
+        if getattr(obj, "_uzavrit_po_ulozeni", False):
+            try:
+                uzavri_odpis_expirace(obj, user=request.user)
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+
+    def get_readonly_fields(self, request, obj=None):
+        ro = list(super().get_readonly_fields(request, obj))
+        if obj and obj.uzavreny:
+            ro += ["datum", "popis", "uzavreny", "stornovano"]
+        return ro
+
+    def has_delete_permission(self, request, obj=None):
+        if obj and obj.uzavreny:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def has_change_permission(self, request, obj=None):
+        if obj and (obj.uzavreny or obj.stornovano):
+            return False
+        return super().has_change_permission(request, obj)
 
 
 @admin.register(InventurniDoklad)

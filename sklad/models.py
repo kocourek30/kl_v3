@@ -278,6 +278,12 @@ class Inventura(DokladBase):
         verbose_name_plural = "Inventury"
 
 
+class OdpisExpirace(DokladBase):
+    class Meta:
+        verbose_name = "Odpis expirace"
+        verbose_name_plural = "Odpisy expirací"
+
+
 class InventurniDoklad(Inventura):
     """
     Pokud to chceš zachovat kvůli adminu/historii.
@@ -399,6 +405,16 @@ class PolozkaPrijmu(models.Model):
     )
     sarze = models.CharField("Šarže", max_length=100, blank=True, default="")
     datum_spotreby = models.DateField("Datum spotřeby", null=True, blank=True)
+    typ_data_spotreby = models.CharField(
+        "Typ data spotřeby",
+        max_length=30,
+        choices=[
+            ("POUZITELNOST", "Spotřebujte do"),
+            ("MINIMALNI_TRVANLIVOST", "Minimální trvanlivost do"),
+            ("NEUVADI_SE", "Neuvádí se"),
+        ],
+        default="POUZITELNOST",
+    )
 
     class Meta:
         verbose_name = "Položka příjmu"
@@ -461,6 +477,66 @@ class PolozkaPrijmu(models.Model):
         return f"{self.surovina} / {self.mnozstvi}"
 
 
+class SarzeSkladu(models.Model):
+    STAV_POUZITELNA = "POUZITELNA"
+    STAV_KARANTENA = "KARANTENA"
+    STAV_EXPIROVANA = "EXPIROVANA"
+    STAV_ODEPSANA = "ODEPSANA"
+
+    STAVY = [
+        (STAV_POUZITELNA, "Použitelná"),
+        (STAV_KARANTENA, "Karanténa"),
+        (STAV_EXPIROVANA, "Expirovaná"),
+        (STAV_ODEPSANA, "Odepsaná"),
+    ]
+
+    surovina = models.ForeignKey(
+        Surovina,
+        verbose_name="Surovina",
+        on_delete=models.PROTECT,
+        related_name="sarze_skladu",
+    )
+    polozka_prijmu = models.ForeignKey(
+        PolozkaPrijmu,
+        verbose_name="Položka příjmu",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="sarze_skladu",
+    )
+    sarze = models.CharField("Šarže", max_length=100, blank=True, default="")
+    typ_data_spotreby = models.CharField(
+        "Typ data spotřeby",
+        max_length=30,
+        choices=PolozkaPrijmu._meta.get_field("typ_data_spotreby").choices,
+        default="POUZITELNOST",
+    )
+    datum_spotreby = models.DateField("Datum spotřeby", null=True, blank=True, db_index=True)
+    mnozstvi_prijato = models.DecimalField("Přijato", max_digits=12, decimal_places=3, default=Decimal("0"))
+    mnozstvi_zbyva = models.DecimalField("Zbývá", max_digits=12, decimal_places=3, default=Decimal("0"))
+    cena_za_jednotku = models.DecimalField(
+        "Cena za jednotku",
+        max_digits=12,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
+    stav = models.CharField("Stav", max_length=30, choices=STAVY, default=STAV_POUZITELNA, db_index=True)
+    poznamka = models.TextField("Poznámka", blank=True, default="")
+
+    class Meta:
+        verbose_name = "Šarže skladu"
+        verbose_name_plural = "Šarže skladu"
+        ordering = ("datum_spotreby", "surovina__nazev", "id")
+        indexes = [
+            models.Index(fields=["surovina", "stav", "datum_spotreby"]),
+        ]
+
+    def __str__(self):
+        datum = self.datum_spotreby.strftime("%d.%m.%Y") if self.datum_spotreby else "bez data"
+        return f"{self.surovina} / {self.sarze or 'bez šarže'} / {datum}"
+
+
 class PolozkaVydejky(models.Model):
     vydejka = models.ForeignKey(
         Vydejka,
@@ -508,12 +584,16 @@ class PohybSkladu(models.Model):
     TYP_VYDEJ = "VYDEJ"
     TYP_INVENTURA_PLUS = "INVENTURA_PLUS"
     TYP_INVENTURA_MINUS = "INVENTURA_MINUS"
+    TYP_EXPIRACE_MINUS = "EXPIRACE_MINUS"
+    TYP_KARANTENA_DMT = "KARANTENA_DMT"
 
     TYPY = [
         (TYP_PRIJEM, "Příjem"),
         (TYP_VYDEJ, "Výdej"),
         (TYP_INVENTURA_PLUS, "Inventura +"),
         (TYP_INVENTURA_MINUS, "Inventura -"),
+        (TYP_EXPIRACE_MINUS, "Odpis expirace"),
+        (TYP_KARANTENA_DMT, "Karanténa po minimální trvanlivosti"),
     ]
 
     datum = models.DateTimeField("Datum", default=timezone.now, db_index=True)
@@ -521,6 +601,22 @@ class PohybSkladu(models.Model):
         Surovina,
         verbose_name="Surovina",
         on_delete=models.PROTECT,
+        related_name="pohyby",
+    )
+    odpis_expirace = models.ForeignKey(
+        OdpisExpirace,
+        verbose_name="Odpis expirace",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="pohyby",
+    )
+    sarze_skladu = models.ForeignKey(
+        SarzeSkladu,
+        verbose_name="Šarže skladu",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
         related_name="pohyby",
     )
     typ = models.CharField("Typ pohybu", max_length=20, choices=TYPY, db_index=True)

@@ -22,6 +22,8 @@ from .models import (
     Inventura,
     NormaSpotrebnihoKose,
     ToleranceSpotrebnihoKose,
+    SarzeSkladu,
+    OdpisExpirace,
 )
 
 
@@ -597,9 +599,135 @@ def _pohyb_znaminko(typ):
     if typ in (
         _safe_pohyb_typ("TYP_VYDEJ", "VYDEJ"),
         _safe_pohyb_typ("TYP_INVENTURA_MINUS", "INVENTURA_MINUS"),
+        _safe_pohyb_typ("TYP_EXPIRACE_MINUS", "EXPIRACE_MINUS"),
     ):
         return Decimal("-1")
     return Decimal("0")
+
+
+def stav_sarze_podle_data(sarze, dnes=None):
+    dnes = dnes or timezone.localdate()
+    if sarze.mnozstvi_zbyva <= 0:
+        return SarzeSkladu.STAV_ODEPSANA
+    if not sarze.datum_spotreby:
+        return SarzeSkladu.STAV_POUZITELNA
+    if sarze.datum_spotreby >= dnes:
+        return SarzeSkladu.STAV_POUZITELNA
+    if sarze.typ_data_spotreby == "MINIMALNI_TRVANLIVOST":
+        return SarzeSkladu.STAV_KARANTENA
+    return SarzeSkladu.STAV_EXPIROVANA
+
+
+def aktualizuj_stavy_sarzi(dnes=None):
+    dnes = dnes or timezone.localdate()
+    zmeneno = 0
+    qs = SarzeSkladu.objects.filter(mnozstvi_zbyva__gt=0).exclude(stav=SarzeSkladu.STAV_ODEPSANA)
+    for sarze in qs:
+        novy_stav = stav_sarze_podle_data(sarze, dnes=dnes)
+        if sarze.stav != novy_stav:
+            sarze.stav = novy_stav
+            sarze.save(update_fields=["stav"])
+            zmeneno += 1
+    return zmeneno
+
+
+def vytvor_nebo_aktualizuj_sarzi_z_prijmu(polozka_prijmu):
+    typ_data = getattr(polozka_prijmu, "typ_data_spotreby", "POUZITELNOST") or "POUZITELNOST"
+    sarze, _ = SarzeSkladu.objects.update_or_create(
+        polozka_prijmu=polozka_prijmu,
+        defaults={
+            "surovina": polozka_prijmu.surovina,
+            "sarze": polozka_prijmu.sarze,
+            "typ_data_spotreby": typ_data,
+            "datum_spotreby": polozka_prijmu.datum_spotreby,
+            "mnozstvi_prijato": polozka_prijmu.mnozstvi or Decimal("0"),
+            "mnozstvi_zbyva": polozka_prijmu.mnozstvi or Decimal("0"),
+            "cena_za_jednotku": polozka_prijmu.jednotkova_cena,
+            "stav": SarzeSkladu.STAV_POUZITELNA,
+        },
+    )
+    sarze.stav = stav_sarze_podle_data(sarze)
+    sarze.save(update_fields=["stav"])
+    return sarze
+
+
+def odeber_ze_sarzi_fefo(surovina, mnozstvi, vydejka=None):
+    aktualizuj_stavy_sarzi()
+    zbyva = Decimal(mnozstvi or 0)
+    if zbyva <= 0:
+        return []
+
+    cerpani = []
+    sarze_qs = (
+        SarzeSkladu.objects
+        .select_for_update()
+        .filter(
+            surovina=surovina,
+            stav=SarzeSkladu.STAV_POUZITELNA,
+            mnozstvi_zbyva__gt=0,
+        )
+        .order_by("datum_spotreby", "id")
+    )
+    for sarze in sarze_qs:
+        if zbyva <= 0:
+            break
+        odebrat = min(sarze.mnozstvi_zbyva or Decimal("0"), zbyva)
+        if odebrat <= 0:
+            continue
+        sarze.mnozstvi_zbyva = (sarze.mnozstvi_zbyva or Decimal("0")) - odebrat
+        if sarze.mnozstvi_zbyva <= 0:
+            sarze.stav = SarzeSkladu.STAV_ODEPSANA
+        sarze.save(update_fields=["mnozstvi_zbyva", "stav"])
+        cerpani.append((sarze, odebrat))
+        zbyva -= odebrat
+
+    if zbyva > 0:
+        raise ValidationError(
+            f"Není dostupná použitelná šarže suroviny '{surovina}' v množství {mnozstvi}. "
+            f"Chybí {zbyva} {surovina.jednotka}."
+        )
+    return cerpani
+
+
+@transaction.atomic
+def uzavri_odpis_expirace(odpis: OdpisExpirace, user=None) -> bool:
+    if getattr(odpis, "uzavreny", False):
+        return False
+    if getattr(odpis, "stornovano", False):
+        raise ValidationError("Stornovaný odpis expirace nelze uzavřít.")
+
+    aktualizuj_stavy_sarzi(dnes=odpis.datum)
+    sarze_qs = SarzeSkladu.objects.select_for_update().filter(
+        stav=SarzeSkladu.STAV_EXPIROVANA,
+        mnozstvi_zbyva__gt=0,
+        datum_spotreby__lte=odpis.datum,
+    )
+    if not sarze_qs.exists():
+        raise ValidationError("Neexistují žádné expirované šarže k odpisu.")
+
+    for sarze in sarze_qs:
+        mnozstvi = sarze.mnozstvi_zbyva or Decimal("0")
+        stav = get_or_create_stav_for_update(sarze.surovina)
+        stav.mnozstvi = (stav.mnozstvi or Decimal("0")) - mnozstvi
+        stav.save(update_fields=["mnozstvi"])
+
+        sarze.mnozstvi_zbyva = Decimal("0")
+        sarze.stav = SarzeSkladu.STAV_ODEPSANA
+        sarze.save(update_fields=["mnozstvi_zbyva", "stav"])
+
+        PohybSkladu.objects.create(
+            surovina=sarze.surovina,
+            typ=_safe_pohyb_typ("TYP_EXPIRACE_MINUS", "EXPIRACE_MINUS"),
+            mnozstvi=mnozstvi,
+            cena_za_jednotku=sarze.cena_za_jednotku,
+            odpis_expirace=odpis,
+            sarze_skladu=sarze,
+            poznamka=f"Odpis expirace #{odpis.id} / šarže {sarze.sarze or sarze.id}",
+        )
+
+    _safe_set_close_metadata(odpis, user=user)
+    odpis.save(update_fields=_safe_update_fields(odpis, ["uzavreny", "uzavren_at", "uzavrel"]))
+    return True
 
 
 def stav_skladu_k_datu(date_to, surovina=None):
@@ -671,6 +799,7 @@ def uzavri_prijem(prijem: PrijemSkladu, user=None) -> bool:
             prijem=prijem if "prijem" in [f.name for f in PohybSkladu._meta.fields] else None,
             poznamka=f"Příjemka #{prijem.id}",
         )
+        vytvor_nebo_aktualizuj_sarzi_z_prijmu(pol)
 
     _safe_set_close_metadata(prijem, user=user)
     prijem.save(update_fields=_safe_update_fields(prijem, ["uzavreny", "uzavren_at", "uzavrel"]))
@@ -695,23 +824,26 @@ def uzavri_vydejku(vydejka: Vydejka, user=None) -> bool:
         stav = get_or_create_stav_for_update(surovina)
 
         mnozstvi = pol.mnozstvi or Decimal("0")
+        cerpani_sarzi = odeber_ze_sarzi_fefo(surovina, mnozstvi, vydejka=vydejka)
         stav.mnozstvi = (stav.mnozstvi or Decimal("0")) - mnozstvi
         stav.save(update_fields=["mnozstvi"])
 
-        kwargs = {
-            "surovina": surovina,
-            "typ": _safe_pohyb_typ("TYP_VYDEJ", "VYDEJ"),
-            "mnozstvi": mnozstvi,
-            "poznamka": f"Výdejka #{vydejka.id}",
-        }
-
         pohyb_fields = {f.name for f in PohybSkladu._meta.fields}
-        if "cena_za_jednotku" in pohyb_fields:
-            kwargs["cena_za_jednotku"] = getattr(surovina, "prumerna_cena_za_jednotku", None)
-        if "vydejka" in pohyb_fields:
-            kwargs["vydejka"] = vydejka
+        for sarze, odebrano in cerpani_sarzi:
+            kwargs = {
+                "surovina": surovina,
+                "typ": _safe_pohyb_typ("TYP_VYDEJ", "VYDEJ"),
+                "mnozstvi": odebrano,
+                "poznamka": f"Výdejka #{vydejka.id} / šarže {sarze.sarze or sarze.id}",
+            }
+            if "cena_za_jednotku" in pohyb_fields:
+                kwargs["cena_za_jednotku"] = sarze.cena_za_jednotku or getattr(surovina, "prumerna_cena_za_jednotku", None)
+            if "vydejka" in pohyb_fields:
+                kwargs["vydejka"] = vydejka
+            if "sarze_skladu" in pohyb_fields:
+                kwargs["sarze_skladu"] = sarze
 
-        PohybSkladu.objects.create(**kwargs)
+            PohybSkladu.objects.create(**kwargs)
 
     _safe_set_close_metadata(vydejka, user=user)
     vydejka.save(update_fields=_safe_update_fields(vydejka, ["uzavreny", "uzavren_at", "uzavrel"]))
