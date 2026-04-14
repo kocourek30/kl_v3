@@ -734,6 +734,174 @@ JIDELNICEK_PLAN = [
 ]
 
 
+def _komponenty(*nazvy):
+    return [(nazev, "1.0") for nazev in nazvy]
+
+
+def _pridej_generovana_jidla():
+    existujici = {jidlo["nazev"] for jidlo in JIDLA}
+
+    def add_jidlo(nazev, cena, komponenty, **flags):
+        if nazev in existujici:
+            return
+        data = {
+            "nazev": nazev,
+            "druh": "Hlavní jídlo",
+            "cena": cena,
+            "komponenty": komponenty,
+        }
+        data.update(flags)
+        JIDLA.append(data)
+        existujici.add(nazev)
+
+    omacky = [
+        ("Rajská omáčka", "rajské omáčce", "90.00"),
+        ("Svíčková omáčka", "smetanové omáčce", "96.00"),
+        ("Koprová omáčka", "koprové omáčce", "86.00"),
+    ]
+    proteiny = [
+        ("Hovězí vařené", "hovězím masem", {"sk_cervene_maso": True}),
+        ("Masové kuličky", "masovými kuličkami", {"sk_cervene_maso": True}),
+        ("Pečené kuřecí stehno", "kuřecím masem", {"sk_bile_maso": True}),
+        ("Vařené vejce", "vejcem", {"sk_bezmasy_pokrm": True}),
+    ]
+    prilohy = [
+        ("Houskový knedlík - porce", "houskovým knedlíkem"),
+        ("Karlovarský knedlík - porce", "karlovarským knedlíkem"),
+        ("Těstoviny vařené - porce", "těstovinami"),
+        ("Rýže vařená - porce", "rýží"),
+        ("Vařené brambory", "vařenými bramborami"),
+        ("Bramborová kaše", "bramborovou kaší"),
+    ]
+    salaty = [
+        (None, ""),
+        ("Okurkový salát", " a okurkovým salátem"),
+        ("Rajčatový salát", " a rajčatovým salátem"),
+    ]
+
+    for omacka_komp, omacka_text, cena in omacky:
+        for protein_komp, protein_text, flags in proteiny:
+            for priloha_komp, priloha_text in prilohy:
+                for salat_komp, salat_text in salaty:
+                    komponenty = [omacka_komp, protein_komp, priloha_komp]
+                    if salat_komp:
+                        komponenty.append(salat_komp)
+                    add_jidlo(
+                        f"{protein_text.capitalize()} v {omacka_text} s {priloha_text}{salat_text}",
+                        cena,
+                        _komponenty(*komponenty),
+                        **flags,
+                    )
+
+    hlavni_kombinace = [
+        ("Kuře na paprice", "Kuře na paprice", {"sk_bile_maso": True}, "89.00"),
+        ("Pečené kuřecí stehno", "Pečené kuřecí stehno", {"sk_bile_maso": True}, "92.00"),
+        ("Rybí filé pečené", "Rybí filé", {"sk_rybi_pokrm": True}, "92.00"),
+        ("Špenát dušený", "Špenát s vejcem", {"sk_bezmasy_pokrm": True}, "78.00"),
+        ("Čočka na kyselo", "Čočka na kyselo", {"sk_bezmasy_pokrm": True}, "78.00"),
+        ("Bulgur se zeleninou", "Bulgur se zeleninou", {"sk_bezmasy_pokrm": True}, "78.00"),
+        ("Kuskus se zeleninou a sýrem", "Kuskus se zeleninou a sýrem", {"sk_bezmasy_pokrm": True}, "82.00"),
+        ("Zapečené těstoviny se sýrem", "Zapečené těstoviny se sýrem", {"sk_bezmasy_pokrm": True}, "82.00"),
+        ("Zeleninové rizoto", "Zeleninové rizoto", {"sk_bezmasy_pokrm": True}, "76.00"),
+    ]
+
+    prilohy_navic = [
+        ("Těstoviny vařené - porce", "těstovinami"),
+        ("Rýže vařená - porce", "rýží"),
+        ("Vařené brambory", "vařenými bramborami"),
+        ("Bramborová kaše", "bramborovou kaší"),
+        ("Houskový knedlík - porce", "houskovým knedlíkem"),
+        ("Karlovarský knedlík - porce", "karlovarským knedlíkem"),
+    ]
+    oblohy = [
+        (None, ""),
+        ("Okurkový salát", " s okurkovým salátem"),
+        ("Rajčatový salát", " s rajčatovým salátem"),
+        ("Špenát dušený", " se špenátem"),
+    ]
+
+    for zaklad_komp, zaklad_text, flags, cena in hlavni_kombinace:
+        for priloha_komp, priloha_text in prilohy_navic:
+            for obloha_komp, obloha_text in oblohy:
+                komponenty = [zaklad_komp, priloha_komp]
+                if obloha_komp and obloha_komp != zaklad_komp:
+                    komponenty.append(obloha_komp)
+                add_jidlo(
+                    f"{zaklad_text} s {priloha_text}{obloha_text}",
+                    cena,
+                    _komponenty(*komponenty),
+                    **flags,
+                )
+
+    sladke_zaklady = [
+        ("Žemlovka s jablky", "Žemlovka s jablky", "72.00"),
+        ("Buchtičky s vanilkovým krémem", "Buchtičky s vanilkovým krémem", "72.00"),
+        ("Krupicová kaše", "Krupicová kaše", "64.00"),
+        ("Tvarohový krém s jablky", "Tvarohový nákyp s jablky", "70.00"),
+    ]
+    polevky = [
+        "Bramboračka",
+        "Kuřecí vývar",
+        "Zeleninová polévka s kapáním",
+        "Čočková polévka",
+        "Hráškový krém",
+    ]
+    dezerty = [
+        None,
+        "Jogurt s jablkem",
+        "Tvarohový krém s jablky",
+    ]
+
+    for sladky_komp, sladky_text, cena in sladke_zaklady:
+        for polevka in polevky:
+            for dezert in dezerty:
+                komponenty = [polevka, sladky_komp]
+                suffix = f" po {polevka.lower()}"
+                if dezert:
+                    komponenty.append(dezert)
+                    suffix += f" a {dezert.lower()}"
+                add_jidlo(
+                    f"{sladky_text}{suffix}",
+                    cena,
+                    _komponenty(*komponenty),
+                    sk_bezmasy_pokrm=True,
+                    sk_sladky_pokrm=True,
+                    sk_dezert_s_volnym_cukrem=True,
+                )
+
+    katalogove_pridavky = [
+        ("se zeleninovou oblohou", "Okurkový salát"),
+        ("s rajčatovou oblohou", "Rajčatový salát"),
+        ("se špenátovou oblohou", "Špenát dušený"),
+    ]
+    zakladni_jidla = list(JIDLA)
+    for jidlo in zakladni_jidla:
+        if jidlo["druh"] != "Hlavní jídlo":
+            continue
+        for suffix, komponenta in katalogove_pridavky:
+            if len(JIDLA) >= 540:
+                break
+            komponenty = list(jidlo["komponenty"])
+            if komponenta not in {nazev for nazev, _ in komponenty}:
+                komponenty.append((komponenta, "1.0"))
+            flags = {
+                key: value
+                for key, value in jidlo.items()
+                if key.startswith("sk_")
+            }
+            add_jidlo(
+                f"{jidlo['nazev']} {suffix}",
+                jidlo["cena"],
+                komponenty,
+                **flags,
+            )
+        if len(JIDLA) >= 540:
+            break
+
+
+_pridej_generovana_jidla()
+
+
 class Command(BaseCommand):
     help = "Naplní demo databázi surovinami, komponentami, jídly a volitelným jídelníčkem."
 
