@@ -60,7 +60,7 @@
             <thead class="thead-light">
               <tr>
                 <th>Ukazatel</th>
-                <th class="text-right">Hodnota</th>
+                <th class="text-right">Hodnota [Kč]</th>
               </tr>
             </thead>
             <tbody>
@@ -77,9 +77,21 @@
                 </td>
               </tr>
               <tr>
+                <td>Odpisy expirací</td>
+                <td class="text-right">
+                  {{ souhrnne_naklady.odpisy_expirace|floatformat:2 }} Kč
+                </td>
+              </tr>
+              <tr class="table-warning font-weight-bold">
+                <td>Náklady celkem včetně odpisů</td>
+                <td class="text-right">
+                  {{ souhrnne_naklady.naklady_celkem|floatformat:2 }} Kč
+                </td>
+              </tr>
+              <tr>
                 <td>Počet porcí (strávníkoden)</td>
                 <td class="text-right">
-                  {{ souhrnne_naklady.pocet_porci|floatformat:0 }}
+                  {{ souhrnne_naklady.pocet_porci|floatformat:0 }} porcí
                 </td>
               </tr>
               <tr class="table-info font-weight-bold">
@@ -94,6 +106,66 @@
       </div>
     </div>
 
+    <div class="col-lg-6">
+      {% if skladova_uzaverka %}
+      <div class="card shadow-sm mb-4">
+        <div class="card-header bg-dark text-white">
+          <strong>Skladová uzávěrka v Kč</strong>
+        </div>
+        <div class="card-body p-0">
+          <table class="table mb-0">
+            <tbody>
+              <tr>
+                <td>Počáteční hodnota skladu</td>
+                <td class="text-right">{{ skladova_uzaverka.pocatecni_stav|floatformat:2 }} Kč</td>
+              </tr>
+              <tr>
+                <td>+ Příjmy</td>
+                <td class="text-right">{{ skladova_uzaverka.prijmy|floatformat:2 }} Kč</td>
+              </tr>
+              <tr>
+                <td>- Storna příjmů</td>
+                <td class="text-right">{{ skladova_uzaverka.storna_prijmu|floatformat:2 }} Kč</td>
+              </tr>
+              <tr>
+                <td>- Výdeje do spotřeby</td>
+                <td class="text-right">{{ skladova_uzaverka.vydeje|floatformat:2 }} Kč</td>
+              </tr>
+              <tr>
+                <td>+ Storna výdejek</td>
+                <td class="text-right">{{ skladova_uzaverka.storna_vydeju|floatformat:2 }} Kč</td>
+              </tr>
+              <tr>
+                <td>- Odpisy expirací</td>
+                <td class="text-right">{{ skladova_uzaverka.odpisy_expirace|floatformat:2 }} Kč</td>
+              </tr>
+              <tr>
+                <td>+ Inventurní přebytky</td>
+                <td class="text-right">{{ skladova_uzaverka.inventura_plus|floatformat:2 }} Kč</td>
+              </tr>
+              <tr>
+                <td>- Inventurní manka</td>
+                <td class="text-right">{{ skladova_uzaverka.inventura_minus|floatformat:2 }} Kč</td>
+              </tr>
+              <tr class="table-secondary font-weight-bold">
+                <td>Vypočtená konečná hodnota</td>
+                <td class="text-right">{{ skladova_uzaverka.vypocet_konecneho_stavu|floatformat:2 }} Kč</td>
+              </tr>
+              <tr class="table-secondary font-weight-bold">
+                <td>Skutečná konečná hodnota z pohybů</td>
+                <td class="text-right">{{ skladova_uzaverka.konecny_stav|floatformat:2 }} Kč</td>
+              </tr>
+              <tr class="{% if skladova_uzaverka.kontrola_ok %}table-success{% else %}table-danger{% endif %} font-weight-bold">
+                <td>Kontrolní rozdíl</td>
+                <td class="text-right">{{ skladova_uzaverka.rozdil_kontroly|floatformat:2 }} Kč</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
     <!-- Náklady podle SK -->
     <div class="col-lg-6">
       {% if naklady_podle_sk %}
@@ -106,8 +178,8 @@
             <thead class="thead-light">
               <tr>
                 <th>Skupina SK</th>
-                <th class="text-right">Náklady</th>
-                <th class="text-right">Podíl</th>
+                <th class="text-right">Náklady [Kč]</th>
+                <th class="text-right">Podíl [%]</th>
               </tr>
             </thead>
             <tbody>
@@ -136,6 +208,79 @@
       {% endif %}
     </div>
   </div>
+
+  {% if managersky_report %}
+  <div class="row">
+    <div class="col-lg-4">
+      <div class="card shadow-sm mb-4">
+        <div class="card-header bg-light">
+          <strong>Top spotřeba podle hodnoty</strong>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-striped mb-0">
+            <thead><tr><th>Surovina</th><th class="text-right">Hodnota</th></tr></thead>
+            <tbody>
+              {% for row in managersky_report.top_spotreba %}
+              <tr>
+                <td>{{ row.surovina.nazev }}</td>
+                <td class="text-right">{{ row.hodnota|floatformat:2 }} Kč</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="2" class="text-center text-muted py-3">Bez výdejů.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card shadow-sm mb-4">
+        <div class="card-header bg-light">
+          <strong>Top odpisy expirací</strong>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-striped mb-0">
+            <thead><tr><th>Surovina</th><th class="text-right">Hodnota</th></tr></thead>
+            <tbody>
+              {% for row in managersky_report.top_odpisy %}
+              <tr>
+                <td>{{ row.surovina.nazev }}</td>
+                <td class="text-right">{{ row.hodnota|floatformat:2 }} Kč</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="2" class="text-center text-muted py-3">Bez odpisů.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card shadow-sm mb-4">
+        <div class="card-header bg-light">
+          <strong>Top inventurní rozdíly</strong>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-striped mb-0">
+            <thead><tr><th>Surovina</th><th class="text-right">Hodnota</th></tr></thead>
+            <tbody>
+              {% for row in managersky_report.top_inventury %}
+              <tr>
+                <td>{{ row.surovina.nazev }}</td>
+                <td class="text-right">{{ row.hodnota|floatformat:2 }} Kč</td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="2" class="text-center text-muted py-3">Bez inventurních rozdílů.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   {% else %}
   <div class="row">

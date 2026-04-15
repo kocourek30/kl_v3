@@ -65,6 +65,8 @@ NORMY_BEZNA_VYZIVA_2025 = {
 }
 
 TOLERANCE_2025 = {
+    # Vyhláška č. 107/2005 Sb. ve znění účinném od 1. 9. 2025,
+    # příloha č. 1, tabulka č. 3: Přípustná tolerance měsíční spotřeby.
     Surovina.SK_MASO: (75, 125),
     Surovina.SK_RYBY: (75, None),
     Surovina.SK_MLEKO: (75, 125),
@@ -75,6 +77,8 @@ TOLERANCE_2025 = {
     Surovina.SK_CELOZRNNE: (75, None),
     Surovina.SK_LUSTENINY: (75, None),
 }
+
+STRAVOVACI_SKUPINY_15_PLUS_KODY = {"DS15+", "DM15+", "PS15+"}
 
 LEGACY_SKUPINY_MAP = {
     "brambory": Surovina.SK_BRAMBORY,
@@ -90,6 +94,20 @@ LEGACY_SKUPINY_MAP = {
 
 class Command(BaseCommand):
     help = "Naplní legislativní normy a tolerance spotřebního koše podle nové vyhlášky 2025."
+
+    def _stravovaci_skupiny_15_plus(self):
+        skupiny = []
+        for skupina in StravovaciSkupina.objects.all().order_by("kod"):
+            kod = (skupina.kod or "").upper()
+            nazev = (skupina.nazev or "").upper()
+            if (
+                skupina.typ_vzdelavani == "SS"
+                or kod in STRAVOVACI_SKUPINY_15_PLUS_KODY
+                or "15" in kod
+                or "15" in nazev
+            ):
+                skupiny.append(skupina)
+        return skupiny
 
     def handle(self, *args, **options):
         normy = 0
@@ -121,7 +139,8 @@ class Command(BaseCommand):
             tolerance += 1
 
         tolerance_skupiny = 0
-        for stravovaci_skupina in StravovaciSkupina.objects.all():
+        skupiny_15_plus = self._stravovaci_skupiny_15_plus()
+        for stravovaci_skupina in skupiny_15_plus:
             for skupina, (minimum, maximum) in TOLERANCE_2025.items():
                 ToleranceSpotrebnihoKose.objects.update_or_create(
                     stravovaci_skupina=stravovaci_skupina,
@@ -143,7 +162,8 @@ class Command(BaseCommand):
             self.style.SUCCESS(
                 "Spotřební koš 2025 naplněn: "
                 f"{normy} norem, {tolerance} globálních tolerancí, "
-                f"{tolerance_skupiny} tolerancí pro stravovací skupiny, "
+                f"{tolerance_skupiny} tolerancí pro stravovací skupiny 15+ "
+                f"({', '.join(s.kod for s in skupiny_15_plus) or 'žádná'}), "
                 f"{opravene_suroviny} surovin převedeno ze starých skupin."
             )
         )

@@ -1,0 +1,55 @@
+{% extends "admin/base_site.html" %}
+{% load form_tags %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="mb-1">{{ title }}</h1>
+      <p class="text-muted mb-0">Příjemka ze dne {{ prijem.datum|date:"d.m.Y" }}</p>
+    </div>
+    <a class="btn btn-outline-success" href="{{ vzor_url }}">
+      <i class="fas fa-file-excel"></i> Stáhnout vzor
+    </a>
+  </div>
+
+  <div class="row">
+    <div class="col-lg-7">
+      <div class="card">
+        <div class="card-header"><strong>Nahrát položky</strong></div>
+        <div class="card-body">
+          <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="form-group">
+              <label for="{{ form.soubor.id_for_label }}">{{ form.soubor.label }}</label>
+              {{ form.soubor|add_class:"form-control" }}
+              <small class="form-text text-muted">{{ form.soubor.help_text }}</small>
+              {% if form.soubor.errors %}
+                <div class="text-danger">{{ form.soubor.errors }}</div>
+              {% endif %}
+            </div>
+            <button type="submit" class="btn btn-success">
+              <i class="fas fa-upload"></i> Naimportovat položky
+            </button>
+            <a class="btn btn-secondary" href="../change/">Zpět na příjemku</a>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="card">
+        <div class="card-header"><strong>Pravidla importu</strong></div>
+        <div class="card-body">
+          <ul class="mb-0">
+            <li>Surovina se páruje podle přesného názvu bez rozlišení velikosti písmen.</li>
+            <li>Neznámé suroviny se přeskočí a zobrazí se varování.</li>
+            <li>Importovat lze pouze do otevřené příjemky.</li>
+            <li>Po importu ještě příjemku zkontroluj a uzavři běžným tlačítkem.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,129 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="mb-1">{{ title }}</h1>
+      <p class="text-muted mb-0">Kontrola k datu {{ data.datum|date:"d.m.Y" }}</p>
+    </div>
+    <a class="btn btn-danger" href="{{ pdf_url }}">
+      <i class="fas fa-file-pdf"></i> Stáhnout PDF
+    </a>
+  </div>
+
+  <div class="row mb-3">
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-header"><strong>Skóre skladu</strong></div>
+        <div class="card-body">
+          <h2 class="mb-0">{{ data.skore }} %</h2>
+          {% if data.pripraveno_k_uzaverce %}
+            <span class="badge badge-success">Připraveno k uzávěrce</span>
+          {% else %}
+            <span class="badge badge-warning">Vyžaduje kontrolu</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-header"><strong>Hodnota skladu</strong></div>
+        <div class="card-body">
+          <h2 class="mb-0">{{ data.hodnota_skladu|floatformat:2 }} Kč</h2>
+          <p class="text-muted mb-0">Aktivní oceněné šarže: {{ data.pocet_sarzi }}</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-header"><strong>Rizikové šarže</strong></div>
+        <div class="card-body">
+          <p class="mb-1">Po spotřebě: <strong>{{ data.expirovane_sarze|length }}</strong></p>
+          <p class="mb-0">Blízká expirace do {{ data.expirace_do|date:"d.m.Y" }}: <strong>{{ data.blizka_expirace|length }}</strong></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><strong>Kontroly</strong></div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-striped mb-0">
+        <thead class="thead-light">
+          <tr>
+            <th>Kontrola</th>
+            <th>Počet</th>
+            <th>Stav</th>
+            <th>Co to znamená</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in data.rizika %}
+            <tr class="{% if row.ok %}table-success{% else %}table-warning{% endif %}">
+              <td><strong>{{ row.nazev }}</strong></td>
+              <td>{{ row.pocet }}</td>
+              <td>
+                {% if row.ok %}
+                  <span class="badge badge-success">V pořádku</span>
+                {% else %}
+                  <span class="badge badge-warning">Zkontrolovat</span>
+                {% endif %}
+              </td>
+              <td>{{ row.popis }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-lg-6">
+      <div class="card mb-3">
+        <div class="card-header"><strong>Pohyby bez ceny</strong></div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-striped mb-0">
+            <thead><tr><th>Datum</th><th>Surovina</th><th>Typ</th><th>Množství</th></tr></thead>
+            <tbody>
+              {% for pohyb in data.pohyby_bez_ceny %}
+                <tr>
+                  <td>{{ pohyb.datum|date:"d.m.Y" }}</td>
+                  <td>{{ pohyb.surovina.nazev }}</td>
+                  <td>{{ pohyb.get_typ_display }}</td>
+                  <td>{{ pohyb.mnozstvi }} {{ pohyb.surovina.jednotka }}</td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="4" class="text-center text-muted py-3">Všechny pohyby mají cenu.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card mb-3">
+        <div class="card-header"><strong>Aktivní šarže bez ceny</strong></div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-striped mb-0">
+            <thead><tr><th>Surovina</th><th>Šarže</th><th>Zbývá</th><th>Spotřeba</th></tr></thead>
+            <tbody>
+              {% for sarze in data.sarze_bez_ceny %}
+                <tr>
+                  <td>{{ sarze.surovina.nazev }}</td>
+                  <td>{{ sarze.sarze|default:"–" }}</td>
+                  <td>{{ sarze.mnozstvi_zbyva }} {{ sarze.surovina.jednotka }}</td>
+                  <td>{{ sarze.datum_spotreby|date:"d.m.Y"|default:"–" }}</td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="4" class="text-center text-muted py-3">Všechny aktivní šarže mají cenu.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

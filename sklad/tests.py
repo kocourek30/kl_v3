@@ -19,11 +19,14 @@ from .models import (
     Dodavatel,
     PohybSkladu,
     PolozkaInventury,
+    PolozkaInventurySarze,
     PolozkaPrijmu,
     PolozkaVydejky,
     PrijemSkladu,
+    RecepturaPolozka,
     NormaSpotrebnihoKose,
     OdpisExpirace,
+    SkladovaUzaverka,
     SkladDashboard,
     SarzeSkladu,
     StavSkladu,
@@ -35,10 +38,27 @@ from .services import (
     najdi_nedostatecne_stavy_pro_vydejku,
     preved_na_gramy,
     priprav_radky_spotrebi_kos_tabulka,
+    format_cena_za_jednotku,
+    format_mnozstvi_s_jednotkou,
+    prepocitej_mnozstvi_pro_zobrazeni,
     spocitej_naklady_mesic,
     spocitej_souhrn_spotrebniho_kose,
     spocitej_zapocitatelnou_hmotnost_sk,
     stav_skladu_k_datu,
+    hodnota_skladu_k_datu,
+    hodnota_skladu_aktualni,
+    mesicni_skladova_uzaverka,
+    denni_skladovy_checklist,
+    karta_suroviny_data,
+    managersky_report_skladu,
+    napln_sarzovou_inventuru,
+    najdi_rozdily_stav_vs_sarze,
+    nahled_vydejky,
+    navrh_nakupu,
+    pruvodce_skladovou_uzaverkou,
+    souhrn_sarzove_inventury,
+    uzavri_skladovou_uzaverku,
+    validace_prijemky_pred_uzavrenim,
     uzavri_odpis_expirace,
     stornuj_prijem,
     stornuj_inventuru,
@@ -46,6 +66,7 @@ from .services import (
     uzavri_inventuru,
     uzavri_prijem,
     uzavri_vydejku,
+    zdravi_skladu,
 )
 
 
@@ -382,8 +403,9 @@ class SkladovePohybyTests(TestCase):
         expirace = list(model_admin._dashboard_expirace(self.datum))
         alerty = model_admin._dashboard_minimum_alerty()
 
-        self.assertEqual(expirace[0].surovina, mleko)
-        self.assertEqual(expirace[0].sarze, "EXP-1")
+        self.assertEqual(expirace[0]["surovina"], mleko)
+        self.assertEqual(expirace[0]["sarze"], "EXP-1")
+        self.assertEqual(expirace[0]["mnozstvi_zbyva_display"], "5.000 l")
         self.assertEqual([row["surovina"] for row in alerty], [mleko, mouka])
         self.assertTrue(alerty[0]["pod_min"])
         self.assertFalse(alerty[1]["pod_min"])
@@ -391,7 +413,7 @@ class SkladovePohybyTests(TestCase):
     def test_storno_vydejky_vrati_suroviny_na_sklad(self):
         mouka = Surovina.objects.create(nazev="Mouka", jednotka="g", prumerna_cena_za_jednotku=Decimal("2.0000"))
         StavSkladu.objects.create(surovina=mouka, mnozstvi=Decimal("1000.000"))
-        self.pridej_sarzi(mouka, Decimal("1000.000"), sarze="MOUKA-STORNO")
+        sarze = self.pridej_sarzi(mouka, Decimal("1000.000"), sarze="MOUKA-STORNO")
         vydejka = Vydejka.objects.create(
             datum=self.datum,
             stravovaci_skupina=self.skupina,
@@ -403,9 +425,28 @@ class SkladovePohybyTests(TestCase):
         self.assertTrue(stornuj_vydejku(vydejka, user=self.user))
 
         vydejka.refresh_from_db()
+        sarze.refresh_from_db()
         self.assertTrue(vydejka.stornovano)
         self.assertEqual(StavSkladu.objects.get(surovina=mouka).mnozstvi, Decimal("1000.000"))
+        self.assertEqual(sarze.mnozstvi_zbyva, Decimal("1000.000"))
         self.assertEqual(PohybSkladu.objects.filter(vydejka=vydejka).count(), 2)
+
+    def test_nahled_vydejky_ukaze_fefo_sarze_bez_zmeny_skladu(self):
+        ryze = Surovina.objects.create(nazev="Rýže FEFO", jednotka="kg", prumerna_cena_za_jednotku=Decimal("20.0000"))
+        StavSkladu.objects.create(surovina=ryze, mnozstvi=Decimal("10.000"))
+        starsi = self.pridej_sarzi(ryze, Decimal("3.000"), datum_spotreby=date(2026, 5, 1), sarze="A")
+        novejsi = self.pridej_sarzi(ryze, Decimal("7.000"), datum_spotreby=date(2026, 6, 1), sarze="B")
+        vydejka = Vydejka.objects.create(datum=self.datum)
+        PolozkaVydejky.objects.create(vydejka=vydejka, surovina=ryze, mnozstvi=Decimal("5.000"))
+
+        data = nahled_vydejky(vydejka)
+
+        self.assertEqual([row["sarze"] for row in data["radky"]], [starsi, novejsi])
+        self.assertEqual([row["mnozstvi"] for row in data["radky"]], [Decimal("3.000"), Decimal("2.000")])
+        starsi.refresh_from_db()
+        novejsi.refresh_from_db()
+        self.assertEqual(starsi.mnozstvi_zbyva, Decimal("3.000"))
+        self.assertEqual(novejsi.mnozstvi_zbyva, Decimal("7.000"))
 
     def test_po_stornu_lze_vytvorit_novou_vydejku_pro_stejny_den_skupinu_a_typ(self):
         mouka = Surovina.objects.create(nazev="Mouka po stornu", jednotka="g")
@@ -507,6 +548,31 @@ class SkladovePohybyTests(TestCase):
         naklady_po_stornu = spocitej_naklady_mesic(self.datum.year, self.datum.month, self.skupina)
         self.assertEqual(naklady_po_stornu["vydeje"], Decimal("0E-7"))
 
+    def test_mesicni_uzaverka_a_hodnota_skladu_pocitaji_ceny_sarzi(self):
+        ryze = Surovina.objects.create(nazev="Rýže náklady", jednotka="kg")
+        prijem = PrijemSkladu.objects.create(datum=self.datum)
+        PolozkaPrijmu.objects.create(
+            prijem=prijem,
+            surovina=ryze,
+            mnozstvi=Decimal("10.000"),
+            jednotkova_cena=Decimal("10.0000"),
+            sarze="RYZE-10",
+        )
+        uzavri_prijem(prijem, user=self.user)
+
+        vydejka = Vydejka.objects.create(datum=self.datum, stravovaci_skupina=self.skupina)
+        PolozkaVydejky.objects.create(vydejka=vydejka, surovina=ryze, mnozstvi=Decimal("4.000"))
+        uzavri_vydejku(vydejka, user=self.user)
+
+        self.assertEqual(hodnota_skladu_k_datu(self.datum), Decimal("60.0000000"))
+        self.assertEqual(hodnota_skladu_aktualni()["hodnota_celkem"], Decimal("60.0000000"))
+
+        uzaverka = mesicni_skladova_uzaverka(self.datum.year, self.datum.month)
+        self.assertEqual(uzaverka["prijmy"], Decimal("100.0000000"))
+        self.assertEqual(uzaverka["vydeje"], Decimal("40.0000000"))
+        self.assertEqual(uzaverka["konecny_stav"], Decimal("60.0000000"))
+        self.assertTrue(uzaverka["kontrola_ok"])
+
     def test_preved_na_gramy_resi_zakladni_jednotky(self):
         mouka = Surovina.objects.create(nazev="Mouka", jednotka="kg")
         mleko = Surovina.objects.create(nazev="Mleko", jednotka="l")
@@ -515,6 +581,16 @@ class SkladovePohybyTests(TestCase):
         self.assertEqual(preved_na_gramy(mouka, Decimal("2.500")), Decimal("2500.000"))
         self.assertEqual(preved_na_gramy(mleko, Decimal("1.500")), Decimal("1500.000"))
         self.assertEqual(preved_na_gramy(vejce, Decimal("2.000")), Decimal("110.000000"))
+
+    def test_zobrazovaci_jednotky_prevedou_g_na_kg_a_ml_na_l(self):
+        mouka = Surovina.objects.create(nazev="Mouka jednotky", jednotka="g")
+        mleko = Surovina.objects.create(nazev="Mléko jednotky", jednotka="ml")
+        ryze = Surovina.objects.create(nazev="Rýže jednotky", jednotka="kg")
+
+        self.assertEqual(prepocitej_mnozstvi_pro_zobrazeni(mouka, Decimal("1250.000")), (Decimal("1.250"), "kg"))
+        self.assertEqual(format_mnozstvi_s_jednotkou(mleko, Decimal("2500.000")), "2.500 l")
+        self.assertEqual(format_mnozstvi_s_jednotkou(ryze, Decimal("3.000")), "3.000 kg")
+        self.assertEqual(format_cena_za_jednotku(mouka, Decimal("0.0200")), "20.0000 Kč / kg")
 
     def test_spotrebni_kos_2025_pocita_z_uzavrene_vydejky_a_denni_normy(self):
         maso = Surovina.objects.create(
@@ -742,6 +818,7 @@ class SkladovePohybyTests(TestCase):
     def test_uzavri_inventuru_vytvori_rozdilovy_pohyb_a_prepise_stav_idempotentne(self):
         cukr = Surovina.objects.create(nazev="Cukr", jednotka="kg")
         StavSkladu.objects.create(surovina=cukr, mnozstvi=Decimal("10.000"))
+        sarze = self.pridej_sarzi(cukr, Decimal("10.000"), sarze="CUKR-INV")
         inventura = Inventura.objects.create(datum=self.datum)
         polozka = PolozkaInventury.objects.create(
             inventura=inventura,
@@ -756,6 +833,8 @@ class SkladovePohybyTests(TestCase):
         self.assertEqual(polozka.stav_pred, Decimal("10.000"))
         self.assertEqual(polozka.rozdil, Decimal("-2.500"))
         self.assertEqual(StavSkladu.objects.get(surovina=cukr).mnozstvi, Decimal("7.500"))
+        sarze.refresh_from_db()
+        self.assertEqual(sarze.mnozstvi_zbyva, Decimal("7.500"))
 
         pohyb = PohybSkladu.objects.get(inventura=inventura)
         self.assertEqual(pohyb.typ, PohybSkladu.TYP_INVENTURA_MINUS)
@@ -811,3 +890,204 @@ class SkladovePohybyTests(TestCase):
             ).count(),
             1,
         )
+
+    def test_sarzova_inventura_upravi_konkretni_sarzi_a_sklad(self):
+        cukr = Surovina.objects.create(nazev="Cukr šaržová inventura", jednotka="kg")
+        StavSkladu.objects.create(surovina=cukr, mnozstvi=Decimal("10.000"))
+        sarze = self.pridej_sarzi(cukr, Decimal("10.000"), sarze="SAR-INV")
+        inventura = Inventura.objects.create(datum=self.datum)
+
+        self.assertEqual(napln_sarzovou_inventuru(inventura), 1)
+        pol = PolozkaInventurySarze.objects.get(inventura=inventura, sarze_skladu=sarze)
+        pol.fyzicky_stav = Decimal("8.500")
+        pol.save()
+        souhrn = souhrn_sarzove_inventury(inventura)
+
+        self.assertEqual(souhrn["manko"], Decimal("1.5000"))
+        self.assertTrue(uzavri_inventuru(inventura, user=self.user))
+        sarze.refresh_from_db()
+        self.assertEqual(sarze.mnozstvi_zbyva, Decimal("8.500"))
+        self.assertEqual(StavSkladu.objects.get(surovina=cukr).mnozstvi, Decimal("8.500"))
+        self.assertEqual(
+            PohybSkladu.objects.get(inventura=inventura).sarze_skladu,
+            sarze,
+        )
+
+    def test_sarzova_inventura_prida_nalezenou_novou_sarzi(self):
+        ryze = Surovina.objects.create(
+            nazev="Rýže nová inventurní šarže",
+            jednotka="kg",
+            prumerna_cena_za_jednotku=Decimal("12.0000"),
+        )
+        StavSkladu.objects.create(surovina=ryze, mnozstvi=Decimal("0.000"))
+        inventura = Inventura.objects.create(datum=self.datum)
+        PolozkaInventurySarze.objects.create(
+            inventura=inventura,
+            surovina=ryze,
+            sarze="NALEZ",
+            typ_data_spotreby="NEUVADI_SE",
+            stav_pred=Decimal("0.000"),
+            fyzicky_stav=Decimal("2.000"),
+            cena_za_jednotku=Decimal("12.0000"),
+            je_nova_sarze=True,
+        )
+
+        self.assertTrue(uzavri_inventuru(inventura, user=self.user))
+
+        nova_sarze = SarzeSkladu.objects.get(surovina=ryze, sarze="NALEZ")
+        self.assertEqual(nova_sarze.mnozstvi_zbyva, Decimal("2.000"))
+        self.assertEqual(StavSkladu.objects.get(surovina=ryze).mnozstvi, Decimal("2.000"))
+        self.assertEqual(PohybSkladu.objects.get(inventura=inventura).typ, PohybSkladu.TYP_INVENTURA_PLUS)
+
+    def test_inventurni_pdf_report_se_vygeneruje(self):
+        from .admin import inventura_pdf_view
+
+        ryze = Surovina.objects.create(
+            nazev="Rýže PDF inventura",
+            jednotka="kg",
+            prumerna_cena_za_jednotku=Decimal("20.0000"),
+        )
+        StavSkladu.objects.create(surovina=ryze, mnozstvi=Decimal("10.000"))
+        self.pridej_sarzi(ryze, Decimal("10.000"), sarze="PDF-INV")
+        inventura = Inventura.objects.create(datum=self.datum, popis="Kontrolní inventura PDF")
+        PolozkaInventury.objects.create(
+            inventura=inventura,
+            surovina=ryze,
+            stav_pred=Decimal("10.000"),
+            fyzicky_stav=Decimal("8.000"),
+        )
+        uzavri_inventuru(inventura, user=self.user)
+
+        request = RequestFactory().get("/")
+        request.user = self.user
+        response = inventura_pdf_view(request, inventura.id)
+
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn("inventura_", response["Content-Disposition"])
+        self.assertTrue(response.content.startswith(b"%PDF"))
+
+    def test_zdravi_skladu_vraci_kontrolni_rizika(self):
+        mouka = Surovina.objects.create(nazev="Mouka zdraví skladu", jednotka="kg", skupina_sk="")
+        StavSkladu.objects.create(
+            surovina=mouka,
+            mnozstvi=Decimal("-1.000"),
+            min_mnozstvi=Decimal("2.000"),
+        )
+        SarzeSkladu.objects.create(
+            surovina=mouka,
+            sarze="ZDRAVI-EXP",
+            typ_data_spotreby="POUZITELNOST",
+            datum_spotreby=self.datum - timedelta(days=1),
+            mnozstvi_prijato=Decimal("1.000"),
+            mnozstvi_zbyva=Decimal("1.000"),
+            cena_za_jednotku=Decimal("0.0000"),
+            stav=SarzeSkladu.STAV_POUZITELNA,
+        )
+
+        data = zdravi_skladu(self.datum)
+
+        self.assertLess(data["skore"], 100)
+        self.assertFalse(data["pripraveno_k_uzaverce"])
+        self.assertTrue(any(row["nazev"] == "Prošlé šarže k odpisu" and not row["ok"] for row in data["rizika"]))
+        self.assertTrue(any(row["nazev"] == "Záporné stavy skladu" and not row["ok"] for row in data["rizika"]))
+
+    def test_skladova_uzaverka_uzavre_obdobi_a_zablokuje_dalsi_pohyby(self):
+        ryze = Surovina.objects.create(nazev="Rýže uzávěrka", jednotka="kg")
+        prijem = PrijemSkladu.objects.create(datum=self.datum)
+        PolozkaPrijmu.objects.create(
+            prijem=prijem,
+            surovina=ryze,
+            mnozstvi=Decimal("10.000"),
+            jednotkova_cena=Decimal("15.0000"),
+            sarze="UZ-1",
+        )
+        uzavri_prijem(prijem, user=self.user)
+        uzaverka = SkladovaUzaverka.objects.create(
+            rok=self.datum.year,
+            mesic=self.datum.month,
+            datum=self.datum,
+        )
+
+        self.assertTrue(uzavri_skladovou_uzaverku(uzaverka, user=self.user))
+        uzaverka.refresh_from_db()
+        self.assertTrue(uzaverka.uzavreny)
+        self.assertEqual(uzaverka.prijmy, Decimal("150.0000000"))
+
+        dalsi_prijem = PrijemSkladu.objects.create(datum=self.datum)
+        PolozkaPrijmu.objects.create(
+            prijem=dalsi_prijem,
+            surovina=ryze,
+            mnozstvi=Decimal("1.000"),
+            jednotkova_cena=Decimal("15.0000"),
+            sarze="UZ-2",
+        )
+        with self.assertRaises(ValidationError):
+            uzavri_prijem(dalsi_prijem, user=self.user)
+
+    def test_kontrola_stavu_skladu_vs_sarze_najde_rozdil(self):
+        mleko = Surovina.objects.create(nazev="Mléko rozdíl", jednotka="l")
+        StavSkladu.objects.create(surovina=mleko, mnozstvi=Decimal("5.000"))
+        self.pridej_sarzi(mleko, Decimal("4.000"), sarze="ML-ROZDIL")
+
+        rozdily = najdi_rozdily_stav_vs_sarze()
+
+        self.assertEqual(rozdily[0]["surovina"], mleko)
+        self.assertEqual(rozdily[0]["rozdil"], Decimal("1.000"))
+
+    def test_navrh_nakupu_zapocte_plan_minimum_a_stav(self):
+        mouka = Surovina.objects.create(nazev="Mouka návrh", jednotka="g")
+        StavSkladu.objects.create(
+            surovina=mouka,
+            mnozstvi=Decimal("100.000"),
+            min_mnozstvi=Decimal("50.000"),
+        )
+        jidlo = Jidlo.objects.create(nazev="Nákupní jídlo", cena=Decimal("50.00"))
+        RecepturaPolozka.objects.create(jidlo=jidlo, surovina=mouka, mnozstvi_na_porci=Decimal("80.000"))
+        druh = DruhJidla.objects.create(nazev="Oběd")
+        jidelnicek = Jidelnicek.objects.create(platnost_od=self.datum, platnost_do=self.datum)
+        polozka_menu = PolozkaJidelnicku.objects.create(jidelnicek=jidelnicek, jidlo=jidlo, druh_jidla=druh)
+        order = Order.objects.create(user=self.user, datum_vydeje=self.datum)
+        OrderItem.objects.create(order=order, menu_item=polozka_menu, quantity=2)
+
+        data = navrh_nakupu(date_from=self.datum, date_to=self.datum)
+
+        self.assertEqual(data["radky"][0]["surovina"], mouka)
+        self.assertEqual(data["radky"][0]["chybi"], Decimal("110.000"))
+
+    def test_pruvodce_uzaverkou_a_denni_checklist_vidi_otevrene_doklady(self):
+        prijem = PrijemSkladu.objects.create(datum=self.datum)
+
+        pruvodce = pruvodce_skladovou_uzaverkou(self.datum.year, self.datum.month)
+        checklist = denni_skladovy_checklist(self.datum)
+
+        self.assertFalse(pruvodce["pripraveno"])
+        self.assertEqual(pruvodce["kontroly"][0]["pocet"], 1)
+        self.assertIn(prijem, checklist["neuzavrene_prijemky"])
+
+    def test_karta_suroviny_a_managersky_report_vraci_provozni_data(self):
+        ryze = Surovina.objects.create(nazev="Rýže karta", jednotka="kg", prumerna_cena_za_jednotku=Decimal("10.0000"))
+        StavSkladu.objects.create(surovina=ryze, mnozstvi=Decimal("10.000"))
+        self.pridej_sarzi(ryze, Decimal("10.000"), sarze="KARTA-1")
+        vydejka = Vydejka.objects.create(datum=self.datum)
+        PolozkaVydejky.objects.create(vydejka=vydejka, surovina=ryze, mnozstvi=Decimal("2.000"))
+        uzavri_vydejku(vydejka, user=self.user)
+
+        karta = karta_suroviny_data(ryze, date_from=self.datum, date_to=self.datum)
+        report = managersky_report_skladu(self.datum.year, self.datum.month)
+
+        self.assertEqual(karta["spotreba_obdobi"], Decimal("2.000"))
+        self.assertEqual(report["top_spotreba"][0]["surovina"], ryze)
+
+    def test_validace_prijemky_varuje_na_chybejici_sarzi_a_datum(self):
+        mouka = Surovina.objects.create(nazev="Mouka validace", jednotka="kg")
+        prijem = PrijemSkladu.objects.create(datum=self.datum)
+        PolozkaPrijmu.objects.create(
+            prijem=prijem,
+            surovina=mouka,
+            mnozstvi=Decimal("1.000"),
+            jednotkova_cena=Decimal("10.0000"),
+        )
+
+        varovani = validace_prijemky_pred_uzavrenim(prijem)
+
+        self.assertGreaterEqual(len(varovani), 2)

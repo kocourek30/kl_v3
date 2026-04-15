@@ -34,6 +34,7 @@ class DokladBase(models.Model):
 
     stornovano = models.BooleanField("Stornováno", default=False, db_index=True)
     stornovano_at = models.DateTimeField("Stornováno dne", null=True, blank=True)
+    stornovano_duvod = models.CharField("Důvod storna", max_length=255, blank=True, default="")
 
     class Meta:
         abstract = True
@@ -48,9 +49,11 @@ class DokladBase(models.Model):
         self.uzavren_at = timezone.now()
         self.uzavrel = user
 
-    def storno_meta(self):
+    def storno_meta(self, duvod=""):
         self.stornovano = True
         self.stornovano_at = timezone.now()
+        if duvod:
+            self.stornovano_duvod = duvod
 
 
 class SkladDashboard(models.Model):
@@ -282,6 +285,33 @@ class OdpisExpirace(DokladBase):
     class Meta:
         verbose_name = "Odpis expirace"
         verbose_name_plural = "Odpisy expirací"
+
+
+class SkladovaUzaverka(DokladBase):
+    rok = models.PositiveSmallIntegerField("Rok", db_index=True)
+    mesic = models.PositiveSmallIntegerField("Měsíc", db_index=True)
+
+    pocatecni_stav = models.DecimalField("Počáteční hodnota skladu", max_digits=14, decimal_places=2, default=Decimal("0"))
+    prijmy = models.DecimalField("Příjmy", max_digits=14, decimal_places=2, default=Decimal("0"))
+    storna_prijmu = models.DecimalField("Storna příjmů", max_digits=14, decimal_places=2, default=Decimal("0"))
+    vydeje = models.DecimalField("Výdeje", max_digits=14, decimal_places=2, default=Decimal("0"))
+    storna_vydeju = models.DecimalField("Storna výdejek", max_digits=14, decimal_places=2, default=Decimal("0"))
+    odpisy_expirace = models.DecimalField("Odpisy expirací", max_digits=14, decimal_places=2, default=Decimal("0"))
+    inventura_plus = models.DecimalField("Inventurní přebytky", max_digits=14, decimal_places=2, default=Decimal("0"))
+    inventura_minus = models.DecimalField("Inventurní manka", max_digits=14, decimal_places=2, default=Decimal("0"))
+    vypocet_konecneho_stavu = models.DecimalField("Vypočtená konečná hodnota", max_digits=14, decimal_places=2, default=Decimal("0"))
+    konecny_stav = models.DecimalField("Skutečná konečná hodnota", max_digits=14, decimal_places=2, default=Decimal("0"))
+    rozdil_kontroly = models.DecimalField("Kontrolní rozdíl", max_digits=14, decimal_places=2, default=Decimal("0"))
+
+    class Meta:
+        verbose_name = "Skladová uzávěrka"
+        verbose_name_plural = "Skladové uzávěrky"
+        constraints = [
+            models.UniqueConstraint(fields=["rok", "mesic"], name="uniq_skladova_uzaverka_rok_mesic"),
+        ]
+
+    def __str__(self):
+        return f"Skladová uzávěrka {self.mesic:02d}/{self.rok}"
 
 
 class InventurniDoklad(Inventura):
@@ -577,6 +607,68 @@ class PolozkaInventury(models.Model):
 
     def __str__(self):
         return f"{self.surovina} / rozdíl {self.rozdil}"
+
+
+class PolozkaInventurySarze(models.Model):
+    inventura = models.ForeignKey(
+        Inventura,
+        verbose_name="Inventura",
+        on_delete=models.CASCADE,
+        related_name="sarze_polozky",
+    )
+    surovina = models.ForeignKey(Surovina, verbose_name="Surovina", on_delete=models.PROTECT)
+    sarze_skladu = models.ForeignKey(
+        SarzeSkladu,
+        verbose_name="Šarže skladu",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inventurni_polozky",
+    )
+    sarze = models.CharField("Šarže", max_length=100, blank=True, default="")
+    typ_data_spotreby = models.CharField(
+        "Typ data spotřeby",
+        max_length=30,
+        choices=PolozkaPrijmu._meta.get_field("typ_data_spotreby").choices,
+        default="POUZITELNOST",
+    )
+    datum_spotreby = models.DateField("Datum spotřeby", null=True, blank=True)
+    stav_pred = models.DecimalField("Účetní stav šarže", max_digits=12, decimal_places=3, default=Decimal("0"))
+    fyzicky_stav = models.DecimalField("Fyzický stav šarže", max_digits=12, decimal_places=3, default=Decimal("0"))
+    rozdil = models.DecimalField("Rozdíl", max_digits=12, decimal_places=3, default=Decimal("0"))
+    cena_za_jednotku = models.DecimalField(
+        "Cena za jednotku",
+        max_digits=12,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
+    je_nova_sarze = models.BooleanField("Nově nalezená šarže", default=False)
+    poznamka = models.CharField("Poznámka", max_length=255, blank=True, default="")
+
+    class Meta:
+        verbose_name = "Šaržová položka inventury"
+        verbose_name_plural = "Šaržové položky inventury"
+        ordering = ("surovina__nazev", "datum_spotreby", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["inventura", "sarze_skladu"],
+                condition=models.Q(sarze_skladu__isnull=False),
+                name="uniq_inventura_sarze_skladu",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.rozdil = (self.fyzicky_stav or Decimal("0")) - (self.stav_pred or Decimal("0"))
+        if self.sarze_skladu_id and not self.je_nova_sarze:
+            self.sarze = self.sarze or self.sarze_skladu.sarze
+            self.typ_data_spotreby = self.sarze_skladu.typ_data_spotreby
+            self.datum_spotreby = self.datum_spotreby or self.sarze_skladu.datum_spotreby
+            self.cena_za_jednotku = self.cena_za_jednotku or self.sarze_skladu.cena_za_jednotku
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.surovina} / {self.sarze or 'nová šarže'} / rozdíl {self.rozdil}"
 
 
 class PohybSkladu(models.Model):

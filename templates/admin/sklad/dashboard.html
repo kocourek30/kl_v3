@@ -35,6 +35,83 @@
 {% endblock %}
 
 {% block result_list %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>
+      <i class="fas fa-clipboard-check"></i>
+      Denní skladový checklist
+    </span>
+    <div>
+      <a class="btn btn-sm btn-outline-danger" href="{{ zdravi_skladu_pdf_url }}">
+        <i class="fas fa-file-pdf"></i> PDF zdraví skladu
+      </a>
+      <a class="btn btn-sm btn-info" href="{{ zdravi_skladu_url }}?date={{ target_date|date:'Y-m-d' }}">
+        <i class="fas fa-heartbeat"></i> Zdraví skladu
+      </a>
+      <a class="btn btn-sm btn-success" href="{{ navrh_nakupu_url }}">
+        <i class="fas fa-cart-plus"></i> Návrh nákupu
+      </a>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="row mb-3">
+      <div class="col-md-4">
+        <strong>Skóre skladu:</strong>
+        <span class="badge {% if zdravi_skladu.pripraveno_k_uzaverce %}badge-success{% else %}badge-warning{% endif %}">
+          {{ zdravi_skladu.skore }} %
+        </span>
+      </div>
+      <div class="col-md-4">
+        <strong>Hodnota skladu:</strong>
+        {{ zdravi_skladu.hodnota_skladu|floatformat:2 }} Kč
+      </div>
+      <div class="col-md-4">
+        <strong>Stav uzávěrky:</strong>
+        {% if zdravi_skladu.pripraveno_k_uzaverce %}
+          <span class="text-success">bez kritických upozornění</span>
+        {% else %}
+          <span class="text-warning">vyžaduje kontrolu</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-2">
+        <strong>Příjemky:</strong>
+        {{ denni_checklist.neuzavrene_prijemky|length }}
+      </div>
+      <div class="col-md-2">
+        <strong>Výdejky:</strong>
+        {{ denni_checklist.neuzavrene_vydejky|length }}
+      </div>
+      <div class="col-md-2">
+        <strong>Inventury:</strong>
+        {{ denni_checklist.neuzavrene_inventury|length }}
+      </div>
+      <div class="col-md-2">
+        <strong>Expirace:</strong>
+        {{ denni_checklist.expirovane_sarze|length }}
+      </div>
+      <div class="col-md-2">
+        <strong>Pod minimem:</strong>
+        {{ denni_checklist.minimum_alerty|length }}
+      </div>
+      <div class="col-md-2">
+        <strong>Rozdíly:</strong>
+        {{ denni_checklist.rozdily_stav_sarze|length }}
+      </div>
+    </div>
+    {% if denni_checklist.expirovane_sarze or denni_checklist.rozdily_stav_sarze or denni_checklist.minimum_alerty %}
+      <div class="alert alert-warning mt-3 mb-0">
+        Před koncem dne zkontroluj expirace, minima a případné rozdíly mezi stavem skladu a šaržemi.
+      </div>
+    {% else %}
+      <div class="alert alert-success mt-3 mb-0">
+        Denní kontroly jsou bez kritických upozornění.
+      </div>
+    {% endif %}
+  </div>
+</div>
+
 <div class="row">
   <div class="col-lg-6">
     <div class="card mb-3">
@@ -79,7 +156,7 @@
                       <span class="badge badge-warning ml-1">Karanténa</span>
                     {% endif %}
                   </td>
-                  <td>{{ pol.mnozstvi_zbyva }} {{ pol.surovina.jednotka }}</td>
+                  <td>{{ pol.mnozstvi_zbyva_display }}</td>
                   <td>
                     {% if pol.polozka_prijmu.prijem_id %}
                       #{{ pol.polozka_prijmu.prijem_id }}
@@ -130,8 +207,8 @@
                     <strong>{{ row.surovina.nazev }}</strong>
                     <small class="text-muted">({{ row.surovina.jednotka }})</small>
                   </td>
-                  <td>{{ row.mnozstvi }} {{ row.surovina.jednotka }}</td>
-                  <td>{{ row.minimum }} {{ row.surovina.jednotka }}</td>
+                  <td>{{ row.mnozstvi_display }}</td>
+                  <td>{{ row.minimum_display }}</td>
                   <td>
                     {% if row.pod_min %}
                       <span class="badge badge-danger">Pod minimem</span>
@@ -152,6 +229,44 @@
           </table>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">
+    <i class="fas fa-scale-balanced"></i>
+    Kontrola skladu proti šaržím
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-striped mb-0">
+        <thead class="thead-light">
+          <tr>
+            <th>Surovina</th>
+            <th>Stav skladu</th>
+            <th>Součet šarží</th>
+            <th>Rozdíl</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rozdily_stav_sarze %}
+            <tr class="table-danger">
+              <td><strong>{{ row.surovina.nazev }}</strong></td>
+              <td>{{ row.stav_display }}</td>
+              <td>{{ row.sarze_display }}</td>
+              <td>{{ row.rozdil_display }}</td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="4" class="text-center text-muted py-3">
+                <i class="fas fa-check-circle"></i>
+                Stav skladu souhlasí se součtem šarží.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -187,18 +302,18 @@
                   ({{ row.surovina.jednotka }})
                 </small>
               </td>
-              <td>{{ row.expected }}</td>
-              <td>{{ row.real }}</td>
+              <td>{{ row.expected_display }}</td>
+              <td>{{ row.real_display }}</td>
               <td>
                 {% if row.stav is not None %}
-                  {{ row.stav }}
+                  {{ row.stav_display }}
                 {% else %}
                   <span class="text-muted">–</span>
                 {% endif %}
               </td>
               <td>
                 {% if row.min is not None %}
-                  {{ row.min }}
+                  {{ row.min_display }}
                   {% if row.pod_min %}
                     <span class="badge badge-danger ml-1">
                       <i class="fas fa-exclamation-triangle"></i> Pod minimem

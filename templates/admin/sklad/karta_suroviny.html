@@ -1,0 +1,135 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="mb-1">{{ title }}</h1>
+      <p class="text-muted mb-0">Období {{ data.date_from|date:"d.m.Y" }} - {{ data.date_to|date:"d.m.Y" }}</p>
+    </div>
+    <div>
+      <a class="btn btn-outline-success" href="xlsx/?date_from={{ data.date_from|date:'Y-m-d' }}&date_to={{ data.date_to|date:'Y-m-d' }}">
+        <i class="fas fa-file-excel"></i> Stáhnout XLSX
+      </a>
+      <a class="btn btn-outline-danger" href="pdf/?date_from={{ data.date_from|date:'Y-m-d' }}&date_to={{ data.date_to|date:'Y-m-d' }}">
+        <i class="fas fa-file-pdf"></i> Stáhnout PDF
+      </a>
+    </div>
+  </div>
+
+  <div class="row mb-3">
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-header"><strong>Aktuální stav</strong></div>
+        <div class="card-body">
+          <p><strong>{{ data.stav_display }}</strong></p>
+          <p class="mb-0">Minimum: {{ data.minimum_display }}</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-header"><strong>Hodnota stavu</strong></div>
+        <div class="card-body">
+          <p class="mb-0"><strong>{{ data.hodnota_stavu|floatformat:2 }} Kč</strong></p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-header"><strong>Spotřeba období</strong></div>
+        <div class="card-body">
+          <p><strong>{{ data.spotreba_obdobi_display }}</strong></p>
+          <p class="mb-0">{{ data.naklady_spotreby|floatformat:2 }} Kč</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-header"><strong>Odpisy a inventury</strong></div>
+        <div class="card-body">
+          <p>Odpisy: {{ data.odpisy|floatformat:2 }} Kč</p>
+          <p class="mb-0">Inventury: {{ data.inventurni_rozdily|floatformat:2 }} Kč</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-lg-6">
+      <div class="card mb-3">
+        <div class="card-header"><strong>Aktivní šarže</strong></div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-striped mb-0">
+            <thead><tr><th>Šarže</th><th>Datum spotřeby</th><th>Zbývá</th><th>Cena</th><th>Stav</th></tr></thead>
+            <tbody>
+              {% for sarze in data.sarze %}
+                <tr>
+                  <td>{{ sarze.sarze|default:"–" }}</td>
+                  <td>{{ sarze.datum_spotreby|date:"d.m.Y"|default:"–" }}</td>
+                  <td>{{ sarze.mnozstvi_zbyva }} {{ data.surovina.jednotka }}</td>
+                  <td>{{ sarze.cena_za_jednotku|floatformat:4 }} Kč</td>
+                  <td>{{ sarze.get_stav_display }}</td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="5" class="text-center text-muted py-3">Žádné aktivní šarže.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card mb-3">
+        <div class="card-header"><strong>Cenová historie</strong></div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-striped mb-0">
+            <thead><tr><th>Datum</th><th>Dodavatel</th><th>Množství</th><th>Cena</th></tr></thead>
+            <tbody>
+              {% for pol in data.cenova_historie %}
+                <tr>
+                  <td>{{ pol.prijem.datum|date:"d.m.Y" }}</td>
+                  <td>{{ pol.prijem.dodavatel|default:"–" }}</td>
+                  <td>{{ pol.mnozstvi }} {{ data.surovina.jednotka }}</td>
+                  <td>{{ pol.jednotkova_cena|floatformat:4 }} Kč</td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="4" class="text-center text-muted py-3">Zatím bez nákupní historie.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><strong>Poslední pohyby</strong></div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-striped mb-0">
+        <thead><tr><th>Datum</th><th>Typ</th><th>Množství</th><th>Cena</th><th>Doklad</th><th>Poznámka</th></tr></thead>
+        <tbody>
+          {% for pohyb in data.pohyby %}
+            <tr>
+              <td>{{ pohyb.datum|date:"d.m.Y H:i" }}</td>
+              <td>{{ pohyb.get_typ_display }}</td>
+              <td>{{ pohyb.mnozstvi }} {{ data.surovina.jednotka }}</td>
+              <td>{{ pohyb.cena_za_jednotku|floatformat:4 }} Kč</td>
+              <td>
+                {% if pohyb.prijem_id %}Příjemka #{{ pohyb.prijem_id }}{% endif %}
+                {% if pohyb.vydejka_id %}Výdejka #{{ pohyb.vydejka_id }}{% endif %}
+                {% if pohyb.inventura_id %}Inventura #{{ pohyb.inventura_id }}{% endif %}
+                {% if pohyb.odpis_expirace_id %}Odpis #{{ pohyb.odpis_expirace_id }}{% endif %}
+              </td>
+              <td>{{ pohyb.poznamka }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="text-center text-muted py-3">Bez pohybů ve zvoleném období.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

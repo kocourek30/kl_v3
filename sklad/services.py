@@ -1,4 +1,6 @@
 from collections import defaultdict
+import calendar
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -17,13 +19,17 @@ from .models import (
     KomponentaSurovina,
     JidloKomponenta,
     PrijemSkladu,
+    PolozkaPrijmu,
     Vydejka,
     PolozkaVydejky,
     Inventura,
+    PolozkaInventury,
+    PolozkaInventurySarze,
     NormaSpotrebnihoKose,
     ToleranceSpotrebnihoKose,
     SarzeSkladu,
     OdpisExpirace,
+    SkladovaUzaverka,
 )
 
 
@@ -251,15 +257,17 @@ def _safe_set_close_metadata(obj, user=None):
         obj.uzavrel = user
 
 
-def _safe_set_storno_metadata(obj):
+def _safe_set_storno_metadata(obj, duvod=""):
     if hasattr(obj, "storno_meta") and callable(getattr(obj, "storno_meta")):
-        obj.storno_meta()
+        obj.storno_meta(duvod=duvod)
         return
 
     if hasattr(obj, "stornovano"):
         obj.stornovano = True
     if hasattr(obj, "stornovano_at"):
         obj.stornovano_at = timezone.now()
+    if duvod and hasattr(obj, "stornovano_duvod"):
+        obj.stornovano_duvod = duvod
 
 
 def _safe_pohyb_typ(attr_name, fallback_value):
@@ -267,6 +275,16 @@ def _safe_pohyb_typ(attr_name, fallback_value):
     Vrátí konstantu typu pohybu, pokud existuje, jinak fallback string.
     """
     return getattr(PohybSkladu, attr_name, fallback_value)
+
+
+def _datum_pohybu_dokladu(doklad):
+    datum = getattr(doklad, "datum", None)
+    if not datum:
+        return timezone.now()
+    return timezone.make_aware(
+        datetime.combine(datum, time.min),
+        timezone.get_current_timezone(),
+    )
 
 
 def _doklad_musi_byt_uzavreny_a_nestornovany(doklad):
@@ -362,6 +380,33 @@ def preved_na_skladovou_jednotku(surovina: Surovina, mnozstvi_v_gramech) -> Deci
         return mnozstvi_v_gramech / hmotnost
 
     return mnozstvi_v_gramech
+
+
+def prepocitej_mnozstvi_pro_zobrazeni(surovina: Surovina, mnozstvi):
+    mnozstvi = Decimal(mnozstvi or 0)
+    if surovina.jednotka == Surovina.JEDNOTKA_G:
+        return mnozstvi / Decimal("1000"), Surovina.JEDNOTKA_KG
+    if surovina.jednotka == Surovina.JEDNOTKA_ML:
+        return mnozstvi / Decimal("1000"), Surovina.JEDNOTKA_L
+    return mnozstvi, surovina.jednotka
+
+
+def prepocitej_cenu_pro_zobrazeni(surovina: Surovina, cena_za_jednotku):
+    cena_za_jednotku = Decimal(cena_za_jednotku or 0)
+    if surovina.jednotka in (Surovina.JEDNOTKA_G, Surovina.JEDNOTKA_ML):
+        return cena_za_jednotku * Decimal("1000")
+    return cena_za_jednotku
+
+
+def format_mnozstvi_s_jednotkou(surovina: Surovina, mnozstvi, desetinna_mista=3):
+    zobrazene_mnozstvi, jednotka = prepocitej_mnozstvi_pro_zobrazeni(surovina, mnozstvi)
+    return f"{zobrazene_mnozstvi:.{desetinna_mista}f} {jednotka}"
+
+
+def format_cena_za_jednotku(surovina: Surovina, cena_za_jednotku):
+    cena = prepocitej_cenu_pro_zobrazeni(surovina, cena_za_jednotku)
+    _, jednotka = prepocitej_mnozstvi_pro_zobrazeni(surovina, 0)
+    return f"{cena:.4f} Kč / {jednotka}"
 
 
 def validace_surovin_pro_sk():
@@ -651,6 +696,63 @@ def vytvor_nebo_aktualizuj_sarzi_z_prijmu(polozka_prijmu):
     return sarze
 
 
+def najdi_sarze_fefo_pro_nahled(surovina, mnozstvi):
+    aktualizuj_stavy_sarzi()
+    zbyva = Decimal(mnozstvi or 0)
+    if zbyva <= 0:
+        return []
+
+    cerpani = []
+    sarze_qs = (
+        SarzeSkladu.objects
+        .filter(
+            surovina=surovina,
+            stav=SarzeSkladu.STAV_POUZITELNA,
+            mnozstvi_zbyva__gt=0,
+        )
+        .order_by("datum_spotreby", "id")
+    )
+    for sarze in sarze_qs:
+        if zbyva <= 0:
+            break
+        odebrat = min(sarze.mnozstvi_zbyva or Decimal("0"), zbyva)
+        if odebrat <= 0:
+            continue
+        cerpani.append({
+            "sarze": sarze,
+            "mnozstvi": odebrat,
+            "cena_za_jednotku": sarze.cena_za_jednotku or Decimal("0"),
+            "hodnota": odebrat * (sarze.cena_za_jednotku or Decimal("0")),
+        })
+        zbyva -= odebrat
+
+    if zbyva > 0:
+        cerpani.append({
+            "sarze": None,
+            "mnozstvi": zbyva,
+            "cena_za_jednotku": Decimal("0"),
+            "hodnota": Decimal("0"),
+            "chybi": True,
+        })
+    return cerpani
+
+
+def nahled_vydejky(vydejka):
+    radky = []
+    celkem = Decimal("0")
+    for pol in vydejka.polozky.select_related("surovina").all():
+        cerpani = najdi_sarze_fefo_pro_nahled(pol.surovina, pol.mnozstvi)
+        for row in cerpani:
+            hodnota = row["hodnota"]
+            celkem += hodnota
+            radky.append({
+                "surovina": pol.surovina,
+                "pozadovano": pol.mnozstvi,
+                **row,
+            })
+    return {"radky": radky, "hodnota_celkem": celkem}
+
+
 def odeber_ze_sarzi_fefo(surovina, mnozstvi, vydejka=None):
     aktualizuj_stavy_sarzi()
     zbyva = Decimal(mnozstvi or 0)
@@ -689,12 +791,585 @@ def odeber_ze_sarzi_fefo(surovina, mnozstvi, vydejka=None):
     return cerpani
 
 
+def je_obdobi_uzavrene(datum):
+    if not datum:
+        return False
+    return SkladovaUzaverka.objects.filter(
+        rok=datum.year,
+        mesic=datum.month,
+        uzavreny=True,
+        stornovano=False,
+    ).exists()
+
+
+def over_doklad_mimo_uzavrene_obdobi(doklad):
+    if je_obdobi_uzavrene(doklad.datum):
+        raise ValidationError(
+            f"Období {doklad.datum.month:02d}/{doklad.datum.year} je skladově uzavřené. "
+            "Doklad nelze uzavřít ani stornovat."
+        )
+
+
+def najdi_rozdily_stav_vs_sarze(tolerance=Decimal("0.001")):
+    rozdily = []
+    sarze_soucty = defaultdict(Decimal)
+    sarze_qs = (
+        SarzeSkladu.objects
+        .filter(mnozstvi_zbyva__gt=0)
+        .exclude(stav=SarzeSkladu.STAV_ODEPSANA)
+        .select_related("surovina")
+    )
+    for sarze in sarze_qs:
+        sarze_soucty[sarze.surovina_id] += sarze.mnozstvi_zbyva or Decimal("0")
+
+    suroviny = Surovina.objects.select_related("stav").all().order_by("nazev")
+    for surovina in suroviny:
+        stav_obj = getattr(surovina, "stav", None)
+        stav = stav_obj.mnozstvi if stav_obj else Decimal("0")
+        sarze_stav = sarze_soucty.get(surovina.id, Decimal("0"))
+        rozdil = stav - sarze_stav
+        if abs(rozdil) > tolerance:
+            rozdily.append({
+                "surovina": surovina,
+                "stav": stav,
+                "sarze_stav": sarze_stav,
+                "rozdil": rozdil,
+                "stav_display": format_mnozstvi_s_jednotkou(surovina, stav),
+                "sarze_display": format_mnozstvi_s_jednotkou(surovina, sarze_stav),
+                "rozdil_display": format_mnozstvi_s_jednotkou(surovina, rozdil),
+            })
+    return rozdily
+
+
+def _obdobi_mesice(rok, mesic):
+    date_from = date(int(rok), int(mesic), 1)
+    date_to = date(int(rok), int(mesic), calendar.monthrange(int(rok), int(mesic))[1])
+    return date_from, date_to
+
+
+def pruvodce_skladovou_uzaverkou(rok, mesic):
+    date_from, date_to = _obdobi_mesice(rok, mesic)
+    aktualizuj_stavy_sarzi(dnes=date_to)
+    neuzavrene_prijemky = PrijemSkladu.objects.filter(
+        datum__gte=date_from,
+        datum__lte=date_to,
+        uzavreny=False,
+        stornovano=False,
+    )
+    neuzavrene_vydejky = Vydejka.objects.filter(
+        datum__gte=date_from,
+        datum__lte=date_to,
+        uzavreny=False,
+        stornovano=False,
+    )
+    neuzavrene_inventury = Inventura.objects.filter(
+        datum__gte=date_from,
+        datum__lte=date_to,
+        uzavreny=False,
+        stornovano=False,
+    )
+    neuzavrene_odpisy = OdpisExpirace.objects.filter(
+        datum__gte=date_from,
+        datum__lte=date_to,
+        uzavreny=False,
+        stornovano=False,
+    )
+    expirovane_sarze = SarzeSkladu.objects.filter(
+        datum_spotreby__lte=date_to,
+        mnozstvi_zbyva__gt=0,
+        stav=SarzeSkladu.STAV_EXPIROVANA,
+    ).select_related("surovina")
+    rozdily = najdi_rozdily_stav_vs_sarze()
+    uzaverka = mesicni_skladova_uzaverka(rok, mesic)
+    kontroly = [
+        {
+            "nazev": "Neuzavřené příjemky",
+            "pocet": neuzavrene_prijemky.count(),
+            "ok": not neuzavrene_prijemky.exists(),
+            "detail": list(neuzavrene_prijemky.order_by("datum", "id")[:10]),
+        },
+        {
+            "nazev": "Neuzavřené výdejky",
+            "pocet": neuzavrene_vydejky.count(),
+            "ok": not neuzavrene_vydejky.exists(),
+            "detail": list(neuzavrene_vydejky.order_by("datum", "id")[:10]),
+        },
+        {
+            "nazev": "Neuzavřené inventury",
+            "pocet": neuzavrene_inventury.count(),
+            "ok": not neuzavrene_inventury.exists(),
+            "detail": list(neuzavrene_inventury.order_by("datum", "id")[:10]),
+        },
+        {
+            "nazev": "Neuzavřené odpisy expirací",
+            "pocet": neuzavrene_odpisy.count(),
+            "ok": not neuzavrene_odpisy.exists(),
+            "detail": list(neuzavrene_odpisy.order_by("datum", "id")[:10]),
+        },
+        {
+            "nazev": "Expirované šarže k odpisu",
+            "pocet": expirovane_sarze.count(),
+            "ok": not expirovane_sarze.exists(),
+            "detail": list(expirovane_sarze.order_by("datum_spotreby", "surovina__nazev")[:10]),
+        },
+        {
+            "nazev": "Rozdíly stav skladu vs. šarže",
+            "pocet": len(rozdily),
+            "ok": not rozdily,
+            "detail": rozdily[:10],
+        },
+        {
+            "nazev": "Kontrolní rozdíl uzávěrky",
+            "pocet": 0 if uzaverka["kontrola_ok"] else 1,
+            "ok": uzaverka["kontrola_ok"],
+            "detail": [uzaverka] if not uzaverka["kontrola_ok"] else [],
+        },
+    ]
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "uzaverka": uzaverka,
+        "kontroly": kontroly,
+        "pripraveno": all(k["ok"] for k in kontroly),
+    }
+
+
+def denni_skladovy_checklist(target_date=None):
+    target_date = target_date or timezone.localdate()
+    aktualizuj_stavy_sarzi(dnes=target_date)
+    expirovane = SarzeSkladu.objects.filter(
+        datum_spotreby__lte=target_date,
+        mnozstvi_zbyva__gt=0,
+        stav=SarzeSkladu.STAV_EXPIROVANA,
+    ).select_related("surovina").order_by("datum_spotreby", "surovina__nazev")[:20]
+    return {
+        "datum": target_date,
+        "neuzavrene_prijemky": PrijemSkladu.objects.filter(datum=target_date, uzavreny=False, stornovano=False).order_by("id")[:20],
+        "neuzavrene_vydejky": Vydejka.objects.filter(datum=target_date, uzavreny=False, stornovano=False).order_by("id")[:20],
+        "neuzavrene_inventury": Inventura.objects.filter(datum=target_date, uzavreny=False, stornovano=False).order_by("id")[:20],
+        "expirovane_sarze": expirovane,
+        "minimum_alerty": [
+            row for row in StavSkladu.objects.select_related("surovina").filter(min_mnozstvi__gt=0)
+            if (row.mnozstvi or Decimal("0")) <= (row.min_mnozstvi or Decimal("0"))
+        ][:20],
+        "rozdily_stav_sarze": najdi_rozdily_stav_vs_sarze()[:20],
+    }
+
+
+def zdravi_skladu(target_date=None):
+    """
+    Manažerský kontrolní report skladu k jednomu dni.
+    Vrací agregace i konkrétní řádky pro dashboard, PDF a uzávěrkový protokol.
+    """
+    target_date = target_date or timezone.localdate()
+    aktualizuj_stavy_sarzi(dnes=target_date)
+
+    checklist = denni_skladovy_checklist(target_date)
+    hodnota = hodnota_skladu_aktualni()
+    expirace_do = target_date + timedelta(days=14)
+    expirovane_qs = (
+        SarzeSkladu.objects
+        .filter(
+            datum_spotreby__lte=target_date,
+            mnozstvi_zbyva__gt=0,
+            stav=SarzeSkladu.STAV_EXPIROVANA,
+        )
+        .select_related("surovina")
+        .order_by("datum_spotreby", "surovina__nazev", "id")
+    )
+    blizka_expirace_qs = (
+        SarzeSkladu.objects
+        .filter(
+            datum_spotreby__gt=target_date,
+            datum_spotreby__lte=expirace_do,
+            mnozstvi_zbyva__gt=0,
+            stav__in=[SarzeSkladu.STAV_POUZITELNA, SarzeSkladu.STAV_KARANTENA],
+        )
+        .select_related("surovina")
+        .order_by("datum_spotreby", "surovina__nazev", "id")
+    )
+    pohyby_bez_ceny = (
+        PohybSkladu.objects
+        .filter(Q(cena_za_jednotku__isnull=True) | Q(cena_za_jednotku=0))
+        .select_related("surovina", "prijem", "vydejka", "inventura", "odpis_expirace")
+        .order_by("-datum", "-id")[:30]
+    )
+    sarze_bez_ceny = (
+        SarzeSkladu.objects
+        .filter(mnozstvi_zbyva__gt=0)
+        .filter(Q(cena_za_jednotku__isnull=True) | Q(cena_za_jednotku=0))
+        .select_related("surovina")
+        .order_by("surovina__nazev", "datum_spotreby", "id")[:30]
+    )
+    suroviny_bez_skupiny = (
+        Surovina.objects
+        .filter(Q(skupina_sk__isnull=True) | Q(skupina_sk=""))
+        .order_by("nazev")[:30]
+    )
+    zaporne_stavy = (
+        StavSkladu.objects
+        .filter(mnozstvi__lt=0)
+        .select_related("surovina")
+        .order_by("surovina__nazev")[:30]
+    )
+
+    otevrene_doklady = (
+        len(checklist["neuzavrene_prijemky"])
+        + len(checklist["neuzavrene_vydejky"])
+        + len(checklist["neuzavrene_inventury"])
+    )
+    rizika = [
+        {
+            "nazev": "Otevřené doklady dne",
+            "pocet": otevrene_doklady,
+            "ok": otevrene_doklady == 0,
+            "popis": "Příjemky, výdejky a inventury by měly být před uzávěrkou uzavřené.",
+        },
+        {
+            "nazev": "Prošlé šarže k odpisu",
+            "pocet": expirovane_qs.count(),
+            "ok": not expirovane_qs.exists(),
+            "popis": "Prošlé potraviny nesmí zůstávat jako použitelný sklad.",
+        },
+        {
+            "nazev": "Suroviny pod minimem",
+            "pocet": len(checklist["minimum_alerty"]),
+            "ok": len(checklist["minimum_alerty"]) == 0,
+            "popis": "Minimální zásoba pomáhá včas spustit nákup.",
+        },
+        {
+            "nazev": "Rozdíly stav skladu vs. šarže",
+            "pocet": len(checklist["rozdily_stav_sarze"]),
+            "ok": len(checklist["rozdily_stav_sarze"]) == 0,
+            "popis": "Součet aktivních šarží má sedět na stav skladu.",
+        },
+        {
+            "nazev": "Pohyby bez ceny",
+            "pocet": len(pohyby_bez_ceny),
+            "ok": len(pohyby_bez_ceny) == 0,
+            "popis": "Pohyby bez ceny zkreslují náklady a hodnotu skladu.",
+        },
+        {
+            "nazev": "Aktivní šarže bez ceny",
+            "pocet": len(sarze_bez_ceny),
+            "ok": len(sarze_bez_ceny) == 0,
+            "popis": "Šarže bez ceny neumí přesně ocenit výdej ani inventuru.",
+        },
+        {
+            "nazev": "Suroviny bez skupiny spotřebního koše",
+            "pocet": len(suroviny_bez_skupiny),
+            "ok": len(suroviny_bez_skupiny) == 0,
+            "popis": "Skupina spotřebního koše je nutná pro legislativní report.",
+        },
+        {
+            "nazev": "Záporné stavy skladu",
+            "pocet": len(zaporne_stavy),
+            "ok": len(zaporne_stavy) == 0,
+            "popis": "Záporný stav znamená problém v dokladech nebo inventuře.",
+        },
+    ]
+    return {
+        "datum": target_date,
+        "expirace_do": expirace_do,
+        "hodnota_skladu": hodnota["hodnota_celkem"],
+        "pocet_sarzi": len(hodnota["radky"]),
+        "rizika": rizika,
+        "skore": int(sum(1 for row in rizika if row["ok"]) / len(rizika) * 100) if rizika else 100,
+        "pripraveno_k_uzaverce": all(row["ok"] for row in rizika),
+        "checklist": checklist,
+        "expirovane_sarze": list(expirovane_qs[:30]),
+        "blizka_expirace": list(blizka_expirace_qs[:30]),
+        "pohyby_bez_ceny": list(pohyby_bez_ceny),
+        "sarze_bez_ceny": list(sarze_bez_ceny),
+        "suroviny_bez_skupiny": list(suroviny_bez_skupiny),
+        "zaporne_stavy": list(zaporne_stavy),
+    }
+
+
+def navrh_nakupu(date_from=None, date_to=None, dnu=7):
+    date_from = date_from or timezone.localdate()
+    date_to = date_to or (date_from + timedelta(days=dnu - 1))
+    planovana_spotreba = defaultdict(Decimal)
+    order_items = (
+        OrderItem.objects
+        .filter(order__datum_vydeje__gte=date_from, order__datum_vydeje__lte=date_to)
+        .select_related("menu_item__jidlo")
+    )
+    for item in order_items:
+        spotreba = spocitej_spotrebu_jidla(item.menu_item.jidlo, Decimal(item.quantity))
+        for surovina_id, mnozstvi in spotreba.items():
+            planovana_spotreba[surovina_id] += mnozstvi
+
+    surovina_ids = set(planovana_spotreba.keys()) | set(
+        StavSkladu.objects.filter(min_mnozstvi__gt=0).values_list("surovina_id", flat=True)
+    )
+    rows = []
+    for surovina in Surovina.objects.filter(id__in=surovina_ids).select_related("stav").order_by("nazev"):
+        stav = getattr(surovina, "stav", None)
+        aktualni = stav.mnozstvi if stav else Decimal("0")
+        minimum = stav.min_mnozstvi if stav else Decimal("0")
+        plan = planovana_spotreba.get(surovina.id, Decimal("0"))
+        chybi = max(Decimal("0"), plan + minimum - aktualni)
+        if chybi <= 0:
+            continue
+        posledni_polozka = (
+            PolozkaPrijmu.objects
+            .filter(surovina=surovina, prijem__uzavreny=True, prijem__stornovano=False)
+            .select_related("prijem__dodavatel")
+            .order_by("-prijem__datum", "-id")
+            .first()
+        )
+        cena = getattr(posledni_polozka, "jednotkova_cena", None) or getattr(surovina, "prumerna_cena_za_jednotku", None) or Decimal("0")
+        rows.append({
+            "surovina": surovina,
+            "aktualni": aktualni,
+            "minimum": minimum,
+            "plan": plan,
+            "chybi": chybi,
+            "odhad_ceny": chybi * cena,
+            "dodavatel": posledni_polozka.prijem.dodavatel if posledni_polozka and posledni_polozka.prijem else None,
+            "aktualni_display": format_mnozstvi_s_jednotkou(surovina, aktualni),
+            "minimum_display": format_mnozstvi_s_jednotkou(surovina, minimum),
+            "plan_display": format_mnozstvi_s_jednotkou(surovina, plan),
+            "chybi_display": format_mnozstvi_s_jednotkou(surovina, chybi),
+            "cena_display": format_cena_za_jednotku(surovina, cena),
+        })
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "radky": rows,
+        "odhad_celkem": sum((row["odhad_ceny"] for row in rows), Decimal("0")),
+    }
+
+
+def karta_suroviny_data(surovina, date_from=None, date_to=None):
+    date_to = date_to or timezone.localdate()
+    date_from = date_from or (date_to - timedelta(days=90))
+    stav = getattr(surovina, "stav", None)
+    pohyby = (
+        PohybSkladu.objects
+        .filter(surovina=surovina, datum__date__gte=date_from, datum__date__lte=date_to)
+        .select_related("prijem", "vydejka", "inventura", "odpis_expirace", "sarze_skladu")
+        .order_by("-datum", "-id")
+    )
+    prijmy = [p for p in pohyby if p.typ == _safe_pohyb_typ("TYP_PRIJEM", "PRIJEM") and p.prijem_id]
+    vydeje = [p for p in pohyby if p.typ == _safe_pohyb_typ("TYP_VYDEJ", "VYDEJ") and p.vydejka_id]
+    odpisy = [p for p in pohyby if p.typ == _safe_pohyb_typ("TYP_EXPIRACE_MINUS", "EXPIRACE_MINUS")]
+    inventury = [p for p in pohyby if p.inventura_id]
+    cenova_historie = (
+        PolozkaPrijmu.objects
+        .filter(surovina=surovina, prijem__uzavreny=True, prijem__stornovano=False)
+        .select_related("prijem", "prijem__dodavatel")
+        .order_by("-prijem__datum", "-id")[:20]
+    )
+    return {
+        "surovina": surovina,
+        "date_from": date_from,
+        "date_to": date_to,
+        "stav": stav.mnozstvi if stav else Decimal("0"),
+        "minimum": stav.min_mnozstvi if stav else Decimal("0"),
+        "stav_display": format_mnozstvi_s_jednotkou(surovina, stav.mnozstvi if stav else Decimal("0")),
+        "minimum_display": format_mnozstvi_s_jednotkou(surovina, stav.min_mnozstvi if stav else Decimal("0")),
+        "hodnota_stavu": hodnota_skladu_aktualni()["hodnota_celkem"] if not surovina else sum((hodnota_sarze(s) for s in SarzeSkladu.objects.filter(surovina=surovina, mnozstvi_zbyva__gt=0)), Decimal("0")),
+        "sarze": SarzeSkladu.objects.filter(surovina=surovina, mnozstvi_zbyva__gt=0).order_by("datum_spotreby", "id")[:30],
+        "pohyby": pohyby[:50],
+        "cenova_historie": cenova_historie,
+        "spotreba_obdobi": sum((p.mnozstvi or Decimal("0") for p in vydeje), Decimal("0")),
+        "spotreba_obdobi_display": format_mnozstvi_s_jednotkou(surovina, sum((p.mnozstvi or Decimal("0") for p in vydeje), Decimal("0"))),
+        "naklady_spotreby": sum((hodnota_pohybu(p) for p in vydeje), Decimal("0")),
+        "odpisy": sum((hodnota_pohybu(p) for p in odpisy), Decimal("0")),
+        "inventurni_rozdily": sum((_pohyb_znaminko(p.typ) * hodnota_pohybu(p) for p in inventury), Decimal("0")),
+        "prijmy_hodnota": sum((hodnota_pohybu(p) for p in prijmy), Decimal("0")),
+    }
+
+
+def inventurni_nahled(inventura):
+    rows = []
+    for pol in inventura.polozky.select_related("surovina").all():
+        sarze = list(
+            SarzeSkladu.objects
+            .filter(surovina=pol.surovina, mnozstvi_zbyva__gt=0)
+            .order_by("datum_spotreby", "id")[:20]
+        )
+        rows.append({
+            "polozka": pol,
+            "surovina": pol.surovina,
+            "stav_pred": pol.stav_pred,
+            "fyzicky_stav": pol.fyzicky_stav,
+            "rozdil": (pol.fyzicky_stav or Decimal("0")) - (pol.stav_pred or Decimal("0")),
+            "sarze": sarze,
+            "stav_pred_display": format_mnozstvi_s_jednotkou(pol.surovina, pol.stav_pred),
+            "fyzicky_stav_display": format_mnozstvi_s_jednotkou(pol.surovina, pol.fyzicky_stav),
+            "rozdil_display": format_mnozstvi_s_jednotkou(pol.surovina, (pol.fyzicky_stav or Decimal("0")) - (pol.stav_pred or Decimal("0"))),
+        })
+    return rows
+
+
+def napln_sarzovou_inventuru(inventura):
+    if getattr(inventura, "uzavreny", False) or getattr(inventura, "stornovano", False):
+        raise ValidationError("Uzavřenou nebo stornovanou inventuru nelze přepočítat.")
+
+    vytvoreno = 0
+    sarze_qs = (
+        SarzeSkladu.objects
+        .filter(mnozstvi_zbyva__gt=0)
+        .exclude(stav=SarzeSkladu.STAV_ODEPSANA)
+        .select_related("surovina")
+        .order_by("surovina__nazev", "datum_spotreby", "id")
+    )
+    for sarze in sarze_qs:
+        _, created = PolozkaInventurySarze.objects.get_or_create(
+            inventura=inventura,
+            sarze_skladu=sarze,
+            defaults={
+                "surovina": sarze.surovina,
+                "sarze": sarze.sarze,
+                "typ_data_spotreby": sarze.typ_data_spotreby,
+                "datum_spotreby": sarze.datum_spotreby,
+                "stav_pred": sarze.mnozstvi_zbyva or Decimal("0"),
+                "fyzicky_stav": sarze.mnozstvi_zbyva or Decimal("0"),
+                "cena_za_jednotku": sarze.cena_za_jednotku,
+                "je_nova_sarze": False,
+            },
+        )
+        if created:
+            vytvoreno += 1
+    return vytvoreno
+
+
+def synchronizuj_surovinove_polozky_inventury(inventura):
+    soucty = defaultdict(lambda: {"stav_pred": Decimal("0"), "fyzicky_stav": Decimal("0")})
+    for pol in inventura.sarze_polozky.select_related("surovina").all():
+        soucty[pol.surovina_id]["stav_pred"] += pol.stav_pred or Decimal("0")
+        soucty[pol.surovina_id]["fyzicky_stav"] += pol.fyzicky_stav or Decimal("0")
+
+    existujici = {
+        pol.surovina_id: pol
+        for pol in inventura.polozky.select_related("surovina").all()
+    }
+    for surovina_id, data in soucty.items():
+        pol = existujici.get(surovina_id)
+        if pol is None:
+            pol = PolozkaInventury(inventura=inventura, surovina_id=surovina_id)
+        pol.stav_pred = data["stav_pred"]
+        pol.fyzicky_stav = data["fyzicky_stav"]
+        pol.rozdil = data["fyzicky_stav"] - data["stav_pred"]
+        pol.save()
+
+
+def souhrn_sarzove_inventury(inventura):
+    synchronizuj_surovinove_polozky_inventury(inventura)
+    rows = []
+    manko = Decimal("0")
+    prebytek = Decimal("0")
+    for pol in inventura.sarze_polozky.select_related("surovina", "sarze_skladu").all():
+        cena = pol.cena_za_jednotku or getattr(pol.surovina, "prumerna_cena_za_jednotku", None) or Decimal("0")
+        hodnota = abs(pol.rozdil or Decimal("0")) * cena
+        if (pol.rozdil or Decimal("0")) < 0:
+            manko += hodnota
+        elif (pol.rozdil or Decimal("0")) > 0:
+            prebytek += hodnota
+        rows.append({
+            "polozka": pol,
+            "surovina": pol.surovina,
+            "sarze": pol.sarze,
+            "stav_pred": pol.stav_pred,
+            "fyzicky_stav": pol.fyzicky_stav,
+            "rozdil": pol.rozdil,
+            "cena": cena,
+            "hodnota": hodnota,
+            "stav_pred_display": format_mnozstvi_s_jednotkou(pol.surovina, pol.stav_pred),
+            "fyzicky_stav_display": format_mnozstvi_s_jednotkou(pol.surovina, pol.fyzicky_stav),
+            "rozdil_display": format_mnozstvi_s_jednotkou(pol.surovina, pol.rozdil),
+        })
+    return {
+        "radky": rows,
+        "pocet_polozek": len(rows),
+        "manko": manko,
+        "prebytek": prebytek,
+        "cisty_rozdil": prebytek - manko,
+    }
+
+
+def validace_prijemky_pred_uzavrenim(prijem, tolerance_ceny_pct=Decimal("30"), tolerance_faktury=Decimal("1.00")):
+    varovani = []
+    if prijem.castka_faktury_celkem is not None and abs(prijem.rozdil_faktury or Decimal("0")) > tolerance_faktury:
+        varovani.append(f"Rozdíl proti faktuře je {prijem.rozdil_faktury:.2f} Kč.")
+    for pol in prijem.polozky.select_related("surovina").all():
+        if not pol.sarze:
+            varovani.append(f"Položka '{pol.surovina}' nemá vyplněnou šarži.")
+        if not pol.datum_spotreby and pol.typ_data_spotreby != "NEUVADI_SE":
+            varovani.append(f"Položka '{pol.surovina}' nemá vyplněné datum spotřeby/minimální trvanlivosti.")
+        posledni = (
+            PolozkaPrijmu.objects
+            .filter(surovina=pol.surovina, prijem__uzavreny=True, prijem__stornovano=False)
+            .exclude(pk=pol.pk)
+            .order_by("-prijem__datum", "-id")
+            .first()
+        )
+        if posledni and posledni.jednotkova_cena:
+            rozdil_pct = abs((pol.jednotkova_cena - posledni.jednotkova_cena) / posledni.jednotkova_cena * Decimal("100"))
+            if rozdil_pct > tolerance_ceny_pct:
+                varovani.append(
+                    f"Cena položky '{pol.surovina}' se liší o {rozdil_pct:.1f} % proti poslední příjemce."
+                )
+    return varovani
+
+
+def managersky_report_skladu(rok, mesic):
+    date_from, date_to = _obdobi_mesice(rok, mesic)
+    qs = PohybSkladu.objects.filter(
+        datum__date__gte=date_from,
+        datum__date__lte=date_to,
+    ).select_related("surovina")
+    spotreba = defaultdict(lambda: {"mnozstvi": Decimal("0"), "hodnota": Decimal("0"), "surovina": None})
+    odpisy = defaultdict(lambda: {"mnozstvi": Decimal("0"), "hodnota": Decimal("0"), "surovina": None})
+    inventury = defaultdict(lambda: {"mnozstvi": Decimal("0"), "hodnota": Decimal("0"), "surovina": None})
+    for pohyb in qs:
+        bucket = None
+        if pohyb.typ == _safe_pohyb_typ("TYP_VYDEJ", "VYDEJ") and pohyb.vydejka_id:
+            bucket = spotreba
+        elif pohyb.typ == _safe_pohyb_typ("TYP_EXPIRACE_MINUS", "EXPIRACE_MINUS"):
+            bucket = odpisy
+        elif pohyb.typ in [_safe_pohyb_typ("TYP_INVENTURA_PLUS", "INVENTURA_PLUS"), _safe_pohyb_typ("TYP_INVENTURA_MINUS", "INVENTURA_MINUS")]:
+            bucket = inventury
+        if bucket is None:
+            continue
+        row = bucket[pohyb.surovina_id]
+        row["surovina"] = pohyb.surovina
+        row["mnozstvi"] += pohyb.mnozstvi or Decimal("0")
+        row["hodnota"] += hodnota_pohybu(pohyb)
+    return {
+        "top_spotreba": sorted(spotreba.values(), key=lambda r: r["hodnota"], reverse=True)[:20],
+        "top_odpisy": sorted(odpisy.values(), key=lambda r: r["hodnota"], reverse=True)[:20],
+        "top_inventury": sorted(inventury.values(), key=lambda r: r["hodnota"], reverse=True)[:20],
+        "hodnota_skladu": hodnota_skladu_k_datu(date_to),
+        "naklady": spocitej_naklady_mesic(rok, mesic),
+    }
+
+
+def vytvor_inventurni_sarzi(surovina, inventura, mnozstvi):
+    cena = getattr(surovina, "prumerna_cena_za_jednotku", None) or Decimal("0")
+    return SarzeSkladu.objects.create(
+        surovina=surovina,
+        sarze=f"INV-{inventura.id}-{surovina.id}",
+        typ_data_spotreby="NEUVADI_SE",
+        datum_spotreby=None,
+        mnozstvi_prijato=mnozstvi,
+        mnozstvi_zbyva=mnozstvi,
+        cena_za_jednotku=cena,
+        stav=SarzeSkladu.STAV_POUZITELNA,
+        poznamka=f"Inventurní přebytek z inventury #{inventura.id}",
+    )
+
+
 @transaction.atomic
 def uzavri_odpis_expirace(odpis: OdpisExpirace, user=None) -> bool:
     if getattr(odpis, "uzavreny", False):
         return False
     if getattr(odpis, "stornovano", False):
         raise ValidationError("Stornovaný odpis expirace nelze uzavřít.")
+    over_doklad_mimo_uzavrene_obdobi(odpis)
 
     aktualizuj_stavy_sarzi(dnes=odpis.datum)
     sarze_qs = SarzeSkladu.objects.select_for_update().filter(
@@ -716,6 +1391,7 @@ def uzavri_odpis_expirace(odpis: OdpisExpirace, user=None) -> bool:
         sarze.save(update_fields=["mnozstvi_zbyva", "stav"])
 
         PohybSkladu.objects.create(
+            datum=_datum_pohybu_dokladu(odpis),
             surovina=sarze.surovina,
             typ=_safe_pohyb_typ("TYP_EXPIRACE_MINUS", "EXPIRACE_MINUS"),
             mnozstvi=mnozstvi,
@@ -727,6 +1403,183 @@ def uzavri_odpis_expirace(odpis: OdpisExpirace, user=None) -> bool:
 
     _safe_set_close_metadata(odpis, user=user)
     odpis.save(update_fields=_safe_update_fields(odpis, ["uzavreny", "uzavren_at", "uzavrel"]))
+    return True
+
+
+def souhrn_odpisu_expirace(odpis: OdpisExpirace):
+    pohyby = (
+        PohybSkladu.objects
+        .filter(odpis_expirace=odpis)
+        .select_related("surovina", "sarze_skladu")
+        .order_by("surovina__nazev", "id")
+    )
+    celkem = Decimal("0")
+    mnozstvi_celkem = Decimal("0")
+    polozky = []
+    for pohyb in pohyby:
+        hodnota = (pohyb.mnozstvi or Decimal("0")) * (pohyb.cena_za_jednotku or Decimal("0"))
+        celkem += hodnota
+        mnozstvi_celkem += pohyb.mnozstvi or Decimal("0")
+        polozky.append({
+            "pohyb": pohyb,
+            "surovina": pohyb.surovina,
+            "sarze": pohyb.sarze_skladu,
+            "mnozstvi": pohyb.mnozstvi or Decimal("0"),
+            "cena_za_jednotku": pohyb.cena_za_jednotku or Decimal("0"),
+            "hodnota": hodnota,
+        })
+
+    return {
+        "pocet_pohybu": pohyby.count(),
+        "mnozstvi_celkem": mnozstvi_celkem,
+        "hodnota_celkem": celkem,
+        "polozky": polozky,
+    }
+
+
+def hodnota_pohybu(pohyb):
+    return (pohyb.mnozstvi or Decimal("0")) * (pohyb.cena_za_jednotku or Decimal("0"))
+
+
+def hodnota_sarze(sarze):
+    return (sarze.mnozstvi_zbyva or Decimal("0")) * (sarze.cena_za_jednotku or Decimal("0"))
+
+
+def hodnota_skladu_aktualni():
+    celkem = Decimal("0")
+    radky = []
+    qs = (
+        SarzeSkladu.objects
+        .filter(mnozstvi_zbyva__gt=0)
+        .select_related("surovina")
+        .order_by("surovina__nazev", "datum_spotreby", "id")
+    )
+    for sarze in qs:
+        hodnota = hodnota_sarze(sarze)
+        celkem += hodnota
+        radky.append({
+            "surovina": sarze.surovina,
+            "sarze": sarze,
+            "mnozstvi": sarze.mnozstvi_zbyva or Decimal("0"),
+            "jednotka": sarze.surovina.jednotka,
+            "cena_za_jednotku": sarze.cena_za_jednotku or Decimal("0"),
+            "hodnota": hodnota,
+        })
+    return {"hodnota_celkem": celkem, "radky": radky}
+
+
+def hodnota_skladu_k_datu(date_to, surovina=None):
+    qs = PohybSkladu.objects.filter(datum__date__lte=date_to).select_related("surovina")
+    if surovina is not None:
+        qs = qs.filter(surovina=surovina)
+
+    celkem = Decimal("0")
+    for pohyb in qs:
+        znaminko = _pohyb_znaminko(pohyb.typ)
+        if znaminko == 0:
+            continue
+        celkem += znaminko * hodnota_pohybu(pohyb)
+    return celkem
+
+
+def hodnota_pohybu_obdobi(date_from, date_to, typy=None, **filtry):
+    qs = PohybSkladu.objects.filter(
+        datum__date__gte=date_from,
+        datum__date__lte=date_to,
+        **filtry,
+    )
+    if typy is not None:
+        qs = qs.filter(typ__in=typy)
+    return sum((hodnota_pohybu(pohyb) for pohyb in qs), Decimal("0"))
+
+
+def mesicni_skladova_uzaverka(rok, mesic):
+    from datetime import date, timedelta
+
+    date_from = date(int(rok), int(mesic), 1)
+    date_to = date(int(rok), int(mesic), calendar.monthrange(int(rok), int(mesic))[1])
+    predchozi_den = date_from - timedelta(days=1)
+
+    typ_prijem = _safe_pohyb_typ("TYP_PRIJEM", "PRIJEM")
+    typ_vydej = _safe_pohyb_typ("TYP_VYDEJ", "VYDEJ")
+    typ_inventura_plus = _safe_pohyb_typ("TYP_INVENTURA_PLUS", "INVENTURA_PLUS")
+    typ_inventura_minus = _safe_pohyb_typ("TYP_INVENTURA_MINUS", "INVENTURA_MINUS")
+    typ_expirace = _safe_pohyb_typ("TYP_EXPIRACE_MINUS", "EXPIRACE_MINUS")
+
+    prijmy = hodnota_pohybu_obdobi(date_from, date_to, [typ_prijem], prijem__isnull=False)
+    storna_prijmu = hodnota_pohybu_obdobi(date_from, date_to, [typ_vydej], prijem__isnull=False)
+    vydeje = hodnota_pohybu_obdobi(date_from, date_to, [typ_vydej], vydejka__isnull=False)
+    storna_vydeju = hodnota_pohybu_obdobi(date_from, date_to, [typ_prijem], vydejka__isnull=False)
+    odpisy_expirace = hodnota_pohybu_obdobi(date_from, date_to, [typ_expirace], odpis_expirace__isnull=False)
+    inventura_plus = hodnota_pohybu_obdobi(date_from, date_to, [typ_inventura_plus], inventura__isnull=False)
+    inventura_minus = hodnota_pohybu_obdobi(date_from, date_to, [typ_inventura_minus], inventura__isnull=False)
+
+    pocatecni_stav = hodnota_skladu_k_datu(predchozi_den)
+    konecny_stav = hodnota_skladu_k_datu(date_to)
+    vypocet_konecneho_stavu = (
+        pocatecni_stav
+        + prijmy
+        - storna_prijmu
+        - vydeje
+        + storna_vydeju
+        - odpisy_expirace
+        + inventura_plus
+        - inventura_minus
+    )
+    rozdil_kontroly = konecny_stav - vypocet_konecneho_stavu
+
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "pocatecni_stav": pocatecni_stav,
+        "prijmy": prijmy,
+        "storna_prijmu": storna_prijmu,
+        "vydeje": vydeje,
+        "storna_vydeju": storna_vydeju,
+        "odpisy_expirace": odpisy_expirace,
+        "inventura_plus": inventura_plus,
+        "inventura_minus": inventura_minus,
+        "konecny_stav": konecny_stav,
+        "vypocet_konecneho_stavu": vypocet_konecneho_stavu,
+        "rozdil_kontroly": rozdil_kontroly,
+        "kontrola_ok": rozdil_kontroly == 0,
+    }
+
+
+@transaction.atomic
+def uzavri_skladovou_uzaverku(uzaverka: SkladovaUzaverka, user=None) -> bool:
+    if getattr(uzaverka, "uzavreny", False):
+        return False
+    if getattr(uzaverka, "stornovano", False):
+        raise ValidationError("Stornovanou skladovou uzávěrku nelze uzavřít.")
+
+    data = mesicni_skladova_uzaverka(uzaverka.rok, uzaverka.mesic)
+    for field in [
+        "pocatecni_stav",
+        "prijmy",
+        "storna_prijmu",
+        "vydeje",
+        "storna_vydeju",
+        "odpisy_expirace",
+        "inventura_plus",
+        "inventura_minus",
+        "vypocet_konecneho_stavu",
+        "konecny_stav",
+        "rozdil_kontroly",
+    ]:
+        setattr(uzaverka, field, data[field])
+    uzaverka.datum = data["date_to"]
+    _safe_set_close_metadata(uzaverka, user=user)
+    uzaverka.save()
+    return True
+
+
+@transaction.atomic
+def otevri_skladovou_uzaverku(uzaverka: SkladovaUzaverka, user=None, duvod="Storno uzávěrky z administrace") -> bool:
+    if not getattr(uzaverka, "uzavreny", False) or getattr(uzaverka, "stornovano", False):
+        return False
+    uzaverka.storno_meta(duvod=duvod)
+    uzaverka.save(update_fields=_safe_update_fields(uzaverka, ["stornovano", "stornovano_at", "stornovano_duvod"]))
     return True
 
 
@@ -758,6 +1611,7 @@ def uzavri_prijem(prijem: PrijemSkladu, user=None) -> bool:
         return False
     if getattr(prijem, "stornovano", False):
         raise ValidationError("Stornovanou příjemku nelze uzavřít.")
+    over_doklad_mimo_uzavrene_obdobi(prijem)
 
     _validate_neprazdny_doklad(prijem, "Příjemku bez položek nelze uzavřít.")
 
@@ -791,15 +1645,17 @@ def uzavri_prijem(prijem: PrijemSkladu, user=None) -> bool:
         stav.mnozstvi = nove_mnozstvi
         stav.save(update_fields=["mnozstvi"])
 
+        sarze = vytvor_nebo_aktualizuj_sarzi_z_prijmu(pol)
         PohybSkladu.objects.create(
+            datum=_datum_pohybu_dokladu(prijem),
             surovina=surovina,
             typ=_safe_pohyb_typ("TYP_PRIJEM", "PRIJEM"),
             mnozstvi=prijate_mnozstvi,
             cena_za_jednotku=prijata_cena if "cena_za_jednotku" in [f.name for f in PohybSkladu._meta.fields] else None,
             prijem=prijem if "prijem" in [f.name for f in PohybSkladu._meta.fields] else None,
+            sarze_skladu=sarze if "sarze_skladu" in [f.name for f in PohybSkladu._meta.fields] else None,
             poznamka=f"Příjemka #{prijem.id}",
         )
-        vytvor_nebo_aktualizuj_sarzi_z_prijmu(pol)
 
     _safe_set_close_metadata(prijem, user=user)
     prijem.save(update_fields=_safe_update_fields(prijem, ["uzavreny", "uzavren_at", "uzavrel"]))
@@ -816,6 +1672,7 @@ def uzavri_vydejku(vydejka: Vydejka, user=None) -> bool:
         return False
     if getattr(vydejka, "stornovano", False):
         raise ValidationError("Stornovanou výdejku nelze uzavřít.")
+    over_doklad_mimo_uzavrene_obdobi(vydejka)
 
     _validate_neprazdny_doklad(vydejka, "Výdejku bez položek nelze uzavřít.")
 
@@ -831,6 +1688,7 @@ def uzavri_vydejku(vydejka: Vydejka, user=None) -> bool:
         pohyb_fields = {f.name for f in PohybSkladu._meta.fields}
         for sarze, odebrano in cerpani_sarzi:
             kwargs = {
+                "datum": _datum_pohybu_dokladu(vydejka),
                 "surovina": surovina,
                 "typ": _safe_pohyb_typ("TYP_VYDEJ", "VYDEJ"),
                 "mnozstvi": odebrano,
@@ -859,10 +1717,74 @@ def uzavri_inventuru(inventura: Inventura, user=None) -> bool:
         return False
     if getattr(inventura, "stornovano", False):
         raise ValidationError("Stornovanou inventuru nelze uzavřít.")
+    over_doklad_mimo_uzavrene_obdobi(inventura)
+
+    if inventura.sarze_polozky.exists():
+        synchronizuj_surovinove_polozky_inventury(inventura)
 
     _validate_neprazdny_doklad(inventura, "Inventuru bez položek nelze uzavřít.")
 
     pohyb_fields = {f.name for f in PohybSkladu._meta.fields}
+
+    if inventura.sarze_polozky.exists():
+        for pol in inventura.sarze_polozky.select_related("surovina", "sarze_skladu").all():
+            surovina = pol.surovina
+            stav = get_or_create_stav_for_update(surovina)
+            rozdil = pol.rozdil or Decimal("0")
+            if rozdil == 0:
+                continue
+
+            sarze = pol.sarze_skladu
+            if sarze is not None and sarze.pk:
+                sarze = SarzeSkladu.objects.select_for_update().get(pk=sarze.pk)
+                sarze.mnozstvi_zbyva = pol.fyzicky_stav or Decimal("0")
+                sarze.stav = SarzeSkladu.STAV_ODEPSANA if sarze.mnozstvi_zbyva <= 0 else stav_sarze_podle_data(sarze)
+                sarze.save(update_fields=["mnozstvi_zbyva", "stav"])
+            else:
+                if (pol.fyzicky_stav or Decimal("0")) <= 0:
+                    continue
+                sarze = SarzeSkladu.objects.create(
+                    surovina=surovina,
+                    sarze=pol.sarze,
+                    typ_data_spotreby=pol.typ_data_spotreby,
+                    datum_spotreby=pol.datum_spotreby,
+                    mnozstvi_prijato=pol.fyzicky_stav or Decimal("0"),
+                    mnozstvi_zbyva=pol.fyzicky_stav or Decimal("0"),
+                    cena_za_jednotku=pol.cena_za_jednotku or surovina.prumerna_cena_za_jednotku,
+                    stav=SarzeSkladu.STAV_POUZITELNA,
+                    poznamka=f"Nově nalezená šarže z inventury #{inventura.id}",
+                )
+                sarze.stav = stav_sarze_podle_data(sarze)
+                sarze.save(update_fields=["stav"])
+                pol.sarze_skladu = sarze
+                pol.je_nova_sarze = True
+                pol.save(update_fields=["sarze_skladu", "je_nova_sarze"])
+
+            stav.mnozstvi = (stav.mnozstvi or Decimal("0")) + rozdil
+            stav.save(update_fields=["mnozstvi"])
+
+            typ = (
+                _safe_pohyb_typ("TYP_INVENTURA_PLUS", "INVENTURA_PLUS")
+                if rozdil > 0 else
+                _safe_pohyb_typ("TYP_INVENTURA_MINUS", "INVENTURA_MINUS")
+            )
+            kwargs = {
+                "datum": _datum_pohybu_dokladu(inventura),
+                "surovina": surovina,
+                "typ": typ,
+                "mnozstvi": abs(rozdil),
+                "cena_za_jednotku": pol.cena_za_jednotku or sarze.cena_za_jednotku or surovina.prumerna_cena_za_jednotku,
+                "poznamka": f"Šaržová inventura #{inventura.id} / šarže {sarze.sarze or sarze.id}",
+            }
+            if "inventura" in pohyb_fields:
+                kwargs["inventura"] = inventura
+            if "sarze_skladu" in pohyb_fields:
+                kwargs["sarze_skladu"] = sarze
+            PohybSkladu.objects.create(**kwargs)
+
+        _safe_set_close_metadata(inventura, user=user)
+        inventura.save(update_fields=_safe_update_fields(inventura, ["uzavreny", "uzavren_at", "uzavrel"]))
+        return True
 
     for pol in inventura.polozky.select_related("surovina").all():
         surovina = pol.surovina
@@ -885,21 +1807,37 @@ def uzavri_inventuru(inventura: Inventura, user=None) -> bool:
         stav.mnozstvi = fyzicky
         stav.save(update_fields=["mnozstvi"])
 
-        kwargs = {
-            "surovina": surovina,
-            "typ": (
-                _safe_pohyb_typ("TYP_INVENTURA_PLUS", "INVENTURA_PLUS")
-                if rozdil > 0 else
-                _safe_pohyb_typ("TYP_INVENTURA_MINUS", "INVENTURA_MINUS")
-            ),
-            "mnozstvi": abs(rozdil),
-            "poznamka": f"Inventura #{inventura.id}",
-        }
-
-        if "inventura" in pohyb_fields:
-            kwargs["inventura"] = inventura
-
-        PohybSkladu.objects.create(**kwargs)
+        if rozdil > 0:
+            sarze = vytvor_inventurni_sarzi(surovina, inventura, rozdil)
+            kwargs = {
+                "datum": _datum_pohybu_dokladu(inventura),
+                "surovina": surovina,
+                "typ": _safe_pohyb_typ("TYP_INVENTURA_PLUS", "INVENTURA_PLUS"),
+                "mnozstvi": rozdil,
+                "cena_za_jednotku": sarze.cena_za_jednotku,
+                "poznamka": f"Inventurní přebytek #{inventura.id} / šarže {sarze.sarze}",
+            }
+            if "inventura" in pohyb_fields:
+                kwargs["inventura"] = inventura
+            if "sarze_skladu" in pohyb_fields:
+                kwargs["sarze_skladu"] = sarze
+            PohybSkladu.objects.create(**kwargs)
+        else:
+            cerpani_sarzi = odeber_ze_sarzi_fefo(surovina, abs(rozdil))
+            for sarze, odebrano in cerpani_sarzi:
+                kwargs = {
+                    "datum": _datum_pohybu_dokladu(inventura),
+                    "surovina": surovina,
+                    "typ": _safe_pohyb_typ("TYP_INVENTURA_MINUS", "INVENTURA_MINUS"),
+                    "mnozstvi": odebrano,
+                    "cena_za_jednotku": sarze.cena_za_jednotku or surovina.prumerna_cena_za_jednotku,
+                    "poznamka": f"Inventurní manko #{inventura.id} / šarže {sarze.sarze or sarze.id}",
+                }
+                if "inventura" in pohyb_fields:
+                    kwargs["inventura"] = inventura
+                if "sarze_skladu" in pohyb_fields:
+                    kwargs["sarze_skladu"] = sarze
+                PohybSkladu.objects.create(**kwargs)
 
     _safe_set_close_metadata(inventura, user=user)
     inventura.save(update_fields=_safe_update_fields(inventura, ["uzavreny", "uzavren_at", "uzavrel"]))
@@ -907,98 +1845,152 @@ def uzavri_inventuru(inventura: Inventura, user=None) -> bool:
 
 
 @transaction.atomic
-def stornuj_prijem(prijem: PrijemSkladu, user=None) -> bool:
+def stornuj_prijem(prijem: PrijemSkladu, user=None, duvod="Storno z administrace") -> bool:
     """
     Storno příjemky vytvoří opačné výdejové pohyby a sníží sklad.
     Původní pohyby zůstávají zachované kvůli auditu.
     """
     if not _doklad_musi_byt_uzavreny_a_nestornovany(prijem):
         return False
+    over_doklad_mimo_uzavrene_obdobi(prijem)
 
-    for pohyb in prijem.pohyby.filter(typ=_safe_pohyb_typ("TYP_PRIJEM", "PRIJEM")).select_related("surovina"):
+    for pohyb in prijem.pohyby.filter(typ=_safe_pohyb_typ("TYP_PRIJEM", "PRIJEM")).select_related("surovina", "sarze_skladu"):
+        sarze = pohyb.sarze_skladu
+        if sarze is None:
+            sarze = (
+                SarzeSkladu.objects
+                .select_for_update()
+                .filter(polozka_prijmu__prijem=prijem, surovina=pohyb.surovina)
+                .order_by("id")
+                .first()
+            )
+        elif sarze.pk:
+            sarze = SarzeSkladu.objects.select_for_update().get(pk=sarze.pk)
+
+        mnozstvi = pohyb.mnozstvi or Decimal("0")
+        if sarze is not None:
+            if (sarze.mnozstvi_zbyva or Decimal("0")) < mnozstvi:
+                raise ValidationError(
+                    f"Příjemku nelze stornovat: ze šarže '{sarze}' už bylo vydáno zboží."
+                )
+            sarze.mnozstvi_zbyva = (sarze.mnozstvi_zbyva or Decimal("0")) - mnozstvi
+            sarze.stav = SarzeSkladu.STAV_ODEPSANA if sarze.mnozstvi_zbyva <= 0 else stav_sarze_podle_data(sarze)
+            sarze.save(update_fields=["mnozstvi_zbyva", "stav"])
+
         stav = get_or_create_stav_for_update(pohyb.surovina)
-        stav.mnozstvi = (stav.mnozstvi or Decimal("0")) - (pohyb.mnozstvi or Decimal("0"))
+        stav.mnozstvi = (stav.mnozstvi or Decimal("0")) - mnozstvi
         stav.save(update_fields=["mnozstvi"])
 
         PohybSkladu.objects.create(
+            datum=_datum_pohybu_dokladu(prijem),
             surovina=pohyb.surovina,
             typ=_safe_pohyb_typ("TYP_VYDEJ", "VYDEJ"),
-            mnozstvi=pohyb.mnozstvi,
+            mnozstvi=mnozstvi,
             cena_za_jednotku=pohyb.cena_za_jednotku,
             prijem=prijem,
+            sarze_skladu=sarze,
             poznamka=f"Storno příjemky #{prijem.id}",
         )
 
-    _safe_set_storno_metadata(prijem)
-    prijem.save(update_fields=_safe_update_fields(prijem, ["stornovano", "stornovano_at"]))
+    _safe_set_storno_metadata(prijem, duvod=duvod)
+    prijem.save(update_fields=_safe_update_fields(prijem, ["stornovano", "stornovano_at", "stornovano_duvod"]))
     return True
 
 
 @transaction.atomic
-def stornuj_vydejku(vydejka: Vydejka, user=None) -> bool:
+def stornuj_vydejku(vydejka: Vydejka, user=None, duvod="Storno z administrace") -> bool:
     """
     Storno výdejky vytvoří opačné příjmové pohyby a vrátí suroviny na sklad.
     """
     if not _doklad_musi_byt_uzavreny_a_nestornovany(vydejka):
         return False
+    over_doklad_mimo_uzavrene_obdobi(vydejka)
 
-    for pohyb in vydejka.pohyby.filter(typ=_safe_pohyb_typ("TYP_VYDEJ", "VYDEJ")).select_related("surovina"):
+    for pohyb in vydejka.pohyby.filter(typ=_safe_pohyb_typ("TYP_VYDEJ", "VYDEJ")).select_related("surovina", "sarze_skladu"):
+        sarze = pohyb.sarze_skladu
+        mnozstvi = pohyb.mnozstvi or Decimal("0")
+        if sarze is not None and sarze.pk:
+            sarze = SarzeSkladu.objects.select_for_update().get(pk=sarze.pk)
+            sarze.mnozstvi_zbyva = (sarze.mnozstvi_zbyva or Decimal("0")) + mnozstvi
+            sarze.stav = stav_sarze_podle_data(sarze)
+            sarze.save(update_fields=["mnozstvi_zbyva", "stav"])
+
         stav = get_or_create_stav_for_update(pohyb.surovina)
-        stav.mnozstvi = (stav.mnozstvi or Decimal("0")) + (pohyb.mnozstvi or Decimal("0"))
+        stav.mnozstvi = (stav.mnozstvi or Decimal("0")) + mnozstvi
         stav.save(update_fields=["mnozstvi"])
 
         PohybSkladu.objects.create(
+            datum=_datum_pohybu_dokladu(vydejka),
             surovina=pohyb.surovina,
             typ=_safe_pohyb_typ("TYP_PRIJEM", "PRIJEM"),
-            mnozstvi=pohyb.mnozstvi,
+            mnozstvi=mnozstvi,
             cena_za_jednotku=pohyb.cena_za_jednotku,
             vydejka=vydejka,
+            sarze_skladu=sarze,
             poznamka=f"Storno výdejky #{vydejka.id}",
         )
 
-    _safe_set_storno_metadata(vydejka)
-    vydejka.save(update_fields=_safe_update_fields(vydejka, ["stornovano", "stornovano_at"]))
+    _safe_set_storno_metadata(vydejka, duvod=duvod)
+    vydejka.save(update_fields=_safe_update_fields(vydejka, ["stornovano", "stornovano_at", "stornovano_duvod"]))
     return True
 
 
 @transaction.atomic
-def stornuj_inventuru(inventura: Inventura, user=None) -> bool:
+def stornuj_inventuru(inventura: Inventura, user=None, duvod="Storno z administrace") -> bool:
     """
     Storno inventury provede opačné inventurní pohyby.
     Pozn.: inventura vrací rozdílový efekt, ne historický stav po případných dalších pohybech.
     """
     if not _doklad_musi_byt_uzavreny_a_nestornovany(inventura):
         return False
+    over_doklad_mimo_uzavrene_obdobi(inventura)
 
     for pohyb in inventura.pohyby.filter(
         typ__in=[
             _safe_pohyb_typ("TYP_INVENTURA_PLUS", "INVENTURA_PLUS"),
             _safe_pohyb_typ("TYP_INVENTURA_MINUS", "INVENTURA_MINUS"),
         ]
-    ).select_related("surovina"):
+    ).select_related("surovina", "sarze_skladu"):
         stav = get_or_create_stav_for_update(pohyb.surovina)
         mnozstvi = pohyb.mnozstvi or Decimal("0")
+        sarze = pohyb.sarze_skladu
+        if sarze is not None and sarze.pk:
+            sarze = SarzeSkladu.objects.select_for_update().get(pk=sarze.pk)
 
         if pohyb.typ == _safe_pohyb_typ("TYP_INVENTURA_PLUS", "INVENTURA_PLUS"):
+            if sarze is not None:
+                if (sarze.mnozstvi_zbyva or Decimal("0")) < mnozstvi:
+                    raise ValidationError(
+                        f"Inventuru nelze stornovat: inventurní šarže '{sarze}' už byla částečně vydána."
+                    )
+                sarze.mnozstvi_zbyva = (sarze.mnozstvi_zbyva or Decimal("0")) - mnozstvi
+                sarze.stav = SarzeSkladu.STAV_ODEPSANA if sarze.mnozstvi_zbyva <= 0 else stav_sarze_podle_data(sarze)
+                sarze.save(update_fields=["mnozstvi_zbyva", "stav"])
             stav.mnozstvi = (stav.mnozstvi or Decimal("0")) - mnozstvi
             storno_typ = _safe_pohyb_typ("TYP_INVENTURA_MINUS", "INVENTURA_MINUS")
         else:
+            if sarze is not None:
+                sarze.mnozstvi_zbyva = (sarze.mnozstvi_zbyva or Decimal("0")) + mnozstvi
+                sarze.stav = stav_sarze_podle_data(sarze)
+                sarze.save(update_fields=["mnozstvi_zbyva", "stav"])
             stav.mnozstvi = (stav.mnozstvi or Decimal("0")) + mnozstvi
             storno_typ = _safe_pohyb_typ("TYP_INVENTURA_PLUS", "INVENTURA_PLUS")
 
         stav.save(update_fields=["mnozstvi"])
 
         PohybSkladu.objects.create(
+            datum=_datum_pohybu_dokladu(inventura),
             surovina=pohyb.surovina,
             typ=storno_typ,
             mnozstvi=mnozstvi,
             cena_za_jednotku=pohyb.cena_za_jednotku,
             inventura=inventura,
+            sarze_skladu=sarze,
             poznamka=f"Storno inventury #{inventura.id}",
         )
 
-    _safe_set_storno_metadata(inventura)
-    inventura.save(update_fields=_safe_update_fields(inventura, ["stornovano", "stornovano_at"]))
+    _safe_set_storno_metadata(inventura, duvod=duvod)
+    inventura.save(update_fields=_safe_update_fields(inventura, ["stornovano", "stornovano_at", "stornovano_duvod"]))
     return True
 
 
@@ -1270,6 +2262,9 @@ def spocitej_naklady_mesic(rok, mesic, stravovaci_skupina=None):
 
     prijmy_sum = Decimal("0")
     vydeje_sum = Decimal("0")
+    odpisy_expirace_sum = Decimal("0")
+    inventura_plus_sum = Decimal("0")
+    inventura_minus_sum = Decimal("0")
 
     for pohyb in qs:
         cena = pohyb.cena_za_jednotku or Decimal("0")
@@ -1286,6 +2281,13 @@ def spocitej_naklady_mesic(rok, mesic, stravovaci_skupina=None):
                 prijmy_sum -= hodnota
             elif pohyb.vydejka_id:
                 vydeje_sum += hodnota
+        elif pohyb.typ == _safe_pohyb_typ("TYP_EXPIRACE_MINUS", "EXPIRACE_MINUS"):
+            if pohyb.odpis_expirace_id:
+                odpisy_expirace_sum += hodnota
+        elif pohyb.typ == _safe_pohyb_typ("TYP_INVENTURA_PLUS", "INVENTURA_PLUS"):
+            inventura_plus_sum += hodnota
+        elif pohyb.typ == _safe_pohyb_typ("TYP_INVENTURA_MINUS", "INVENTURA_MINUS"):
+            inventura_minus_sum += hodnota
 
     import calendar
     from datetime import date
@@ -1294,11 +2296,16 @@ def spocitej_naklady_mesic(rok, mesic, stravovaci_skupina=None):
     date_to = date(int(rok), int(mesic), calendar.monthrange(int(rok), int(mesic))[1])
     pocet_porci = spocitej_stravnikodny_obdobi(date_from, date_to, stravovaci_skupina)
     cena_na_porci = vydeje_sum / pocet_porci if pocet_porci else Decimal("0")
+    naklady_celkem = vydeje_sum + odpisy_expirace_sum
 
     return {
         "prijmy": prijmy_sum,
         "vydeje": vydeje_sum,
-        "bilance": vydeje_sum,
+        "odpisy_expirace": odpisy_expirace_sum,
+        "inventura_plus": inventura_plus_sum,
+        "inventura_minus": inventura_minus_sum,
+        "naklady_celkem": naklady_celkem,
+        "bilance": naklady_celkem,
         "pocet_porci": pocet_porci,
         "cena_na_porci": cena_na_porci,
     }

@@ -1,0 +1,76 @@
+{% extends "admin/base_site.html" %}
+{% load form_tags %}
+
+{% block content %}
+<div class="container-fluid">
+  <h1>{{ title }}</h1>
+
+  <div class="card mb-4">
+    <div class="card-header">
+      <strong>Období plánované spotřeby</strong>
+    </div>
+    <div class="card-body">
+      <form method="get" class="form-inline">
+        <div class="form-group mr-3">
+          <label class="mr-2" for="{{ form.date_from.id_for_label }}">Od data</label>
+          {{ form.date_from|add_class:"form-control" }}
+        </div>
+        <div class="form-group mr-3">
+          <label class="mr-2" for="{{ form.date_to.id_for_label }}">Do data</label>
+          {{ form.date_to|add_class:"form-control" }}
+        </div>
+        <button type="submit" class="btn btn-success">
+          Spočítat návrh
+        </button>
+      </form>
+    </div>
+  </div>
+
+  {% if data %}
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Návrh nákupu {{ data.date_from|date:"d.m.Y" }} – {{ data.date_to|date:"d.m.Y" }}</strong>
+        <span>Odhad celkem: <strong>{{ data.odhad_celkem|floatformat:2 }} Kč</strong></span>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-striped mb-0">
+            <thead class="thead-light">
+              <tr>
+                <th>Surovina</th>
+                <th>Stav</th>
+                <th>Minimum</th>
+                <th>Plán</th>
+                <th>Nakoupit</th>
+                <th>Dodavatel</th>
+                <th>Cena</th>
+                <th>Odhad</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in data.radky %}
+                <tr>
+                  <td><strong>{{ row.surovina.nazev }}</strong></td>
+                  <td>{{ row.aktualni_display }}</td>
+                  <td>{{ row.minimum_display }}</td>
+                  <td>{{ row.plan_display }}</td>
+                  <td><strong>{{ row.chybi_display }}</strong></td>
+                  <td>{{ row.dodavatel|default:"–" }}</td>
+                  <td>{{ row.cena_display }}</td>
+                  <td>{{ row.odhad_ceny|floatformat:2 }} Kč</td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="8" class="text-center text-muted py-3">
+                    Pro zvolené období není potřeba nic dokoupit.
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
