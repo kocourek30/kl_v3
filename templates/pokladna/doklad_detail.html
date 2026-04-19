@@ -1,0 +1,180 @@
+{% extends "pokladna/base_pokladna.html" %}
+
+{% block title %}Detail účtu - {{ doklad.cislo_dokladu|default:doklad.id }}{% endblock %}
+
+{% block content %}
+<style>
+  .detail-page { display: grid; gap: 16px; max-width: 1180px; margin: 0 auto; }
+  .detail-head { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .detail-title { margin: 0; font-size: 1.6rem; font-weight: 900; color: #17202a; }
+  .detail-meta { color: #607080; }
+  .detail-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .detail-btn { border: 0; border-radius: 8px; min-height: 42px; padding: 10px 14px; font-weight: 900; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+  .detail-btn-light { background: #e9eef2; color: #17202a; }
+  .detail-btn-danger { background: #fff; color: #d51f2a; border: 1px solid #f1a9ae; }
+  .detail-grid { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 16px; align-items: start; }
+  .detail-card { background: #fff; border: 1px solid #dbe1e8; border-radius: 8px; overflow: hidden; box-shadow: 0 8px 24px rgba(23,32,42,.05); }
+  .detail-card h2 { margin: 0; padding: 13px 15px; font-size: 1rem; font-weight: 900; border-bottom: 1px solid #edf0f3; }
+  .detail-body { padding: 15px; display: grid; gap: 10px; }
+  .detail-row { display: grid; grid-template-columns: 130px 1fr; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid #edf0f3; }
+  .detail-row:last-child { border-bottom: 0; }
+  .detail-label { color: #607080; font-weight: 700; }
+  .detail-value { font-weight: 900; text-align: right; }
+  .detail-total { font-size: 2rem; color: #d40000; line-height: 1; }
+  .detail-status { display: inline-flex; border-radius: 999px; padding: 5px 10px; font-weight: 900; font-size: .82rem; background: #e9eef2; color: #17202a; justify-self: end; }
+  .detail-status-ok { background: #e9f8ee; color: #135f2d; }
+  .detail-status-wait { background: #fff5df; color: #754a00; }
+  .detail-status-cancel { background: #feecee; color: #9d1620; }
+  .detail-table { width: 100%; border-collapse: collapse; }
+  .detail-table th { background: #f6f8fa; color: #607080; font-size: .86rem; text-align: left; padding: 11px 12px; border-bottom: 1px solid #e5e9ef; }
+  .detail-table td { padding: 12px; border-bottom: 1px solid #edf0f3; vertical-align: middle; }
+  .detail-table tr:last-child td { border-bottom: 0; }
+  .detail-num { text-align: right; white-space: nowrap; font-weight: 800; }
+  .detail-empty { padding: 16px; color: #607080; }
+  @media (max-width: 900px) {
+    .detail-grid { grid-template-columns: 1fr; }
+    .detail-row { grid-template-columns: 1fr; }
+    .detail-value { text-align: left; }
+    .detail-status { justify-self: start; }
+  }
+</style>
+
+<div class="detail-page">
+  <div class="detail-head">
+    <div>
+      <h1 class="detail-title">Detail účtu</h1>
+      <div class="detail-meta">{{ doklad.cislo_dokladu|default:doklad.id }} · {{ doklad.datum|date:"d.m.Y H:i" }}</div>
+    </div>
+    <div class="detail-actions">
+      <a class="detail-btn detail-btn-light" href="{% url 'pokladna:pokladna_uzavrene_ucty' pokladna.id %}">Uzavřené účty</a>
+      <a class="detail-btn detail-btn-light" href="{% url 'pokladna:pokladna_prehled' pokladna.id %}">Přehled</a>
+    </div>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{% if message.tags == 'error' %}danger{% elif message.tags == 'success' %}success{% else %}info{% endif %} mb-0">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="detail-grid">
+    <aside class="detail-card">
+      <h2>Účet</h2>
+      <div class="detail-body">
+        <div class="detail-row">
+          <div class="detail-label">Částka</div>
+          <div class="detail-value detail-total">{{ doklad.celkem_s_dph|floatformat:-2 }} Kč</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">Stav</div>
+          <div class="detail-value">
+            {% if doklad.je_uzavreny %}
+              <span class="detail-status detail-status-ok">{{ doklad.get_stav_display }}</span>
+            {% elif doklad.ceka_na_qr %}
+              <span class="detail-status detail-status-wait">{{ doklad.get_stav_display }}</span>
+            {% else %}
+              <span class="detail-status detail-status-cancel">{{ doklad.get_stav_display }}</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">Platba</div>
+          <div class="detail-value">{{ doklad.get_zpusob_platby_display|default:"-" }}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">Zákazník</div>
+          <div class="detail-value">{% if doklad.zakaznik %}{{ doklad.zakaznik.get_full_name|default:doklad.zakaznik.username }}{% else %}Anonymní zákazník{% endif %}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">Obsluha</div>
+          <div class="detail-value">{{ doklad.obsluha.get_full_name|default:doklad.obsluha.username }}</div>
+        </div>
+        <div class="detail-row">
+          <div class="detail-label">Uzavřeno</div>
+          <div class="detail-value">{{ doklad.uzavren_at|date:"d.m.Y H:i"|default:"-" }}</div>
+        </div>
+        {% if doklad.zpusob_platby == "QR" %}
+          <div class="detail-row">
+            <div class="detail-label">QR potvrzeno</div>
+            <div class="detail-value">{{ doklad.qr_potvrzen_at|date:"d.m.Y H:i"|default:"čeká" }}</div>
+          </div>
+        {% endif %}
+        {% if doklad.je_uzavreny and not doklad.uzaverka_id %}
+          <form method="post" action="{% url 'pokladna:pokladna_stornovat_doklad' pokladna.id doklad.id %}">
+            {% csrf_token %}
+            <button class="detail-btn detail-btn-danger w-100" type="submit">Stornovat účet</button>
+          </form>
+        {% endif %}
+      </div>
+    </aside>
+
+    <main class="detail-card">
+      <h2>Namarkované položky</h2>
+      {% if polozky %}
+        <table class="detail-table">
+          <thead>
+            <tr>
+              <th>Položka</th>
+              <th class="text-end">Množství</th>
+              <th class="text-end">Cena/j.</th>
+              <th class="text-end">DPH</th>
+              <th class="text-end">Celkem</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in polozky %}
+              <tr>
+                <td>
+                  <strong>{{ p.nazev_snapshot|default:p.plu.nazev }}</strong>
+                  <div class="detail-meta">{{ p.plu.get_typ_display }}</div>
+                </td>
+                <td class="detail-num">{{ p.mnozstvi }} {{ p.jednotka_text }}</td>
+                <td class="detail-num">{{ p.cena_jednotkova|floatformat:-2 }} Kč</td>
+                <td class="detail-num">{{ p.dph_sazba|floatformat:-2 }} %</td>
+                <td class="detail-num">{{ p.castka_celkem|floatformat:-2 }} Kč</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="detail-empty">Účet nemá žádné položky.</div>
+      {% endif %}
+    </main>
+  </div>
+
+  <section class="detail-card">
+    <h2>Smazané položky z účtu</h2>
+    {% if smazane_polozky %}
+      <table class="detail-table">
+        <thead>
+          <tr>
+            <th>Položka</th>
+            <th class="text-end">Množství</th>
+            <th class="text-end">Cena/j.</th>
+            <th class="text-end">Celkem</th>
+            <th>Smazáno</th>
+            <th>Důvod</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in smazane_polozky %}
+            <tr>
+              <td><strong>{{ p.nazev_snapshot|default:p.plu.nazev }}</strong></td>
+              <td class="detail-num">{{ p.mnozstvi }} {{ p.jednotka_text }}</td>
+              <td class="detail-num">{{ p.cena_jednotkova|floatformat:-2 }} Kč</td>
+              <td class="detail-num">{{ p.castka_celkem|floatformat:-2 }} Kč</td>
+              <td>
+                {{ p.smazano_at|date:"d.m.Y H:i" }}
+                <div class="detail-meta">{% if p.smazal %}{{ p.smazal.get_full_name|default:p.smazal.username }}{% endif %}</div>
+              </td>
+              <td>{{ p.duvod|default:"-" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="detail-empty">Z tohoto účtu nebyly smazány žádné položky.</div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

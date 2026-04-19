@@ -182,10 +182,10 @@
         </div>
         <div class="card-body">
           <div class="row">
-            <div class="col-md-3"><strong>Bio:</strong> {{ legislativni_ukazatele.bio_pct|floatformat:2 }} %</div>
-            <div class="col-md-3"><strong>Sezónní:</strong> {{ legislativni_ukazatele.sezonni_pct|floatformat:2 }} %</div>
-            <div class="col-md-3"><strong>Sterilované / kompot:</strong> {{ legislativni_ukazatele.sterilovane_pct|floatformat:2 }} %</div>
-            <div class="col-md-3"><strong>Masné výrobky:</strong> {{ legislativni_ukazatele.masne_vyrobky_pct|floatformat:2 }} %</div>
+            <div class="col-md-3"><strong>Bio:</strong> {{ legislativni_ukazatele.bio_pct|floatformat:-2 }} %</div>
+            <div class="col-md-3"><strong>Sezónní:</strong> {{ legislativni_ukazatele.sezonni_pct|floatformat:-2 }} %</div>
+            <div class="col-md-3"><strong>Sterilované / kompot:</strong> {{ legislativni_ukazatele.sterilovane_pct|floatformat:-2 }} %</div>
+            <div class="col-md-3"><strong>Masné výrobky:</strong> {{ legislativni_ukazatele.masne_vyrobky_pct|floatformat:-2 }} %</div>
           </div>
           {% if legislativni_ukazatele.zakazane_suroviny %}
             <div class="alert alert-danger mt-3 mb-0">
@@ -241,7 +241,7 @@
                     <td class="text-end">{{ r.norma_g|floatformat:0 }}</td>
                     <td class="text-end">{{ r.skutecnost_g|floatformat:0 }}</td>
                     <td class="text-end">{{ r.rozdil_g|floatformat:0 }}</td>
-                    <td class="text-end">{{ r.skutecnost_pct|floatformat:2 }}</td>
+                    <td class="text-end">{{ r.skutecnost_pct|floatformat:-2 }}</td>
                     <td class="text-end">
                       {{ r.min_pct|floatformat:0 }} %
                       {% if r.max_pct %}- {{ r.max_pct|floatformat:0 }} %{% else %}+{% endif %}

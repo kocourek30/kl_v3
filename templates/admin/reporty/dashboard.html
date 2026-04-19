@@ -282,17 +282,17 @@ document.addEventListener('DOMContentLoaded', function() {
                         <td>{{ row.food_type }}</td>
                         <td>{{ row.food_name }}</td>
                         <td style="text-align: right;">{{ row.quantity }} ks</td>
-                        <td style="text-align: right;">{{ row.unclaimed_total }} Kč</td>
-                        <td style="text-align: right;">{{ row.dotace }} Kč</td>
-                        <td style="text-align: right;">{{ row.final_price }} Kč</td>
+                        <td style="text-align: right;">{{ row.unclaimed_total|floatformat:-2 }} Kč</td>
+                        <td style="text-align: right;">{{ row.dotace|floatformat:-2 }} Kč</td>
+                        <td style="text-align: right;">{{ row.final_price|floatformat:-2 }} Kč</td>
                         {% else %}
                         <td>{{ row.user }}</td>
                         <td>{{ row.food_type }}</td>
                         <td>{{ row.food_name }}</td>
                         <td style="text-align: right;">{{ row.quantity }} ks</td>
-                        <td style="text-align: right;">{{ row.unclaimed_total }} Kč</td>
-                        <td style="text-align: right;">{{ row.dotace }} Kč</td>
-                        <td style="text-align: right;">{{ row.final_price }} Kč</td>
+                        <td style="text-align: right;">{{ row.unclaimed_total|floatformat:-2 }} Kč</td>
+                        <td style="text-align: right;">{{ row.dotace|floatformat:-2 }} Kč</td>
+                        <td style="text-align: right;">{{ row.final_price|floatformat:-2 }} Kč</td>
                         {% endif %}
                     {% else %}
                         <td>{{ row.user }}</td>
@@ -311,9 +311,9 @@ document.addEventListener('DOMContentLoaded', function() {
                             <td>{{ row.items_names }}</td>
                             {% endif %}
                         {% endif %}
-                        <td style="text-align: right;">{{ row.unclaimed_total }} Kč</td>
-                        <td style="text-align: right;">{{ row.dotace }} Kč</td>
-                        <td style="text-align: right;">{{ row.final_price }} Kč</td>
+                        <td style="text-align: right;">{{ row.unclaimed_total|floatformat:-2 }} Kč</td>
+                        <td style="text-align: right;">{{ row.dotace|floatformat:-2 }} Kč</td>
+                        <td style="text-align: right;">{{ row.final_price|floatformat:-2 }} Kč</td>
                         {% if report_type == 'amounts' and grouping == 'total' %}
                         <td style="text-align: right;">{{ row.count }} ks</td>
                         {% endif %}
@@ -330,14 +330,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     {% if report_type == 'food_types' %}
                         <td colspan="{% if grouping == 'day' %}4{% else %}3{% endif %}">CELKEM:</td>
                         <td style="text-align: right;">{{ totals.total_portions }} ks</td>
-                        <td style="text-align: right;">{{ totals.unclaimed_total }} Kč</td>
-                        <td style="text-align: right;">{{ totals.dotace }} Kč</td>
-                        <td style="text-align: right;">{{ totals.final_price }} Kč</td>
+                        <td style="text-align: right;">{{ totals.unclaimed_total|floatformat:-2 }} Kč</td>
+                        <td style="text-align: right;">{{ totals.dotace|floatformat:-2 }} Kč</td>
+                        <td style="text-align: right;">{{ totals.final_price|floatformat:-2 }} Kč</td>
                     {% else %}
                         <td colspan="{% if grouping == 'day' %}{% if report_type == 'items' %}7{% else %}5{% endif %}{% else %}{% if report_type == 'items' %}5{% else %}3{% endif %}{% endif %}">CELKEM:</td>
-                        <td style="text-align: right;">{{ totals.unclaimed_total }} Kč</td>
-                        <td style="text-align: right;">{{ totals.dotace }} Kč</td>
-                        <td style="text-align: right;">{{ totals.final_price }} Kč</td>
+                        <td style="text-align: right;">{{ totals.unclaimed_total|floatformat:-2 }} Kč</td>
+                        <td style="text-align: right;">{{ totals.dotace|floatformat:-2 }} Kč</td>
+                        <td style="text-align: right;">{{ totals.final_price|floatformat:-2 }} Kč</td>
                         {% if grouping == 'total' %}<td></td>{% endif %}
                     {% endif %}
                 </tr>

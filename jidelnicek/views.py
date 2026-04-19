@@ -37,6 +37,7 @@ from canteen_settings.models import (
 from objednavky.models import Order, OrderItem
 from jidelnicek.models import PolozkaJidelnicku, Jidelnicek
 from dotace.models import SkupinoveNastaveni
+from ankety.services import anketni_prehled_uzivatele
 
 
 def get_item_name(item):
@@ -310,6 +311,7 @@ def dashboard(request):
     month_items_count = sum(len(items) for items in month_ctx.get('menu_items_by_day', {}).values())
 
     my_order_items = get_user_order_items(request.user)
+    ankety_prehled = anketni_prehled_uzivatele(request.user, today)
     my_orders = Order.objects.filter(
         user=request.user,
         datum_vydeje__month=selected_date.month,
@@ -330,6 +332,9 @@ def dashboard(request):
         'selected_date': selected_date,
         'date_str': selected_date.strftime('%Y-%m-%d'),
         'my_order_items': my_order_items,
+        'ankety_hodnotit': ankety_prehled["hodnotit"],
+        'ankety_hotovo': ankety_prehled["hotovo"],
+        'ankety_otazky_count': ankety_prehled["otazky_count"],
         'today': today,
     }
 

@@ -35,7 +35,7 @@
       <div class="card-header d-flex justify-content-between align-items-center">
         <strong>Návrh nákupu {{ data.date_from|date:"d.m.Y" }} – {{ data.date_to|date:"d.m.Y" }}</strong>
         <div>
-          <span class="mr-3">Odhad celkem: <strong>{{ data.odhad_celkem|floatformat:2 }} Kč</strong></span>
+          <span class="mr-3">Odhad celkem: <strong>{{ data.odhad_celkem|floatformat:-2 }} Kč</strong></span>
           <a class="btn btn-sm btn-outline-success" href="{{ xlsx_url }}">Stáhnout XLSX</a>
         </div>
       </div>
@@ -64,7 +64,7 @@
                   <td><strong>{{ row.chybi_display }}</strong></td>
                   <td>{{ row.dodavatel|default:"–" }}</td>
                   <td>{{ row.cena_display }}</td>
-                  <td>{{ row.odhad_ceny|floatformat:2 }} Kč</td>
+                  <td>{{ row.odhad_ceny|floatformat:-2 }} Kč</td>
                 </tr>
               {% empty %}
                 <tr>

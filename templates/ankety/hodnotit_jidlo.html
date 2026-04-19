@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Ohodnotit jídlo{% endblock %}
+
+{% block content %}
+<style>
+  .rate-page { max-width: 900px; margin: 0 auto; display: grid; gap: 16px; }
+  .rate-card { background: #fff; border: 1px solid #dbe1e8; border-radius: 8px; padding: 20px; box-shadow: 0 10px 28px rgba(23,32,42,.06); }
+  .rate-title { margin: 0; font-size: 1.7rem; font-weight: 900; color: #17202a; }
+  .rate-meta { color: #607080; margin-top: 6px; }
+  .rate-question { border-top: 1px solid #edf0f3; padding-top: 16px; margin-top: 16px; }
+  .rate-question:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+  .rate-label { font-weight: 900; color: #17202a; margin-bottom: 4px; }
+  .rate-help { color: #607080; font-size: .92rem; margin-bottom: 10px; }
+  .rate-scale { display: grid; grid-template-columns: repeat(5, minmax(70px, 1fr)); gap: 8px; }
+  .rate-option input { position: absolute; opacity: 0; pointer-events: none; }
+  .rate-option span { min-height: 48px; border-radius: 8px; border: 1px solid #dbe1e8; background: #f8fafc; display: grid; place-items: center; font-weight: 900; cursor: pointer; }
+  .rate-option input:checked + span { background: #18a046; color: #fff; border-color: #18a046; box-shadow: 0 0 0 3px rgba(242,143,40,.22); }
+  .rate-note { width: 100%; border: 1px solid #dbe1e8; border-radius: 8px; min-height: 110px; padding: 10px; }
+  .rate-actions { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+  .rate-btn { border: 0; border-radius: 8px; min-height: 42px; padding: 10px 16px; font-weight: 900; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+  .rate-btn-primary { background: #18a046; color: #fff; }
+  .rate-btn-light { background: #e9eef2; color: #17202a; }
+</style>
+
+<div class="rate-page">
+  <section class="rate-card">
+    <h1 class="rate-title">{{ order_item.menu_item.jidlo.nazev }}</h1>
+    <div class="rate-meta">{{ order_item.menu_item.druh_jidla.nazev }} · vydáno {{ order_item.datum_vydani|date:"d.m.Y H:i" }}</div>
+  </section>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} mb-0">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <form class="rate-card" method="post">
+    {% csrf_token %}
+    {% for otazka in otazky %}
+      <div class="rate-question">
+        <div class="rate-label">{{ otazka.text }}{% if otazka.povinna %} *{% endif %}</div>
+        {% if otazka.napoveda %}<div class="rate-help">{{ otazka.napoveda }}</div>{% endif %}
+        <div class="rate-scale" role="radiogroup" aria-label="{{ otazka.text }}">
+          {% for value in "12345" %}
+            <label class="rate-option">
+              <input type="radio" name="otazka_{{ otazka.id }}" value="{{ value }}" {% if otazka.povinna %}required{% endif %}>
+              <span>{{ value }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+
+    <div class="rate-question">
+      <label class="rate-label" for="poznamka">Poznámka</label>
+      <div class="rate-help">Nepovinně můžeš doplnit, co bylo dobré nebo co zlepšit.</div>
+      <textarea class="rate-note" id="poznamka" name="poznamka"></textarea>
+    </div>
+
+    <div class="rate-actions">
+      <a class="rate-btn rate-btn-light" href="{% url 'ankety:moje_ankety' %}">Zpět</a>
+      <button class="rate-btn rate-btn-primary" type="submit">Odeslat hodnocení</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

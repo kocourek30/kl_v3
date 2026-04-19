@@ -7,72 +7,86 @@
 
 <style>
   :root {
-    --pk-gap: 8px;
-    --pk-r: 10px;
-    --pk-btn-h: 58px;
+    --pk-gap: 10px;
+    --pk-r: 8px;
+    --pk-btn-h: 56px;
+    --pk-green: #18a046;
+    --pk-green-dark: #11823a;
+    --pk-orange: #f28f28;
+    --pk-orange-soft: #fff3e6;
+    --pk-red: #ff4f55;
+    --pk-ink: #17202a;
   }
   html, body { height: 100%; overflow: hidden; }
-  .pk-main-wrapper { height: calc(100vh - 60px); padding: 8px !important; overflow: hidden; }
+  .pk-main-wrapper { height: 100vh; padding: 10px !important; overflow: hidden; }
   .pk-page { height: 100%; display: flex; flex-direction: column; gap: var(--pk-gap); padding: 0 0 10px 0; }
   .pk-row-top { flex: 1 1 auto; min-height: 0; }
-  .pk-row-middle { flex: 0 0 280px; min-height: 280px; }
+  .pk-row-middle { flex: 0 0 292px; min-height: 292px; }
   .pk-col-main, .pk-col-side { min-height: 0; height: 100%; }
-  .pk-box { border-radius: var(--pk-r); border: 1px solid #d9dee5; background: #f9fafb; min-height: 0; display: flex; flex-direction: column; }
-  .pk-box-body { padding: .6rem; min-height: 0; }
-  .pk-section-title { font-size: .95rem; font-weight: 800; margin: 0 0 .45rem 0; text-transform: uppercase; color: #2c2c2c; }
+  .pk-box { border-radius: var(--pk-r); border: 1px solid #dfe5ec; background: #fbfcfd; min-height: 0; display: flex; flex-direction: column; box-shadow: 0 4px 14px rgba(23,32,42,.05); }
+  .pk-box-body { padding: .65rem; min-height: 0; }
+  .pk-section-title { font-size: .95rem; font-weight: 900; margin: 0 0 .55rem 0; text-transform: uppercase; color: var(--pk-ink); }
+  .pk-section-title i { color: var(--pk-orange); }
   .pk-left-col, .pk-left-scroll { min-height: 0; }
   .pk-left-scroll { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--pk-gap); overflow: hidden; padding-bottom: 0; }
-  .pk-daily-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--pk-gap); }
+  .pk-daily-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px; }
   .pk-daily-item form, .pk-daily-item button { height: 100%; }
-  .pk-daily-item button { min-height: 74px; background: #fff066; border-radius: 8px; border: 1px solid #d6d6d6; font-size: .98rem; font-weight: 700; line-height: 1.15; overflow: hidden; }
-  .pk-daily-item:nth-child(2n) button { background: #a30202; color: #fff; }
-  .pk-tiles-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--pk-gap); min-height: 0; overflow: hidden; }
-  .pk-tile-btn { border-radius: 8px; border: 1px solid rgba(0,0,0,.12); padding: 8px; width: 100%; text-align: left; min-height: 82px; line-height: 1.1; position: relative; overflow: hidden; }
-  .pk-tile-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: .95rem; font-weight: 700; }
-  .pk-tile-price { font-size: .86rem; font-weight: 700; margin-top: 2px; }
-  .pk-tile-icon-bg { position: absolute; right: 4px; bottom: 2px; font-size: 1.5rem; opacity: .18; pointer-events: none; }
-  .pk-pay-col { display: grid; grid-template-rows: auto var(--pk-btn-h) auto var(--pk-btn-h) var(--pk-btn-h) minmax(0, 1fr); gap: var(--pk-gap); padding: 8px 8px 12px 8px; background: #f3f5f7; height: 100%; }
-  .pk-account-box { border: 1px solid #d9dee5; background: #fff; border-radius: 8px; padding: 7px 9px; }
+  .pk-daily-item button { min-height: 52px; background: var(--pk-orange-soft); border-radius: 8px; border: 1px solid #f6c896; color: var(--pk-ink); font-size: .82rem; font-weight: 800; line-height: 1.08; overflow: hidden; }
+  .pk-daily-item:nth-child(2n) button { background: #eef8f1; border-color: #b9dfc2; color: var(--pk-ink); }
+  .pk-tiles-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px; min-height: 0; overflow: auto; align-content: start; padding-right: 2px; }
+  .pk-tile-btn { border-radius: 8px; border: 1px solid rgba(0,0,0,.08); padding: 8px; width: 100%; text-align: left; min-height: 58px; line-height: 1.08; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 3px 9px rgba(23,32,42,.07); transition: transform .08s ease, box-shadow .12s ease, outline-color .12s ease; }
+  .pk-tile-btn:hover, .pk-tile-btn:focus { transform: translateY(-1px); box-shadow: 0 8px 18px rgba(23,32,42,.12); outline: 3px solid rgba(242,143,40,.25); outline-offset: 1px; }
+  .pk-tile-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: .82rem; font-weight: 800; }
+  .pk-tile-price { font-size: .75rem; font-weight: 900; margin-top: 4px; background: rgba(255,255,255,.2); width: fit-content; max-width: 100%; border-radius: 8px; padding: 2px 6px; }
+  .pk-tile-icon-bg { position: absolute; right: 5px; bottom: 3px; font-size: 1.2rem; opacity: .16; pointer-events: none; }
+  .pk-pay-col { display: grid; grid-template-rows: auto var(--pk-btn-h) auto var(--pk-btn-h) var(--pk-btn-h) auto auto minmax(0, 1fr); gap: var(--pk-gap); padding: 10px 10px 14px 10px; background: #fff; height: 100%; }
+  .pk-account-box { border: 1px solid #dfe5ec; background: #fff; border-radius: 8px; padding: 8px 10px; box-shadow: 0 4px 12px rgba(23,32,42,.05); }
   .pk-account-box p { margin: 0; }
   .pk-account-label { font-size: 1rem; }
-  .pk-account-value { font-size: 2rem; text-align: center; line-height: 1; color: #de0000; font-weight: 800; }
-  .pk-pay-btn { border-radius: 8px; border: 0; font-size: 1.07rem; font-weight: 800; text-transform: none; min-height: var(--pk-btn-h); box-shadow: 0 1px 0 rgba(0,0,0,.08), 0 2px 8px rgba(0,0,0,.07); }
-  .pk-pay-btn-primary { background: #18a046; color: #fff; }
-  .pk-pay-btn-soft { background: #e5edc5; color: #1b1b1b; }
-  .pk-pay-btn-danger { background: #ff4545; color: #fff; }
-  .pk-pay-btn-close { background: #2fae32; color: #fff; }
-  .pk-pay-methods { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--pk-gap); }
+  .pk-account-value { font-size: 1.75rem; text-align: center; line-height: 1; color: var(--pk-orange); font-weight: 900; }
+  .pk-pay-btn { border-radius: 8px; border: 0; font-size: 1.02rem; font-weight: 900; text-transform: none; min-height: var(--pk-btn-h); box-shadow: 0 2px 8px rgba(23,32,42,.09); transition: transform .08s ease, box-shadow .12s ease, background-color .12s ease, color .12s ease; }
+  .pk-pay-btn:hover, .pk-pay-btn:focus { transform: translateY(-1px); box-shadow: 0 7px 15px rgba(23,32,42,.14); }
+  .pk-pay-btn-primary { background: var(--pk-green); color: #fff; }
+  .pk-pay-btn-outline { background: #fff; color: var(--pk-green); border: 2px solid var(--pk-green); box-shadow: 0 2px 8px rgba(23,32,42,.05); }
+  .pk-pay-btn-outline:hover, .pk-pay-btn-outline:focus { background: #f0fdf4; color: var(--pk-green-dark); border-color: var(--pk-green-dark); }
+  .pk-pay-btn-soft { background: #fff4e8; color: var(--pk-ink); border: 1px solid #f6c896; }
+  .pk-pay-btn-danger { background: var(--pk-red); color: #fff; }
+  .pk-pay-btn-close { background: var(--pk-green); color: #fff; }
+  .pk-pay-methods { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--pk-gap); }
   .pk-pay-methods .pk-pay-btn {
-    min-height: 52px;
-    font-size: 1.04rem;
-    transition: transform .08s ease, box-shadow .12s ease, background-color .12s ease, color .12s ease;
+    min-height: 50px;
+    font-size: .98rem;
   }
   .pk-pay-methods .pk-pay-btn.active {
-    background: #18a046;
+    background: var(--pk-orange);
     color: #fff;
-    box-shadow: 0 0 0 3px rgba(24,160,70,.26), 0 6px 14px rgba(24,160,70,.24);
+    border-color: var(--pk-orange);
+    box-shadow: 0 0 0 3px rgba(242,143,40,.28), 0 7px 15px rgba(242,143,40,.25);
     transform: translateY(-1px);
   }
   .pk-receipt-wrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(250px, 1fr); gap: var(--pk-gap); min-height: 0; height: 100%; }
-  .pk-receipt-wrapper { border-radius: var(--pk-r); border: 1px solid #d9dee5; background: #f9fafb; display: grid; grid-template-rows: auto minmax(0,1fr) auto; min-height: 0; height: 100%; }
+  .pk-receipt-wrapper { border-radius: var(--pk-r); border: 1px solid #dfe5ec; background: #fbfcfd; display: grid; grid-template-rows: auto minmax(0,1fr) auto; min-height: 0; height: 100%; box-shadow: 0 4px 14px rgba(23,32,42,.05); }
   .pk-receipt-header { padding: .5rem .65rem; border-bottom: 1px solid #d7d7d7; font-size: 1rem; }
   .pk-receipt-body { padding: .45rem .55rem .95rem; min-height: 0; display: grid; grid-template-rows: minmax(0,1fr) auto; gap: var(--pk-gap); }
   .pk-receipt-scroll { min-height: 0; overflow: auto; border: 1px solid #e3e7eb; border-radius: 8px; background: #fff; margin: 0; }
   .pk-receipt-table { margin: 0; font-size: .95rem; }
-  .pk-receipt-table th { background: #ececec; font-size: .85rem; padding: 5px; }
+  .pk-receipt-table th { background: var(--pk-orange-soft); color: var(--pk-ink); font-size: .85rem; padding: 5px; }
   .pk-receipt-table td { padding: 4px 5px; }
-  .pk-btn-storno { border: 0; background: #ff5757; color: #141414; font-weight: 800; min-height: var(--pk-btn-h); border-radius: 8px; width: 100%; font-size: 1.05rem; box-shadow: 0 1px 0 rgba(0,0,0,.08), 0 2px 8px rgba(0,0,0,.07); }
+  .pk-btn-storno { border: 0; background: var(--pk-red); color: #fff; font-weight: 900; min-height: var(--pk-btn-h); border-radius: 8px; width: 100%; font-size: 1.05rem; box-shadow: 0 2px 8px rgba(23,32,42,.09); }
   .pk-pay-form { display: grid; grid-template-columns: 1fr auto; gap: var(--pk-gap); align-items: stretch; margin-bottom: 4px; }
-  .pk-btn-close { border-radius: 8px; border: 0; background: #2fae32; color: #fff; font-weight: 800; min-width: 220px; font-size: 1.05rem; box-shadow: 0 1px 0 rgba(0,0,0,.08), 0 2px 8px rgba(0,0,0,.07); }
-  .pk-keypad { border: 1px solid #d9dee5; border-radius: var(--pk-r); background: #f9fafb; padding: 10px 10px 12px 10px; display: grid; grid-template-rows: 50px minmax(0,1fr); gap: 8px; min-height: 0; margin-bottom: 0; }
-  .pk-display { border: 1px solid #a8ddf6; border-radius: 8px; background: #fff; font-size: 1.45rem; font-weight: 800; display: flex; align-items: center; justify-content: flex-end; padding: 0 12px; }
-  .pk-pad-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: minmax(44px, 1fr); gap: 6px; align-content: start; }
-  .pk-pad-btn { border: 1px solid #e2e5e9; border-radius: 8px; background: #f0f2f4; font-size: 1.3rem; font-weight: 800; min-height: 0; height: 100%; }
+  .pk-btn-close { border-radius: 8px; border: 0; background: var(--pk-green); color: #fff; font-weight: 900; min-width: 220px; font-size: 1.05rem; box-shadow: 0 2px 8px rgba(23,32,42,.09); }
+  .pk-keypad { border: 1px solid #dfe5ec; border-top: 4px solid var(--pk-orange); border-radius: var(--pk-r); background: #fbfcfd; padding: 12px 12px 16px 12px; display: grid; grid-template-rows: 52px minmax(0,1fr); gap: 10px; min-height: 0; margin-bottom: 0; box-shadow: 0 4px 14px rgba(23,32,42,.05); }
+  .pk-display { border: 2px solid rgba(242,143,40,.45); border-radius: 8px; background: #fff; font-size: 1.5rem; font-weight: 900; display: flex; align-items: center; justify-content: flex-end; padding: 0 12px; color: var(--pk-ink); }
+  .pk-pad-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: minmax(46px, 1fr); gap: 8px; align-content: start; }
+  .pk-pad-btn { border: 1px solid #e2e5e9; border-radius: 8px; background: #f3f5f7; font-size: 1.28rem; font-weight: 900; min-height: 0; height: 100%; color: var(--pk-ink); box-shadow: 0 2px 6px rgba(23,32,42,.06); }
+  .pk-pad-btn:hover, .pk-pad-btn:focus { background: var(--pk-orange-soft); border-color: #f6c896; }
   .pk-pad-btn-soft { background: #cadb96; }
-  .pk-konto-meta { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; font-size: .92rem; margin-top: 6px; }
-  .pk-zakaznik-error { font-size: .92rem; color: #a80000; min-height: 20px; font-weight: 700; }
-  .pk-closed-box { border: 1px solid #d9dee5; border-radius: 8px; background: #fff; min-height: 0; display: grid; grid-template-rows: auto minmax(0,1fr); overflow: hidden; margin-top: 2px; }
-  .pk-closed-head { font-size: .88rem; font-weight: 800; padding: 8px 10px; border-bottom: 1px solid #e3e3e3; }
+  .pk-konto-meta { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; font-size: .88rem; margin-top: 6px; }
+  .pk-zakaznik-error { font-size: .9rem; color: #a80000; min-height: 20px; font-weight: 800; }
+  .pk-closed-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; border-radius: 8px; background: #f8fafc; color: var(--pk-ink); border: 1px solid #dfe5ec; text-decoration: none; font-weight: 900; box-shadow: 0 2px 8px rgba(23,32,42,.06); }
+  .pk-closed-link:hover, .pk-closed-link:focus { color: var(--pk-ink); background: var(--pk-orange-soft); border-color: #f6c896; }
+  .pk-closed-box { border: 1px solid #dfe5ec; border-radius: 8px; background: #fff; min-height: 0; display: grid; grid-template-rows: auto minmax(0,1fr); overflow: hidden; margin-top: 2px; }
+  .pk-closed-head { font-size: .88rem; font-weight: 900; padding: 8px 10px; border-bottom: 1px solid #e3e3e3; background: var(--pk-orange-soft); color: var(--pk-ink); }
   .pk-closed-list { min-height: 0; overflow: auto; }
   .pk-closed-item { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #efefef; align-items: center; }
   .pk-closed-main { min-width: 0; }
@@ -81,11 +95,11 @@
   .pk-closed-amount { font-size: .95rem; font-weight: 800; text-align: right; }
   .pk-closed-actions { margin-top: 4px; }
   .pk-msg-overlay { position: fixed; top: 70px; right: 14px; width: min(380px, 92vw); z-index: 1400; pointer-events: none; }
-  .pk-msg-overlay .alert { margin: 0 0 8px; padding: 10px 12px; font-size: .9rem; border: 0; border-radius: 10px; box-shadow: 0 6px 18px rgba(15,23,42,.18); font-weight: 700; }
+  .pk-msg-overlay .alert { margin: 0 0 8px; padding: 10px 12px; font-size: .9rem; border: 0; border-left: 5px solid var(--pk-orange); border-radius: 8px; box-shadow: 0 6px 18px rgba(15,23,42,.18); font-weight: 800; }
 
   @media (max-width: 1399px) {
-    .pk-daily-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    .pk-tiles-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .pk-daily-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .pk-tiles-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   }
 </style>
 
@@ -99,7 +113,7 @@
 
 <div class="container-fluid pk-page">
   <div class="row g-2 pk-row-top">
-    <div class="col-8 pk-col-main">
+    <div class="col-9 pk-col-main">
       <div class="pk-left-col h-100">
         <div class="pk-left-scroll h-100">
           <div class="pk-box">
@@ -115,7 +129,7 @@
                       {% csrf_token %}
                       <input type="hidden" name="jidlo_id" value="{{ jidlo.id }}">
                       <input type="hidden" name="mnozstvi" class="pk-mnozstvi" value="1">
-                      <button type="submit" class="pk-tile-btn" style="background:#ffffff;color:#111827;">
+                      <button type="submit" class="pk-tile-btn pk-menu-btn">
                         <div class="pk-tile-name">{{ jidlo.nazev }}</div>
                         <div class="pk-tile-price">menu</div>
                       </button>
@@ -147,7 +161,7 @@
                         <div class="pk-tile-name" style="{% if tile.font_bold %}font-weight:800;{% endif %}{% if tile.font_family %}font-family: {{ tile.font_family }};{% endif %}">
                           {{ label }}
                         </div>
-                        <div class="pk-tile-price">{{ p.cena }} Kč</div>
+                        <div class="pk-tile-price">{{ p.cena|floatformat:-2 }} Kč</div>
                         {% if tile.ikona %}
                           <i class="{{ tile.ikona }} pk-tile-icon-bg"></i>
                         {% endif %}
@@ -166,28 +180,29 @@
       </div>
     </div>
 
-    <div class="col-4 pk-col-side">
+    <div class="col-3 pk-col-side">
       <div class="pk-box pk-pay-col h-100" id="pk-zakaznik-box">
         <div class="pk-account-box">
           <p class="pk-account-label">Cena účtu:</p>
           <p class="pk-account-value" id="pk-receipt-total">
-            {% if doklad %}{{ doklad.celkem_s_dph }} Kč{% else %}0,00 Kč{% endif %}
+            {% if doklad %}{{ doklad.celkem_s_dph|floatformat:-2 }} Kč{% else %}0 Kč{% endif %}
           </p>
           <div class="pk-konto-meta">
             <span>Zákazník</span>
             <span id="pk-zakaznik-jmeno">{% if aktivni_zakaznik %}{{ aktivni_zakaznik.get_full_name|default:aktivni_zakaznik.username }}{% else %}Volný účet{% endif %}</span>
             <span>Stav konta</span>
-            <span id="pk-zakaznik-konto">{% if stav_konta is not None %}{{ stav_konta }} Kč{% else %}0,00 Kč{% endif %}</span>
+            <span id="pk-zakaznik-konto">{% if stav_konta is not None %}{{ stav_konta|floatformat:-2 }} Kč{% else %}0 Kč{% endif %}</span>
             <span>Limit konta</span>
-            <span id="pk-zakaznik-limit">{% if kreditni_limit is not None %}{{ kreditni_limit }} Kč{% else %}0,00 Kč{% endif %}</span>
+            <span id="pk-zakaznik-limit">{% if kreditni_limit is not None %}{{ kreditni_limit|floatformat:-2 }} Kč{% else %}0 Kč{% endif %}</span>
           </div>
         </div>
 
-        <button type="button" class="pk-pay-btn pk-pay-btn-primary" data-bs-toggle="modal" data-bs-target="#pk-zakaznik-modal">Vybrat zákazníka</button>
+        <button type="button" class="pk-pay-btn pk-pay-btn-outline" data-bs-toggle="modal" data-bs-target="#pk-zakaznik-modal">Vybrat zákazníka</button>
         <div class="pk-pay-methods">
           <button type="button" class="pk-pay-btn pk-pay-btn-soft pk-platba-btn" data-zpusob="KONTO">Z konta</button>
           <button type="button" class="pk-pay-btn pk-pay-btn-soft pk-platba-btn" data-zpusob="HOTOVOST">Hotově</button>
           <button type="button" class="pk-pay-btn pk-pay-btn-soft pk-platba-btn" data-zpusob="KARTA">Karta</button>
+          <button type="button" class="pk-pay-btn pk-pay-btn-soft pk-platba-btn" data-zpusob="QR">QR</button>
         </div>
         <form method="post" id="pk-close-form">
           {% csrf_token %}
@@ -195,50 +210,22 @@
           <input type="hidden" name="zpusob_platby" class="pk-zpusob-platby-hidden" value="{% if aktivni_zakaznik %}KONTO{% else %}HOTOVOST{% endif %}">
           <button type="submit" class="pk-pay-btn pk-pay-btn-close w-100" id="pk-close-btn">Uzavřít účet</button>
         </form>
-        <button type="button" class="pk-pay-btn pk-pay-btn-danger">Zruš účet</button>
+        <form method="post" id="pk-cancel-form">
+          {% csrf_token %}
+          <input type="hidden" name="akce" value="zrusit_ucet">
+          <button type="submit" class="pk-pay-btn pk-pay-btn-danger w-100">Zruš účet</button>
+        </form>
         <div class="pk-zakaznik-error" id="pk-zakaznik-chyba">{% if chyba_konto %}{{ chyba_konto }}{% endif %}</div>
-        <div class="pk-closed-box">
-          <div class="pk-closed-head">Uzavřené účty</div>
-          <div class="pk-closed-list">
-            {% for d in uzavrene_doklady %}
-              <div class="pk-closed-item">
-                <div class="pk-closed-main">
-                  <div class="pk-closed-name">
-                    {% if d.zakaznik %}
-                      {{ d.zakaznik.get_full_name|default:d.zakaznik.username }}
-                    {% else %}
-                      Anonymní zákazník
-                    {% endif %}
-                  </div>
-                  <div class="pk-closed-meta">{{ d.get_zpusob_platby_display }} · {{ d.uzavren_at|date:"d.m.Y H:i" }}</div>
-                  {% if not d.uzaverka_id %}
-                    <div class="pk-closed-actions">
-                      <form method="post" class="d-inline">
-                        {% csrf_token %}
-                        <input type="hidden" name="akce" value="stornovat_doklad">
-                        <input type="hidden" name="doklad_id" value="{{ d.id }}">
-                        <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2">Storno</button>
-                      </form>
-                    </div>
-                  {% endif %}
-                </div>
-                <div class="pk-closed-amount">{{ d.celkem_s_dph }} Kč</div>
-              </div>
-            {% empty %}
-              <div class="pk-closed-item">
-                <div class="pk-closed-main">
-                  <div class="pk-closed-meta">Zatím nejsou žádné uzavřené účty.</div>
-                </div>
-              </div>
-            {% endfor %}
-          </div>
-        </div>
+        <a class="pk-closed-link" href="{% url 'pokladna:pokladna_uzavrene_ucty' pokladna.id %}">
+          <i class="fas fa-receipt"></i>
+          <span>Uzavřené účty</span>
+        </a>
       </div>
     </div>
   </div>
 
   <div class="row g-2 pk-row-middle">
-    <div class="col-8 pk-col-main">
+    <div class="col-9 pk-col-main">
       <div class="pk-receipt-wrapper">
         <div class="pk-receipt-header d-flex justify-content-between align-items-center">
           <div class="fw-semibold d-flex align-items-center gap-2">
@@ -246,7 +233,7 @@
             <span>Aktuální účtenka</span>
           </div>
           <div class="fw-bold">
-            Stav konta: <span id="pk-zakaznik-konto-footer">{% if stav_konta is not None %}{{ stav_konta }} Kč{% else %}0,00 Kč{% endif %}</span>
+            Stav konta: <span id="pk-zakaznik-konto-footer">{% if stav_konta is not None %}{{ stav_konta|floatformat:-2 }} Kč{% else %}0 Kč{% endif %}</span>
           </div>
         </div>
 
@@ -267,7 +254,7 @@
                     <tr>
                       <td>{{ pol.nazev_snapshot|default:pol.plu.nazev }}</td>
                       <td class="text-end">{{ pol.mnozstvi }} {{ pol.jednotka_text }}</td>
-                      <td class="text-end">{{ pol.castka_celkem }} Kč</td>
+                      <td class="text-end">{{ pol.castka_celkem|floatformat:-2 }} Kč</td>
                       <td class="text-end">
                         <form method="post" class="d-inline">
                           {% csrf_token %}
@@ -295,7 +282,7 @@
       </div>
     </div>
 
-    <div class="col-4 pk-col-side">
+    <div class="col-3 pk-col-side">
       <div class="pk-keypad h-100">
         <div class="pk-display" id="pk-qty-display">0,00</div>
         <div class="pk-pad-grid">

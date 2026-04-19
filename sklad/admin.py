@@ -37,6 +37,8 @@ from reportlab.platypus import (
 
 from django.contrib.admin import ModelAdmin
 
+from kliknijidlo.pdf_utils import czech_pdf_styles, money_cs, safe_table
+
 from objednavky.models import OrderItem
 from users.models import StravovaciSkupina
 from .models import (
@@ -146,20 +148,7 @@ def _prepare_uzavreni_po_ulozeni(model, obj, change):
 
 
 def _pdf_styles():
-    styles = getSampleStyleSheet()
-    font_name = "Helvetica"
-    font_path = os.path.join(settings.BASE_DIR, "static", "fonts", "DejaVuSans.ttf")
-    if os.path.exists(font_path):
-        try:
-            if "DejaVuSans" not in pdfmetrics.getRegisteredFontNames():
-                pdfmetrics.registerFont(TTFont("DejaVuSans", font_path))
-            font_name = "DejaVuSans"
-        except Exception:
-            font_name = "Helvetica"
-
-    for style_name in ("Normal", "Title", "Heading2"):
-        styles[style_name].fontName = font_name
-    return styles, font_name
+    return czech_pdf_styles()
 
 
 def _inventura_pdf_data(inventura):
@@ -182,7 +171,7 @@ def _inventura_pdf_data(inventura):
                 format_mnozstvi_s_jednotkou(pol.surovina, pol.stav_pred),
                 format_mnozstvi_s_jednotkou(pol.surovina, pol.fyzicky_stav),
                 format_mnozstvi_s_jednotkou(pol.surovina, rozdil),
-                f"{hodnota:.2f} Kč",
+                money_cs(hodnota),
                 pol.poznamka or "",
             ])
         return {"mode": "sarze", "rows": rows, "manko": manko, "prebytek": prebytek, "cisty_rozdil": prebytek - manko}
@@ -205,7 +194,7 @@ def _inventura_pdf_data(inventura):
             format_mnozstvi_s_jednotkou(pol.surovina, pol.stav_pred),
             format_mnozstvi_s_jednotkou(pol.surovina, pol.fyzicky_stav),
             format_mnozstvi_s_jednotkou(pol.surovina, rozdil),
-            f"{hodnota:.2f} Kč",
+            money_cs(hodnota),
             "",
         ])
     return {"mode": "suroviny", "rows": rows, "manko": manko, "prebytek": prebytek, "cisty_rozdil": prebytek - manko}
@@ -242,39 +231,42 @@ def inventura_pdf_view(request, inventura_id):
         Paragraph("Souhrn rozdílů", styles["Heading2"]),
     ]
 
-    summary_table = Table(
+    summary_table = safe_table(
         [
-            ["Manko", f"{data['manko']:.2f} Kč"],
-            ["Přebytek", f"{data['prebytek']:.2f} Kč"],
-            ["Čistý rozdíl", f"{data['cisty_rozdil']:.2f} Kč"],
+            ["Manko", money_cs(data["manko"])],
+            ["Přebytek", money_cs(data["prebytek"])],
+            ["Čistý rozdíl", money_cs(data["cisty_rozdil"])],
             ["Režim", "Šaržová inventura" if data["mode"] == "sarze" else "Surovinová inventura"],
         ],
-        colWidths=[6 * cm, 5 * cm],
+        [6 * cm, 5 * cm],
+        font_name=font_name,
+        header=False,
+        style_commands=[
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+            ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
+            ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ],
     )
-    summary_table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), font_name),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-        ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
-        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-    ]))
     story += [summary_table, Spacer(1, 0.5 * cm), Paragraph("Položky inventury", styles["Heading2"])]
 
     table_data = [["Surovina", "Šarže", "Spotřeba", "Účetní stav", "Fyzický stav", "Rozdíl", "Hodnota", "Poznámka"]]
     table_data.extend(data["rows"] or [["Bez položek", "-", "-", "-", "-", "-", "-", "-"]])
-    table = Table(
+    table = safe_table(
         table_data,
-        colWidths=[3.4 * cm, 2.2 * cm, 2.0 * cm, 2.3 * cm, 2.3 * cm, 2.0 * cm, 2.1 * cm, 2.0 * cm],
-        repeatRows=1,
+        [3.4 * cm, 2.2 * cm, 2.0 * cm, 2.3 * cm, 2.3 * cm, 2.0 * cm, 2.1 * cm, 2.0 * cm],
+        font_name=font_name,
+        font_size=7,
+        repeat_rows=1,
+        style_commands=[
+            ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+            ("FONTSIZE", (0, 0), (-1, -1), 7),
+            ("GRID", (0, 0), (-1, -1), 0.35, colors.grey),
+            ("ALIGN", (3, 1), (6, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ],
     )
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-        ("FONTNAME", (0, 0), (-1, -1), font_name),
-        ("FONTSIZE", (0, 0), (-1, -1), 7),
-        ("GRID", (0, 0), (-1, -1), 0.35, colors.grey),
-        ("ALIGN", (3, 1), (6, -1), "RIGHT"),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-    ]))
     story.append(table)
 
     doc.build(story)
@@ -785,7 +777,7 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
             Paragraph("Kontrolní report zdraví skladu", styles["Title"]),
             Spacer(1, 0.25 * cm),
             Paragraph(f"Datum kontroly: {target_date.strftime('%d.%m.%Y')}", styles["Normal"]),
-            Paragraph(f"Hodnota skladu: {data['hodnota_skladu']:.2f} Kč", styles["Normal"]),
+            Paragraph(f"Hodnota skladu: {money_cs(data['hodnota_skladu'])}", styles["Normal"]),
             Paragraph(f"Skóre skladu: {data['skore']} %", styles["Normal"]),
             Spacer(1, 0.4 * cm),
         ]
@@ -797,15 +789,19 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
                 "V pořádku" if row["ok"] else "Vyžaduje kontrolu",
                 row["popis"],
             ])
-        table = Table(table_data, colWidths=[5.3 * cm, 1.7 * cm, 3.2 * cm, 7 * cm], repeatRows=1)
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-            ("FONTNAME", (0, 0), (-1, -1), font_name),
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
-            ("GRID", (0, 0), (-1, -1), 0.35, colors.grey),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ]))
+        table = safe_table(
+            table_data,
+            [5.3 * cm, 1.7 * cm, 3.2 * cm, 7 * cm],
+            font_name=font_name,
+            font_size=8,
+            style_commands=[
+                ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.grey),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ],
+        )
         story.append(table)
         doc.build(story)
         pdf = buffer.getvalue()
@@ -1024,13 +1020,7 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
         souhrn = data.get("souhrn") or {}
         rows = data.get("rows") or []
 
-        font_path = os.path.join(settings.BASE_DIR, "static", "fonts", "DejaVuSans.ttf")
-        pdfmetrics.registerFont(TTFont("DejaVuSans", font_path))
-
-        styles = getSampleStyleSheet()
-        styles["Normal"].fontName = "DejaVuSans"
-        styles["Title"].fontName = "DejaVuSans"
-        styles["Heading2"].fontName = "DejaVuSans"
+        styles, font_name = _pdf_styles()
 
         buffer = BytesIO()
         doc = SimpleDocTemplate(
@@ -1065,20 +1055,21 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
                 row["stav"],
             ])
 
-        table = Table(table_data, colWidths=[4.0 * cm, 2.2 * cm, 2.4 * cm, 2.0 * cm, 1.6 * cm, 2.2 * cm, 2.3 * cm])
-        table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                    ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 8),
-                    ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
-                    ("ALIGN", (0, 0), (0, -1), "LEFT"),
-                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                    ("BOTTOMPADDING", (0, 0), (-1, 0), 7),
-                ]
-            )
+        table = safe_table(
+            table_data,
+            [4.0 * cm, 2.2 * cm, 2.4 * cm, 2.0 * cm, 1.6 * cm, 2.2 * cm, 2.3 * cm],
+            font_name=font_name,
+            font_size=8,
+            style_commands=[
+                ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+                ("ALIGN", (0, 0), (0, -1), "LEFT"),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 7),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ],
         )
         elements.append(table)
 
@@ -1204,8 +1195,8 @@ class SurovinaAdmin(admin.ModelAdmin):
             Spacer(1, 0.25 * cm),
             Paragraph(f"Období: {data['date_from'].strftime('%d.%m.%Y')} - {data['date_to'].strftime('%d.%m.%Y')}", styles["Normal"]),
             Paragraph(f"Aktuální stav: {data['stav_display']}", styles["Normal"]),
-            Paragraph(f"Hodnota stavu: {data['hodnota_stavu']:.2f} Kč", styles["Normal"]),
-            Paragraph(f"Spotřeba období: {data['spotreba_obdobi_display']} / {data['naklady_spotreby']:.2f} Kč", styles["Normal"]),
+            Paragraph(f"Hodnota stavu: {money_cs(data['hodnota_stavu'])}", styles["Normal"]),
+            Paragraph(f"Spotřeba období: {data['spotreba_obdobi_display']} / {money_cs(data['naklady_spotreby'])}", styles["Normal"]),
             Spacer(1, 0.35 * cm),
             Paragraph("Pohyby", styles["Heading2"]),
         ]
@@ -1225,20 +1216,24 @@ class SurovinaAdmin(admin.ModelAdmin):
                 pohyb.get_typ_display(),
                 format_mnozstvi_s_jednotkou(data["surovina"], pohyb.mnozstvi),
                 format_cena_za_jednotku(data["surovina"], pohyb.cena_za_jednotku or Decimal("0")),
-                f"{((pohyb.mnozstvi or Decimal('0')) * (pohyb.cena_za_jednotku or Decimal('0'))):.2f} Kč",
+                money_cs((pohyb.mnozstvi or Decimal("0")) * (pohyb.cena_za_jednotku or Decimal("0"))),
                 doklad,
             ])
         if len(table_data) == 1:
             table_data.append(["Bez pohybů", "-", "-", "-", "-", "-"])
-        table = Table(table_data, colWidths=[2.4 * cm, 3.2 * cm, 3 * cm, 3.4 * cm, 2.5 * cm, 3.3 * cm], repeatRows=1)
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-            ("FONTNAME", (0, 0), (-1, -1), font_name),
-            ("FONTSIZE", (0, 0), (-1, -1), 7),
-            ("GRID", (0, 0), (-1, -1), 0.35, colors.grey),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ]))
+        table = safe_table(
+            table_data,
+            [2.4 * cm, 3.2 * cm, 3 * cm, 3.4 * cm, 2.5 * cm, 3.3 * cm],
+            font_name=font_name,
+            font_size=7,
+            style_commands=[
+                ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                ("FONTSIZE", (0, 0), (-1, -1), 7),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.grey),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ],
+        )
         story.append(table)
         doc.build(story)
         pdf = buffer.getvalue()
@@ -1349,7 +1344,7 @@ class PohybSkladuAdmin(admin.ModelAdmin):
 
     def hodnota_display(self, obj):
         hodnota = (obj.mnozstvi or Decimal("0")) * (obj.cena_za_jednotku or Decimal("0"))
-        return f"{hodnota:.2f} Kč"
+        return money_cs(hodnota)
 
     hodnota_display.short_description = "Hodnota"
 
@@ -1572,7 +1567,7 @@ class PohybSkladuInlineBase(admin.TabularInline):
         if not obj:
             return "-"
         hodnota = (obj.mnozstvi or Decimal("0")) * (obj.cena_za_jednotku or Decimal("0"))
-        return f"{hodnota:.2f} Kč"
+        return money_cs(hodnota)
 
     hodnota_display.short_description = "Hodnota"
 
@@ -1704,21 +1699,21 @@ class PrijemSkladuAdmin(admin.ModelAdmin):
     def soucet_polozek_bez_dph_display(self, obj):
         if not obj:
             return "-"
-        return f"{obj.soucet_polozek_bez_dph:.2f} Kč"
+        return money_cs(obj.soucet_polozek_bez_dph)
 
     soucet_polozek_bez_dph_display.short_description = "Součet položek bez DPH"
 
     def soucet_polozek_s_dph_display(self, obj):
         if not obj:
             return "-"
-        return f"{obj.soucet_polozek_s_dph:.2f} Kč"
+        return money_cs(obj.soucet_polozek_s_dph)
 
     soucet_polozek_s_dph_display.short_description = "Součet položek s DPH"
 
     def rozdil_faktury_display(self, obj):
         if not obj or obj.rozdil_faktury is None:
             return "-"
-        return f"{obj.rozdil_faktury:.2f} Kč"
+        return money_cs(obj.rozdil_faktury)
 
     rozdil_faktury_display.short_description = "Rozdíl proti faktuře"
 
@@ -2195,7 +2190,7 @@ class OdpisExpiraceAdmin(admin.ModelAdmin):
     mnozstvi_celkem_display.short_description = "Množství celkem"
 
     def hodnota_celkem_display(self, obj):
-        return f"{self._souhrn(obj)['hodnota_celkem']:.2f} Kč"
+        return money_cs(self._souhrn(obj)["hodnota_celkem"])
 
     hodnota_celkem_display.short_description = "Hodnota odpisu"
 
@@ -2331,12 +2326,12 @@ class SkladovaUzaverkaAdmin(admin.ModelAdmin):
     stav_dokladu.short_description = "Stav dokladu"
 
     def konecny_stav_display(self, obj):
-        return f"{obj.konecny_stav:.2f} Kč"
+        return money_cs(obj.konecny_stav)
 
     konecny_stav_display.short_description = "Konečná hodnota"
 
     def rozdil_kontroly_display(self, obj):
-        return f"{obj.rozdil_kontroly:.2f} Kč"
+        return money_cs(obj.rozdil_kontroly)
 
     rozdil_kontroly_display.short_description = "Kontrolní rozdíl"
 
@@ -2414,7 +2409,7 @@ class SkladovaUzaverkaAdmin(admin.ModelAdmin):
             hlavicka
             + '<table class="table table-sm table-striped"><thead><tr><th>Kontrola</th><th>Počet</th><th>Stav</th></tr></thead>'
             + f"<tbody>{''.join(rows)}</tbody></table>"
-            + f"<p><strong>Kontrolní rozdíl:</strong> {data['uzaverka']['rozdil_kontroly']:.2f} Kč</p>"
+            + f"<p><strong>Kontrolní rozdíl:</strong> {money_cs(data['uzaverka']['rozdil_kontroly'])}</p>"
         )
 
     pruvodce_uzaverkou_display.short_description = "Průvodce uzávěrkou"
@@ -2583,14 +2578,18 @@ class SkladovaUzaverkaAdmin(admin.ModelAdmin):
             Spacer(1, 0.4 * cm),
         ]
         data = [["Ukazatel", "Hodnota Kč"]]
-        data += [[nazev, f"{hodnota:.2f} Kč"] for nazev, hodnota in self._export_rows(uzaverka)]
-        table = Table(data, colWidths=[11 * cm, 5 * cm])
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-            ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-            ("ALIGN", (1, 1), (1, -1), "RIGHT"),
-            ("FONTNAME", (0, 0), (-1, -1), font_name),
-        ]))
+        data += [[nazev, money_cs(hodnota)] for nazev, hodnota in self._export_rows(uzaverka)]
+        table = safe_table(
+            data,
+            [11 * cm, 5 * cm],
+            font_name=font_name,
+            style_commands=[
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("ALIGN", (1, 1), (1, -1), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ],
+        )
         story += [table, Spacer(1, 0.5 * cm), Paragraph("Kontrolní checklist", styles["Heading2"])]
         checklist = [["Kontrola", "Počet", "Stav"]]
         for kontrola in pruvodce["kontroly"]:
@@ -2599,13 +2598,17 @@ class SkladovaUzaverkaAdmin(admin.ModelAdmin):
                 kontrola["pocet"],
                 "V pořádku" if kontrola["ok"] else "Vyžaduje kontrolu",
             ])
-        checklist_table = Table(checklist, colWidths=[9 * cm, 2 * cm, 5 * cm], repeatRows=1)
-        checklist_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-            ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-            ("ALIGN", (1, 1), (1, -1), "RIGHT"),
-            ("FONTNAME", (0, 0), (-1, -1), font_name),
-        ]))
+        checklist_table = safe_table(
+            checklist,
+            [9 * cm, 2 * cm, 5 * cm],
+            font_name=font_name,
+            style_commands=[
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("ALIGN", (1, 1), (1, -1), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ],
+        )
         story.append(checklist_table)
         doc.build(story)
         buffer.seek(0)
@@ -2623,7 +2626,7 @@ class SkladovaUzaverkaAdmin(admin.ModelAdmin):
             souhrn = [
                 f"Skladová uzávěrka {uzaverka.mesic:02d}/{uzaverka.rok}",
                 "",
-                *[f"{nazev};{hodnota:.2f} Kč" for nazev, hodnota in self._export_rows(uzaverka)],
+                *[f"{nazev};{money_cs(hodnota)}" for nazev, hodnota in self._export_rows(uzaverka)],
             ]
             archive.writestr("01_souhrn_uzaverky.csv", "\n".join(souhrn).encode("utf-8-sig"))
 
@@ -2773,14 +2776,14 @@ class VydejkaAdmin(admin.ModelAdmin):
                 f"<td>{sarze_text}</td>"
                 f"<td>{datum}</td>"
                 f"<td>{format_mnozstvi_s_jednotkou(row['surovina'], row['mnozstvi'])}</td>"
-                f"<td>{row['hodnota']:.2f} Kč</td>"
+                f"<td>{money_cs(row['hodnota'])}</td>"
                 "</tr>"
             )
         return mark_safe(
             '<div class="table-responsive"><table class="table table-sm table-striped mb-0">'
             "<thead><tr><th>Surovina</th><th>Šarže</th><th>Datum spotřeby</th><th>Množství</th><th>Hodnota</th></tr></thead>"
             f"<tbody>{''.join(rows)}</tbody>"
-            f"<tfoot><tr><th colspan='4'>Odhadovaná hodnota výdeje</th><th>{data['hodnota_celkem']:.2f} Kč</th></tr></tfoot>"
+            f"<tfoot><tr><th colspan='4'>Odhadovaná hodnota výdeje</th><th>{money_cs(data['hodnota_celkem'])}</th></tr></tfoot>"
             "</table></div>"
         )
 
@@ -2982,13 +2985,7 @@ def vydejka_pdf_view(request, vydejka_id):
 
     vydejka = get_object_or_404(Vydejka, pk=vydejka_id)
 
-    font_path = os.path.join(settings.BASE_DIR, "static", "fonts", "DejaVuSans.ttf")
-    pdfmetrics.registerFont(TTFont("DejaVuSans", font_path))
-
-    styles = getSampleStyleSheet()
-    styles["Normal"].fontName = "DejaVuSans"
-    styles["Title"].fontName = "DejaVuSans"
-    styles["Heading2"].fontName = "DejaVuSans"
+    styles, font_name = _pdf_styles()
 
     order_items = get_order_items_for_vydejka(vydejka)
 
@@ -3086,20 +3083,20 @@ def vydejka_pdf_view(request, vydejka_id):
                         f"{row['celkem']:.3f} {surovina.jednotka}",
                     ])
 
-                table = Table(data, colWidths=[7 * cm, 4 * cm, 5 * cm])
-                table.setStyle(
-                    TableStyle(
-                        [
-                            ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-                            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                            ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
-                            ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans"),
-                            ("FONTNAME", (0, 1), (-1, -1), "DejaVuSans"),
-                            ("FONTSIZE", (0, 0), (-1, -1), 9),
-                            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-                            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                        ]
-                    )
+                table = safe_table(
+                    data,
+                    [7 * cm, 4 * cm, 5 * cm],
+                    font_name=font_name,
+                    font_size=8,
+                    style_commands=[
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                        ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+                        ("FONTSIZE", (0, 0), (-1, -1), 8),
+                        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ],
                 )
                 elements.append(table)
             else:

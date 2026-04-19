@@ -1,4 +1,5 @@
 from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
@@ -73,6 +74,35 @@ class Vklad(models.Model):
     class Meta:
         verbose_name = "Vklad na konto"
         verbose_name_plural = "Vklady na konta"
+
+    def _uzivatel_ma_povoleny_debet(self):
+        if not self.uzivatel_id:
+            return False
+        for skupina in self.uzivatel.groups.all():
+            nastaveni = getattr(skupina, "nastaveni", None)
+            if nastaveni and nastaveni.cerpani_debit:
+                return True
+        return False
+
+    def clean(self):
+        super().clean()
+        if (
+            self.status == "standard"
+            and self.castka is not None
+            and self.castka > 0
+            and self._uzivatel_ma_povoleny_debet()
+        ):
+            raise ValidationError({
+                "uzivatel": (
+                    "Tomuto uživateli je povoleno čerpání do debetu, "
+                    "proto mu nelze vložit peníze na konto. "
+                    "Debetní konto se vyrovnává pouze systémovým nulováním."
+                )
+            })
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Vklad {self.castka} Kč pro {self.uzivatel} ({self.datum.date()})"

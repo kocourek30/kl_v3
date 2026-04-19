@@ -5,13 +5,25 @@ from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
+from django.utils.timezone import timedelta
 
 from dotace.models import SkupinoveNastaveni
 from sklad.models import PohybSkladu, StavSkladu, Surovina
 from users.models import Vklad
 
-from .models import DPHSkupina, PLUKategorie, PLUPolozka, Pokladna, PokladniDoklad
-from .services import pridej_polozku, stornuj_doklad, uzavri_denni_uzaverku, uzavri_doklad, vytvor_doklad
+from .models import DPHSkupina, PLUKategorie, PLUPolozka, Pokladna, PokladniDoklad, PokladniSmazanaPolozka
+from .services import (
+    pridej_polozku,
+    potvrdit_qr_platbu,
+    qr_payload_data_uri,
+    smaz_polozku,
+    stornuj_doklad,
+    uzavri_denni_uzaverku,
+    uzavri_doklad,
+    vytvor_doklad,
+    zahaj_qr_platbu,
+    zrus_rozpracovany_doklad,
+)
 
 
 class PokladnaServiceTests(TestCase):
@@ -113,6 +125,108 @@ class PokladnaServiceTests(TestCase):
         self.assertEqual(uzaverka.konto, Decimal("0.00"))
         self.assertEqual(uzaverka.rozdil_hotovosti, Decimal("0.00"))
         self.assertEqual(PokladniDoklad.objects.filter(uzaverka=uzaverka).count(), 2)
+
+    def test_denni_uzaverka_zahrne_potvrzene_qr_platby(self):
+        self.pokladna.qr_iban = "CZ6508000000192000145399"
+        self.pokladna.save(update_fields=["qr_iban"])
+
+        doklad = vytvor_doklad(self.pokladna, self.obsluha)
+        pridej_polozku(doklad, self.plu, Decimal("1"))
+        cekajici = zahaj_qr_platbu(doklad, user=self.obsluha)
+        potvrdit_qr_platbu(cekajici, user=self.obsluha)
+
+        uzaverka = uzavri_denni_uzaverku(self.pokladna, timezone.localdate(), user=self.obsluha)
+
+        self.assertEqual(uzaverka.pocet_dokladu, 1)
+        self.assertEqual(uzaverka.qr, Decimal("25.00"))
+        self.assertEqual(uzaverka.celkem_trzba, Decimal("25.00"))
+
+    def test_denni_uzaverka_nepovoli_preskocit_starsi_neuzavreny_prodej(self):
+        vcera = timezone.now() - timedelta(days=1)
+        doklad = vytvor_doklad(self.pokladna, self.obsluha)
+        pridej_polozku(doklad, self.plu, Decimal("1"))
+        uzavreny = uzavri_doklad(doklad, PokladniDoklad.PLATBA_HOTOVOST, user=self.obsluha)
+        PokladniDoklad.objects.filter(pk=uzavreny.pk).update(datum=vcera)
+
+        with self.assertRaises(ValidationError):
+            uzavri_denni_uzaverku(self.pokladna, timezone.localdate(), user=self.obsluha)
+
+    def test_qr_platba_vyzaduje_iban_pokladny(self):
+        doklad = vytvor_doklad(self.pokladna, self.obsluha)
+        pridej_polozku(doklad, self.plu, Decimal("1"))
+
+        with self.assertRaises(ValidationError):
+            zahaj_qr_platbu(doklad, user=self.obsluha)
+
+        doklad.refresh_from_db()
+        self.assertEqual(doklad.stav, PokladniDoklad.STAV_ROZPRACOVANO)
+
+    def test_qr_platba_nejdrive_ceka_a_neodepise_sklad(self):
+        self.pokladna.qr_iban = "CZ6508000000192000145399"
+        self.pokladna.qr_prijemce = "Test Jidelna"
+        self.pokladna.save(update_fields=["qr_iban", "qr_prijemce"])
+
+        doklad = vytvor_doklad(self.pokladna, self.obsluha)
+        pridej_polozku(doklad, self.plu, Decimal("2"))
+
+        cekajici = uzavri_doklad(doklad, PokladniDoklad.PLATBA_QR, user=self.obsluha)
+
+        self.assertEqual(cekajici.stav, PokladniDoklad.STAV_CEKA_NA_QR)
+        self.assertEqual(cekajici.zpusob_platby, PokladniDoklad.PLATBA_QR)
+        self.assertIn("SPD*1.0", cekajici.qr_payload)
+        self.assertIn("AM:50.00", cekajici.qr_payload)
+        self.assertIn("ACC:CZ6508000000192000145399", cekajici.qr_payload)
+
+        stav = StavSkladu.objects.get(surovina=self.surovina)
+        self.assertEqual(stav.mnozstvi, Decimal("10.000"))
+        self.assertEqual(PohybSkladu.objects.filter(surovina=self.surovina).count(), 0)
+
+    def test_potvrzeni_qr_platby_uzavre_doklad_a_odepise_sklad(self):
+        self.pokladna.qr_iban = "CZ6508000000192000145399"
+        self.pokladna.save(update_fields=["qr_iban"])
+
+        doklad = vytvor_doklad(self.pokladna, self.obsluha)
+        pridej_polozku(doklad, self.plu, Decimal("3"))
+        cekajici = zahaj_qr_platbu(doklad, user=self.obsluha)
+
+        uzavreny = potvrdit_qr_platbu(cekajici, user=self.obsluha)
+
+        self.assertEqual(uzavreny.stav, PokladniDoklad.STAV_UZAVRENO)
+        self.assertIsNotNone(uzavreny.qr_potvrzen_at)
+        self.assertEqual(uzavreny.qr_potvrdil, self.obsluha)
+        stav = StavSkladu.objects.get(surovina=self.surovina)
+        self.assertEqual(stav.mnozstvi, Decimal("7.000"))
+        self.assertEqual(PohybSkladu.objects.filter(surovina=self.surovina, typ=PohybSkladu.TYP_VYDEJ).count(), 1)
+
+    def test_qr_obrazek_lze_vygenerovat_bez_externi_sluzby(self):
+        data_uri = qr_payload_data_uri("SPD*1.0*ACC:CZ6508000000192000145399*AM:25.00*CC:CZK")
+        self.assertTrue(data_uri.startswith("data:image/png;base64,"))
+
+    def test_smazana_polozka_zustane_v_auditu_uctu(self):
+        doklad = vytvor_doklad(self.pokladna, self.obsluha)
+        polozka = pridej_polozku(doklad, self.plu, Decimal("2"))
+
+        smaz_polozku(doklad, polozka.id, user=self.obsluha, duvod="Test smazání")
+
+        self.assertFalse(doklad.polozky.exists())
+        audit = PokladniSmazanaPolozka.objects.get(doklad=doklad)
+        self.assertEqual(audit.nazev_snapshot, "Bageta šunková")
+        self.assertEqual(audit.mnozstvi, Decimal("2.000"))
+        self.assertEqual(audit.castka_celkem, Decimal("50.00"))
+        self.assertEqual(audit.smazal, self.obsluha)
+
+    def test_zruseni_rozpracovaneho_uctu_zachova_polozky_a_neodepise_sklad(self):
+        doklad = vytvor_doklad(self.pokladna, self.obsluha)
+        pridej_polozku(doklad, self.plu, Decimal("1"))
+
+        zruseny = zrus_rozpracovany_doklad(doklad, user=self.obsluha)
+
+        self.assertEqual(zruseny.stav, PokladniDoklad.STAV_STORNOVANO)
+        self.assertEqual(zruseny.polozky.count(), 1)
+        self.assertEqual(zruseny.stornoval, self.obsluha)
+        stav = StavSkladu.objects.get(surovina=self.surovina)
+        self.assertEqual(stav.mnozstvi, Decimal("10.000"))
+        self.assertEqual(PohybSkladu.objects.filter(surovina=self.surovina).count(), 0)
 
     def test_plu_validace_pro_vazene_zbozi(self):
         plu = PLUPolozka(

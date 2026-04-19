@@ -1,0 +1,224 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <title>Pokladna - přihlášení</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <style>
+    :root {
+      --pk-green: #54ae43;
+      --pk-green-dark: #14883c;
+      --pk-orange: #f28f28;
+      --pk-ink: #17202a;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      background:
+        linear-gradient(135deg, rgba(84,174,67,.12), rgba(242,143,40,.12)),
+        #f6f8fb;
+      color: var(--pk-ink);
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .login-shell {
+      width: min(1040px, 100%);
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(360px, .8fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .login-brand,
+    .login-card {
+      background: #fff;
+      border: 1px solid #dfe6ee;
+      border-radius: 8px;
+      box-shadow: 0 18px 50px rgba(23,32,42,.10);
+    }
+
+    .login-brand {
+      min-height: 520px;
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      text-align: center;
+      padding: 42px;
+      border-top: 6px solid var(--pk-orange);
+    }
+
+    .login-logo-box {
+      width: min(460px, 88%);
+      min-height: 220px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      border: 1px solid #f5c28e;
+      background: #fff7ed;
+      margin-bottom: 28px;
+      padding: 24px;
+    }
+
+    .login-logo {
+      width: min(360px, 100%);
+      max-height: 150px;
+      object-fit: contain;
+    }
+
+    .login-title {
+      font-size: 2.2rem;
+      line-height: 1.1;
+      font-weight: 950;
+      margin: 0;
+    }
+
+    .login-subtitle {
+      margin-top: 10px;
+      color: #65737d;
+      font-weight: 700;
+      font-size: 1.05rem;
+      max-width: 560px;
+    }
+
+    .login-card {
+      padding: 28px;
+      display: grid;
+      align-content: center;
+      gap: 18px;
+    }
+
+    .login-card h1 {
+      font-size: 1.6rem;
+      font-weight: 950;
+      margin: 0;
+    }
+
+    .login-card p {
+      color: #65737d;
+      margin: 0;
+      font-weight: 700;
+    }
+
+    .login-form {
+      display: grid;
+      gap: 14px;
+    }
+
+    .login-form label {
+      font-weight: 900;
+      color: #40505a;
+    }
+
+    .login-form input {
+      min-height: 54px;
+      border-radius: 8px;
+      border: 1px solid #ccd7df;
+      padding: 10px 12px;
+      font-size: 1.05rem;
+      font-weight: 700;
+    }
+
+    .login-form input:focus {
+      outline: 0;
+      border-color: var(--pk-orange);
+      box-shadow: 0 0 0 4px rgba(242,143,40,.18);
+    }
+
+    .login-btn {
+      min-height: 56px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--pk-green);
+      color: #fff;
+      font-weight: 950;
+      font-size: 1.08rem;
+      box-shadow: 0 10px 22px rgba(20,136,60,.22);
+    }
+
+    .login-btn:hover,
+    .login-btn:focus {
+      background: var(--pk-green-dark);
+    }
+
+    .login-alert {
+      border-radius: 8px;
+      border: 0;
+      border-left: 5px solid var(--pk-orange);
+      font-weight: 800;
+      margin: 0;
+    }
+
+    .login-note {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 12px;
+      color: #52616c;
+      font-weight: 700;
+      font-size: .92rem;
+    }
+
+    @media (max-width: 900px) {
+      .login-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .login-brand {
+        min-height: auto;
+        padding: 26px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="login-shell">
+    <section class="login-brand">
+      <div class="login-logo-box">
+        <img class="login-logo" src="{% static 'images/kliknijidlo-logo.png' %}" alt="KlikniJídlo">
+      </div>
+      <h1 class="login-title">Pokladna KlikniJídlo</h1>
+      <div class="login-subtitle">Přihlas se obslužným účtem. Po přihlášení se otevře základní obrazovka pokladny.</div>
+    </section>
+
+    <section class="login-card">
+      <div>
+        <h1>Přihlášení do pokladny</h1>
+        <p>Bez přihlášení není možné markovat ani uzavírat účty.</p>
+      </div>
+
+      {% if messages %}
+        {% for message in messages %}
+          <div class="alert alert-{{ message.tags|default:'info' }} login-alert">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+
+      <form class="login-form" method="post" autocomplete="on">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
+
+        <div>
+          <label for="id_username">Uživatelské jméno</label>
+          <input id="id_username" name="username" type="text" autocomplete="username" autofocus required>
+        </div>
+
+        <div>
+          <label for="id_password">Heslo</label>
+          <input id="id_password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+
+        <button class="login-btn" type="submit">Přihlásit do pokladny</button>
+      </form>
+
+      <div class="login-note">
+        Přesměrování po přihlášení vždy končí na základní obrazovce pokladny, aby obsluha začínala z čistého rozcestníku.
+      </div>
+    </section>
+  </div>
+</body>
+</html>

@@ -78,9 +78,12 @@ INSTALLED_APPS = [
     'vydej',
     'vydej_frontend',
     'reporty',
+    "finance",
+    "fakturace",
     'prepocty',
     'sklad',
     "pokladna",
+    "ankety",
 ]
 
 
@@ -304,9 +307,12 @@ JAZZMIN_SETTINGS = {
         "canteen_settings": "fas fa-gear",
         "frontend": "fas fa-globe",
         "reporty": "fas fa-chart-mixed",
+        "finance": "fas fa-coins",
+        "fakturace": "fas fa-file-invoice-dollar",
         "prepocty": "fas fa-calculator",
         "sklad": "fas fa-warehouse",
         "pokladna": "fas fa-cash-register",
+        "ankety": "fas fa-star-half-stroke",
         "import_export": "fas fa-file-import",
         "widget_tweaks": "fas fa-wand-magic-sparkles",
         "vydej_frontend": "fas fa-window-restore",
@@ -361,6 +367,10 @@ JAZZMIN_SETTINGS = {
 
         # === REPORTY / PREPOCTY ===
         "reporty.ReportDummy": "fas fa-chart-pie",
+        "finance.FinancniDashboard": "fas fa-chart-line",
+        "fakturace.FakturacniNastaveni": "fas fa-sliders",
+        "fakturace.FakturacniDavka": "fas fa-file-invoice-dollar",
+        "fakturace.FakturacniPolozka": "fas fa-list-check",
         "prepocty.PrepoctyDummy": "fas fa-calculator",
 
         # === SKLAD ===
@@ -395,6 +405,9 @@ JAZZMIN_SETTINGS = {
         "pokladna.PokladniPolozka": "fas fa-list-ol",
         "pokladna.PokladniUzaverka": "fas fa-clipboard-check",
         "pokladna.PokladnaTile": "fas fa-square",
+        "ankety.AnketniOtazka": "fas fa-circle-question",
+        "ankety.HodnoceniJidla": "fas fa-star",
+        "ankety.OdpovedHodnoceni": "fas fa-list-check",
 
         # === AUTH fallback ===
         "auth.User": "fas fa-user-circle",
@@ -411,10 +424,13 @@ JAZZMIN_SETTINGS = {
         "canteen_settings",
         "frontend",
         "reporty",
+        "finance",
+        "fakturace",
         "prepocty",
         "auth",
         "sklad",
         "pokladna",
+        "ankety",
     ],
 
     # >>> HORNÍ HORIZONTÁLNÍ MENU – tlačítka na dashboardy appek <<<
@@ -472,6 +488,16 @@ JAZZMIN_SETTINGS = {
             "icon": "fas fa-chart-line",
         },
         {
+            "name": "Finance",
+            "url": "admin:finance_financnidashboard_changelist",
+            "icon": "fas fa-coins",
+        },
+        {
+            "name": "Fakturace",
+            "url": "admin:fakturace_fakturacnidavka_changelist",
+            "icon": "fas fa-file-invoice-dollar",
+        },
+        {
             "name": "Přepočty",
             "url": "admin:prepocty_prepoctydummy_changelist",
             "icon": "fas fa-calculator",
@@ -525,6 +551,13 @@ JAZZMIN_SETTINGS = {
                 "name": "Návrh nákupu",
                 "url": "admin:sklad_navrh_nakupu",
                 "icon": "fas fa-cart-plus",
+            },
+        ],
+        "ankety": [
+            {
+                "name": "Vyhodnocení anket",
+                "url": "admin:ankety_report",
+                "icon": "fas fa-chart-simple",
             },
         ],
     },

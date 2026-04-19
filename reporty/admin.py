@@ -8,6 +8,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.http import HttpResponse
 import csv
+from decimal import Decimal
 from io import BytesIO
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4, landscape
@@ -19,6 +20,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from django.conf import settings
 import os
+
+from kliknijidlo.pdf_utils import decimal_cs, money_cs, safe_table
 
 User = get_user_model()
 
@@ -34,6 +37,10 @@ from jidelnicek.models import DruhJidla
 from .models import ReportDummy
 from datetime import timedelta
 from collections import defaultdict
+
+
+def fmt_max2(value):
+    return decimal_cs(value or 0, places=2, trim=True)
 
 
 
@@ -584,18 +591,18 @@ class ReportAdmin(admin.ModelAdmin):
                         line = []
                         if grouping == 'day': line += [row['date'].strftime('%d.%m.%Y')]
                         line += [row['user'], row['food_type'], row['food_name'], row['quantity'],
-                                str(row['unclaimed_total']).replace('.', ','),
-                                str(row['dotace']).replace('.', ','),
-                                str(row['final_price']).replace('.', ',')]
+                                fmt_max2(row['unclaimed_total']).replace('.', ','),
+                                fmt_max2(row['dotace']).replace('.', ','),
+                                fmt_max2(row['final_price']).replace('.', ',')]
                     else:
                         line = [row['user'], row['osobni_cislo'], row['identifikacni_medium']]
                         if grouping == 'day': line += [row['date'].strftime('%d.%m.%Y'), row['status']]
                         if report_type == 'items':
                             line += ([row.get('jidlo_nazev', ''), row.get('quantity', 0)] if grouping == 'day' 
                                     else [row.get('items_count', 0), row.get('items_names', '')])
-                        line += [str(row['unclaimed_total']).replace('.', ','),
-                                str(row['dotace']).replace('.', ','),
-                                str(row['final_price']).replace('.', ',')]
+                        line += [fmt_max2(row['unclaimed_total']).replace('.', ','),
+                                fmt_max2(row['dotace']).replace('.', ','),
+                                fmt_max2(row['final_price']).replace('.', ',')]
                         if report_type == 'amounts' and grouping == 'total': line += [row.get('count', 0)]
                     writer.writerow(line)
                 return response
@@ -625,14 +632,14 @@ class ReportAdmin(admin.ModelAdmin):
                         line = []
                         if grouping == 'day': line += [row['date'].strftime('%d.%m.%Y')]
                         line += [row['user'], row['food_type'], row['food_name'], row['quantity'],
-                                row['unclaimed_total'], row['dotace'], row['final_price']]
+                                fmt_max2(row['unclaimed_total']), fmt_max2(row['dotace']), fmt_max2(row['final_price'])]
                     else:
                         line = [row['user'], row['osobni_cislo'], row['identifikacni_medium']]
                         if grouping == 'day': line += [row['date'].strftime('%d.%m.%Y'), row['status']]
                         if report_type == 'items':
                             line += ([row.get('jidlo_nazev', ''), row.get('quantity', 0)] if grouping == 'day' 
                                     else [row.get('items_count', 0), row.get('items_names', '')])
-                        line += [row['unclaimed_total'], row['dotace'], row['final_price']]
+                        line += [fmt_max2(row['unclaimed_total']), fmt_max2(row['dotace']), fmt_max2(row['final_price'])]
                         if report_type == 'amounts' and grouping == 'total': line += [row.get('count', 0)]
                     ws.append(line)
                 
@@ -640,8 +647,8 @@ class ReportAdmin(admin.ModelAdmin):
                 footer = ['CELKEM']
                 col_offset = len(headers) - 3
                 footer += [''] * (col_offset - 1)
-                footer += [totals.get('total_portions', totals.get('total_items', '')), 
-                          totals['unclaimed_total'], totals['dotace'], totals['final_price']]
+                footer += [totals.get('total_portions', totals.get('total_items', '')),
+                          fmt_max2(totals['unclaimed_total']), fmt_max2(totals['dotace']), fmt_max2(totals['final_price'])]
                 ws.append(footer)
                 ws.cell(row=ws.max_row, column=1).font = Font(bold=True)
                 
@@ -751,38 +758,40 @@ class ReportAdmin(admin.ModelAdmin):
                 for row in report_data:
                     if report_type == 'food_types':
                         line = [row['date'].strftime('%d.%m.%Y')] if grouping == 'day' else []
-                        line += [row['user'], row['food_type'], row['food_name'], str(row['quantity']), 
-                                f"{row['unclaimed_total']:.2f} Kč", f"{row['dotace']:.2f} Kč", f"{row['final_price']:.2f} Kč"]
+                        line += [row['user'], row['food_type'], row['food_name'], str(row['quantity']),
+                                money_cs(row['unclaimed_total']), money_cs(row['dotace']), money_cs(row['final_price'])]
                         table_data.append(line)
                     else:
                         count_val = f"{row.get('count', row.get('items_count', 0))} ks"
                         if grouping == 'day':
-                            table_data.append([row['user'], row['osobni_cislo'], row['identifikacni_medium'], row['date'].strftime('%d.%m.%Y'), row['status'], f"{row['unclaimed_total']:.2f} Kč", f"{row['dotace']:.2f} Kč", f"{row['final_price']:.2f} Kč"])
+                            table_data.append([row['user'], row['osobni_cislo'], row['identifikacni_medium'], row['date'].strftime('%d.%m.%Y'), row['status'], money_cs(row['unclaimed_total']), money_cs(row['dotace']), money_cs(row['final_price'])])
                         else:
-                            table_data.append([row['user'], row['osobni_cislo'], row['identifikacni_medium'], count_val, f"{row['unclaimed_total']:.2f} Kč", f"{row['dotace']:.2f} Kč", f"{row['final_price']:.2f} Kč"])
+                            table_data.append([row['user'], row['osobni_cislo'], row['identifikacni_medium'], count_val, money_cs(row['unclaimed_total']), money_cs(row['dotace']), money_cs(row['final_price'])])
 
                 # Footer
                 if report_type == 'food_types':
-                    footer = ['CELKEM'] + ([''] if grouping == 'day' else []) + ['', '', str(totals['total_portions']), f"{totals['unclaimed_total']:.2f} Kč", f"{totals['dotace']:.2f} Kč", f"{totals['final_price']:.2f} Kč"]
+                    footer = ['CELKEM'] + ([''] if grouping == 'day' else []) + ['', '', str(totals['total_portions']), money_cs(totals['unclaimed_total']), money_cs(totals['dotace']), money_cs(totals['final_price'])]
                 else:
-                    footer = ['CELKEM'] + (['', '', '', ''] if grouping == 'day' else ['', '', '']) + [f"{totals['unclaimed_total']:.2f} Kč", f"{totals['dotace']:.2f} Kč", f"{totals['final_price']:.2f} Kč"]
+                    footer = ['CELKEM'] + (['', '', '', ''] if grouping == 'day' else ['', '', '']) + [money_cs(totals['unclaimed_total']), money_cs(totals['dotace']), money_cs(totals['final_price'])]
                 table_data.append(footer)
 
-                table = Table(table_data, colWidths=col_widths)
-                table.setStyle(TableStyle([
-                    ('FONTNAME', (0, 0), (-1, -1), font_name),
-                    ('FONTSIZE', (0, 0), (-1, -1), 8),
-                    ('BACKGROUND', (0, 0), (-1, 0), color_green),
-                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                    ('FONTNAME', (0, 0), (-1, 0), font_bold),
-                    ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-                    ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#fff3e0')),
-                    ('FONTNAME', (0, -1), (-1, -1), font_bold),
-                    ('LINEABOVE', (0, -1), (-1, -1), 1, color_orange),
-                    ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                    ('ALIGN', (-3, 1), (-1, -1), 'RIGHT'), # Částky vpravo
-                ]))
+                table = safe_table(
+                    table_data,
+                    col_widths,
+                    font_name=font_name,
+                    font_size=7,
+                    style_commands=[
+                        ('FONTSIZE', (0, 0), (-1, -1), 7),
+                        ('BACKGROUND', (0, 0), (-1, 0), color_green),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#fff3e0')),
+                        ('LINEABOVE', (0, -1), (-1, -1), 1, color_orange),
+                        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                        ('ALIGN', (-3, 1), (-1, -1), 'RIGHT'),
+                    ],
+                )
                 
                 story.append(table)
                 story.append(Spacer(1, 0.6*cm))

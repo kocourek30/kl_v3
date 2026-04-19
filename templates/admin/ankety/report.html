@@ -1,0 +1,221 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<style>
+  .survey-page { display: grid; gap: 16px; }
+  .survey-head { display: flex; justify-content: space-between; gap: 16px; align-items: end; flex-wrap: wrap; }
+  .survey-head h1 { margin: 0; font-size: 2rem; font-weight: 950; color: #17202a; }
+  .survey-sub { color: #64748b; margin-top: 4px; font-weight: 700; }
+  .survey-filter { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; background: #fff; border: 1px solid #dce4ea; border-radius: 8px; padding: 12px; }
+  .survey-filter label { display: grid; gap: 4px; font-weight: 850; color: #4f5d66; }
+  .survey-filter input, .survey-filter select { min-height: 38px; border: 1px solid #cad5dd; border-radius: 8px; padding: 6px 8px; }
+  .survey-btn { min-height: 38px; border: 0; border-radius: 8px; padding: 8px 14px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-weight: 950; text-decoration: none; background: #14933b; color: #fff !important; }
+  .survey-btn-light { background: #eef3f6; color: #1f2d36 !important; }
+  .survey-btn-accent { background: #f28f28; }
+  .survey-grid { display: grid; grid-template-columns: repeat(5, minmax(145px, 1fr)); gap: 12px; }
+  .survey-card { background: #fff; border: 1px solid #dce4ea; border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgba(20,40,60,.04); }
+  .survey-card strong { display: block; color: #64748b; font-size: .84rem; text-transform: uppercase; letter-spacing: .02em; }
+  .survey-value { margin-top: 6px; font-size: 1.55rem; font-weight: 950; color: #17202a; }
+  .survey-value.green { color: #14933b; }
+  .survey-value.orange { color: #d96f00; }
+  .survey-panels { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+  .survey-panel { background: #fff; border: 1px solid #dce4ea; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(20,40,60,.04); }
+  .survey-panel h2 { margin: 0; padding: 13px 14px; border-bottom: 1px solid #edf1f4; font-size: 1rem; font-weight: 950; color: #17202a; }
+  .survey-table { width: 100%; border-collapse: collapse; }
+  .survey-table th { background: #f6f8fa; color: #5f6f7a; text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8ee; white-space: nowrap; }
+  .survey-table td { padding: 10px 12px; border-bottom: 1px solid #edf1f4; vertical-align: top; }
+  .survey-num { text-align: right; white-space: nowrap; font-weight: 900; }
+  .survey-rank { width: 34px; height: 34px; border-radius: 8px; display: inline-grid; place-items: center; font-weight: 950; background: #eef8f0; color: #166534; }
+  .survey-rank.bad { background: #fff7ed; color: #9a3412; }
+  .survey-score { display: inline-flex; align-items: center; gap: 6px; font-weight: 950; color: #17202a; }
+  .survey-bar { min-width: 70px; height: 8px; border-radius: 999px; background: #e5e7eb; overflow: hidden; display: inline-block; vertical-align: middle; }
+  .survey-bar span { display: block; height: 100%; background: #14933b; }
+  .survey-note { color: #64748b; font-size: .9rem; }
+  .survey-comment { display: grid; gap: 4px; padding: 12px 14px; border-bottom: 1px solid #edf1f4; }
+  .survey-comment:last-child { border-bottom: 0; }
+  .survey-comment strong { color: #17202a; }
+  .survey-empty { padding: 16px; color: #64748b; font-weight: 700; }
+  @media (max-width: 1250px) {
+    .survey-grid { grid-template-columns: repeat(2, minmax(145px, 1fr)); }
+    .survey-panels { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="survey-page">
+  <div class="survey-head">
+    <div>
+      <h1>{{ title }}</h1>
+      <div class="survey-sub">Přehled spokojenosti, objednanosti a návratnosti hodnocení.</div>
+    </div>
+
+    <form class="survey-filter" method="get">
+      <label>Typ období
+        <select name="typ">
+          <option value="month" {% if typ == "month" %}selected{% endif %}>Měsíc</option>
+          <option value="day" {% if typ == "day" %}selected{% endif %}>Den</option>
+          <option value="custom" {% if typ == "custom" %}selected{% endif %}>Vlastní období</option>
+        </select>
+      </label>
+      <label>Rok
+        <select name="rok">
+          {% for y in roky %}
+            <option value="{{ y }}" {% if y == rok %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Měsíc
+        <select name="mesic">
+          {% for value, label in mesice %}
+            <option value="{{ value }}" {% if value == mesic %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Den
+        <input type="date" name="den" value="{{ den|date:'Y-m-d' }}">
+      </label>
+      <label>Od
+        <input type="date" name="od" value="{{ date_from|date:'Y-m-d' }}">
+      </label>
+      <label>Do
+        <input type="date" name="do" value="{{ date_to|date:'Y-m-d' }}">
+      </label>
+      <label>Min. hodnocení
+        <input type="number" name="min_hodnoceni" min="1" max="50" value="{{ min_hodnoceni }}">
+      </label>
+      <button class="survey-btn" type="submit">Spočítat</button>
+      <a class="survey-btn survey-btn-light" href="?{{ query_string }}&export=xls">XLS</a>
+      <a class="survey-btn survey-btn-accent" href="?{{ query_string }}&export=pdf">PDF</a>
+    </form>
+  </div>
+
+  <div class="survey-grid">
+    <div class="survey-card"><strong>Průměrné hodnocení</strong><div class="survey-value green">{{ data.prumer|default:"-" }}</div></div>
+    <div class="survey-card"><strong>Vyplněná hodnocení</strong><div class="survey-value">{{ data.hodnoceni_count }}</div></div>
+    <div class="survey-card"><strong>Návratnost</strong><div class="survey-value orange">{{ data.navratnost_pct }} %</div></div>
+    <div class="survey-card"><strong>Objednáno porcí</strong><div class="survey-value">{{ data.objednane_count }}</div></div>
+    <div class="survey-card"><strong>Hodnocená jídla</strong><div class="survey-value">{{ data.jidla_count }}</div></div>
+  </div>
+
+  <div class="survey-panels">
+    <section class="survey-panel">
+      <h2>Nejlepší jídla</h2>
+      {% if data.nejlepsi %}
+        <table class="survey-table">
+          <thead><tr><th></th><th>Jídlo</th><th class="survey-num">Průměr</th><th class="survey-num">Hodnocení</th><th class="survey-num">Návratnost</th></tr></thead>
+          <tbody>
+          {% for row in data.nejlepsi %}
+            <tr>
+              <td><span class="survey-rank">{{ forloop.counter }}</span></td>
+              <td><strong>{{ row.jidlo }}</strong><div class="survey-note">Objednáno {{ row.objednano }} porcí</div></td>
+              <td class="survey-num"><span class="survey-score">{{ row.prumer }}</span></td>
+              <td class="survey-num">{{ row.hodnoceni }}</td>
+              <td class="survey-num">{{ row.navratnost }} %</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="survey-empty">Pro vybrané období nejsou žádná hodnocení.</div>
+      {% endif %}
+    </section>
+
+    <section class="survey-panel">
+      <h2>Jídla k pozornosti</h2>
+      {% if data.nejslabsi %}
+        <table class="survey-table">
+          <thead><tr><th></th><th>Jídlo</th><th class="survey-num">Průměr</th><th class="survey-num">Hodnocení</th><th class="survey-num">Poznámky</th></tr></thead>
+          <tbody>
+          {% for row in data.nejslabsi %}
+            <tr>
+              <td><span class="survey-rank bad">{{ forloop.counter }}</span></td>
+              <td><strong>{{ row.jidlo }}</strong><div class="survey-note">Objednáno {{ row.objednano }} porcí</div></td>
+              <td class="survey-num">{{ row.prumer }}</td>
+              <td class="survey-num">{{ row.hodnoceni }}</td>
+              <td class="survey-num">{{ row.poznamek }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="survey-empty">Zatím není co vyhodnocovat.</div>
+      {% endif %}
+    </section>
+
+    <section class="survey-panel">
+      <h2>Nejčastěji objednávaná jídla</h2>
+      {% if data.nejobjednavanejsi %}
+        <table class="survey-table">
+          <thead><tr><th>Jídlo</th><th class="survey-num">Objednáno</th><th class="survey-num">Vydáno</th><th class="survey-num">Hodnocení</th><th class="survey-num">Průměr</th></tr></thead>
+          <tbody>
+          {% for row in data.nejobjednavanejsi %}
+            <tr>
+              <td><strong>{{ row.jidlo }}</strong></td>
+              <td class="survey-num">{{ row.objednano }}</td>
+              <td class="survey-num">{{ row.vydano }}</td>
+              <td class="survey-num">{{ row.hodnoceni }}</td>
+              <td class="survey-num">{{ row.prumer|default:"-" }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="survey-empty">Žádné objednávky ve vybraném období.</div>
+      {% endif %}
+    </section>
+
+    <section class="survey-panel">
+      <h2>Otázky v anketě</h2>
+      {% if data.otazky %}
+        <table class="survey-table">
+          <thead><tr><th>Otázka</th><th class="survey-num">Počet</th><th class="survey-num">Průměr</th></tr></thead>
+          <tbody>
+          {% for row in data.otazky %}
+            <tr>
+              <td><strong>{{ row.otazka }}</strong></td>
+              <td class="survey-num">{{ row.pocet }}</td>
+              <td class="survey-num">
+                <span class="survey-bar"><span style="width: {% widthratio row.prumer 5 100 %}%"></span></span>
+                {{ row.prumer }}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="survey-empty">Zatím nejsou odpovědi na otázky.</div>
+      {% endif %}
+    </section>
+
+    <section class="survey-panel">
+      <h2>Vývoj podle dní</h2>
+      {% if data.trendy %}
+        <table class="survey-table">
+          <thead><tr><th>Datum</th><th class="survey-num">Hodnocení</th><th class="survey-num">Průměr</th></tr></thead>
+          <tbody>
+          {% for row in data.trendy %}
+            <tr><td>{{ row.datum|date:"d.m.Y" }}</td><td class="survey-num">{{ row.hodnoceni }}</td><td class="survey-num">{{ row.prumer|default:"-" }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="survey-empty">Ve vybraném období nejsou trendová data.</div>
+      {% endif %}
+    </section>
+
+    <section class="survey-panel">
+      <h2>Poslední poznámky strávníků</h2>
+      {% if data.poznamky %}
+        {% for row in data.poznamky %}
+          <div class="survey-comment">
+            <strong>{{ row.jidlo }}</strong>
+            <span class="survey-note">{{ row.datum|date:"d.m.Y" }} · {{ row.stravnik }} · průměr {{ row.prumer|default:"-" }}</span>
+            <span>{{ row.poznamka }}</span>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="survey-empty">Bez textových poznámek.</div>
+      {% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

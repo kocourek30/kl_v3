@@ -1,4 +1,3 @@
-from django.forms import ValidationError
 import serial
 from django.urls import path, reverse
 from django.http import JsonResponse
@@ -14,7 +13,7 @@ from import_export import resources
 from import_export.formats.base_formats import CSV
 
 from django.contrib.auth.models import Group
-from dotace.models import DotacniPolitika, SkupinoveNastaveni
+from dotace.models import DotacniPolitika
 from django.utils.html import format_html
 
 from .models import CustomUser, Vklad, StravovaciSkupina
@@ -278,16 +277,6 @@ class VkladAdmin(admin.ModelAdmin):
     nulovat_konta.short_description = "Nulovat konta zákazníků v debetu (hromadně)"
 
     def save_model(self, request, obj, form, change):
-        skupina = obj.uzivatel.groups.first()
-        if skupina:
-            try:
-                nastaveni = skupina.nastaveni
-                if nastaveni.cerpani_debit:
-                    raise ValidationError(f"Uživatel {obj.uzivatel} má nastaveno čerpání debetu, nelze přidat vklad.")
-            except SkupinoveNastaveni.DoesNotExist:
-                pass
-        else:
-            raise ValidationError("Uživatel není přiřazen ke skupině, nelze vytvořit vklad.")
         super().save_model(request, obj, form, change)
 
 

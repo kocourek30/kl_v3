@@ -24,31 +24,171 @@
 
     body {
       background-color: #f5f7fa;
+      min-height: 100vh;
     }
 
-    .pk-navbar {
-      background-color: var(--primary-color);
-      box-shadow: 0 0.25rem 0.75rem rgba(0,0,0,0.18);
+    .pk-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr);
     }
 
-    .pk-navbar .navbar-brand img {
-      height: 44px;
-      max-width: 150px;
+    .pk-sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      background: linear-gradient(180deg, var(--primary-color), #12823a);
+      color: #fff;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: 14px;
+      padding: 12px 10px;
+      box-shadow: 0.2rem 0 1rem rgba(23,32,42,.14);
+      z-index: 30;
     }
 
-    .pk-navbar .navbar-text {
-      font-size: 0.9rem;
+    .pk-sidebar-logo {
+      min-height: 66px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      background: rgba(255,255,255,.13);
+      border: 1px solid rgba(255,255,255,.16);
+      text-decoration: none;
+    }
+
+    .pk-sidebar-logo img {
+      width: 66px;
+      max-height: 52px;
+      object-fit: contain;
+    }
+
+    .pk-nav-links {
+      display: grid;
+      gap: 9px;
+      align-content: start;
+      overflow-y: auto;
+      padding-right: 2px;
+      min-width: 0;
+    }
+
+    .pk-nav-link {
+      display: grid;
+      grid-template-rows: 28px auto;
+      align-items: center;
+      justify-content: center;
+      justify-items: center;
+      gap: 5px;
+      min-height: 70px;
+      padding: 8px 6px;
+      border-radius: 8px;
+      color: rgba(255,255,255,0.92);
+      text-decoration: none;
+      font-weight: 800;
+      font-size: 0.72rem;
+      line-height: 1.08;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.14);
+      transition: background-color .15s ease, color .15s ease, transform .15s ease, box-shadow .15s ease;
+      text-align: center;
+    }
+
+    .pk-nav-link i {
+      color: #ffd1a4;
+      font-size: 1.25rem;
+    }
+
+    .pk-nav-link:hover,
+    .pk-nav-link:focus {
+      color: #ffffff;
+      background: rgba(255,255,255,0.2);
+      transform: translateX(1px);
+      box-shadow: inset 4px 0 0 rgba(242,143,40,.9);
+    }
+
+    .pk-nav-link.active {
+      color: #17202a;
+      background: #ffffff;
+      border-color: #ffffff;
+      box-shadow: inset 5px 0 0 var(--accent-color), 0 0.35rem 0.85rem rgba(0,0,0,0.16);
+    }
+
+    .pk-nav-link.active i {
+      color: var(--accent-color);
+    }
+
+    .pk-sidebar-user {
+      border-radius: 8px;
+      background: rgba(255,255,255,.13);
+      border: 1px solid rgba(255,255,255,.16);
+      padding: 8px 6px;
+      text-align: center;
+      font-size: .72rem;
+      line-height: 1.15;
+      overflow: hidden;
+    }
+
+    .pk-sidebar-user i {
+      display: block;
+      color: #ffd1a4;
+      margin-bottom: 5px;
+      font-size: 1rem;
+    }
+
+    .pk-sidebar-user strong {
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .pk-main-wrapper {
       padding-inline: 1rem;
       padding-top: 1rem;
       padding-bottom: 1rem;
+      min-width: 0;
     }
 
     @media (min-width: 992px) {
       .pk-main-wrapper {
         padding-inline: 2rem;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .pk-shell {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(0, 1fr);
+      }
+
+      .pk-sidebar {
+        position: static;
+        height: auto;
+        grid-template-columns: auto minmax(0, 1fr);
+        grid-template-rows: auto;
+        align-items: center;
+        padding: 8px;
+      }
+
+      .pk-nav-links {
+        display: flex;
+        overflow-x: auto;
+        padding-bottom: 0;
+      }
+
+      .pk-nav-link {
+        flex: 0 0 auto;
+        min-height: 54px;
+        min-width: 76px;
+      }
+
+      .pk-sidebar-user {
+        display: none;
+      }
+
+      .pk-sidebar-logo {
+        min-height: 54px;
+        width: 72px;
       }
     }
   </style>
@@ -57,24 +197,75 @@
 </head>
 <body>
 
-<nav class="navbar navbar-expand-lg navbar-dark pk-navbar">
-  <div class="container-fluid">
-    <a class="navbar-brand d-flex align-items-center" href="#">
-      <img src="{% static 'images/logo-white.png' %}" alt="KlikniJídlo pokladna">
-      <span class="ms-2 fw-semibold d-none d-sm-inline">Pokladna</span>
+<div class="pk-shell">
+  <aside class="pk-sidebar" aria-label="Navigace pokladny">
+    <a class="pk-sidebar-logo" href="{% if pokladna %}{% url 'pokladna:pokladna_view' pokladna.id %}{% else %}#{% endif %}">
+      <img src="{% static 'images/logo-white.png' %}" alt="KlikniJídlo">
     </a>
+    {% if pokladna %}
+      <nav class="pk-nav-links">
+        <a
+          class="pk-nav-link {% if request.resolver_match.url_name == 'pokladna_view' %}active{% endif %}"
+          href="{% url 'pokladna:pokladna_view' pokladna.id %}"
+        >
+          <i class="fas fa-house"></i>
+          <span>Start</span>
+        </a>
+        <a
+          class="pk-nav-link {% if request.resolver_match.url_name == 'pokladna_prehled' %}active{% endif %}"
+          href="{% url 'pokladna:pokladna_prehled' pokladna.id %}"
+        >
+          <i class="fas fa-gauge-high"></i>
+          <span>Přehled</span>
+        </a>
+        <a
+          class="pk-nav-link {% if request.resolver_match.url_name == 'pokladna_ucet' %}active{% endif %}"
+          href="{% url 'pokladna:pokladna_ucet' pokladna.id %}"
+        >
+          <i class="fas fa-cash-register"></i>
+          <span>Nový účet</span>
+        </a>
+        <a
+          class="pk-nav-link {% if request.resolver_match.url_name == 'pokladna_vklad_konto' %}active{% endif %}"
+          href="{% url 'pokladna:pokladna_vklad_konto' pokladna.id %}"
+        >
+          <i class="fas fa-wallet"></i>
+          <span>Vklad</span>
+        </a>
+        <a
+          class="pk-nav-link {% if request.resolver_match.url_name == 'pokladna_uzavrene_ucty' %}active{% endif %}"
+          href="{% url 'pokladna:pokladna_uzavrene_ucty' pokladna.id %}"
+        >
+          <i class="fas fa-receipt"></i>
+          <span>Uzavřené účty</span>
+        </a>
+        <a
+          class="pk-nav-link {% if request.resolver_match.url_name == 'pokladna_financni_report' %}active{% endif %}"
+          href="{% url 'pokladna:pokladna_financni_report' pokladna.id %}"
+        >
+          <i class="fas fa-chart-line"></i>
+          <span>Finance</span>
+        </a>
+        <a
+          class="pk-nav-link {% if request.resolver_match.url_name == 'pokladna_uzaverka' or request.resolver_match.url_name == 'pokladna_uzaverka_detail' %}active{% endif %}"
+          href="{% url 'pokladna:pokladna_uzaverka' pokladna.id %}"
+        >
+          <i class="fas fa-lock"></i>
+          <span>Uzávěrka</span>
+        </a>
+      </nav>
+    {% endif %}
 
-    <div class="ms-auto text-white navbar-text">
+    <div class="pk-sidebar-user">
       <i class="fas fa-user me-1"></i>
-      Přihlášen:
       <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>
     </div>
-  </div>
-</nav>
+  </aside>
 
-<main class="container-fluid pk-main-wrapper">
-  {% block content %}{% endblock %}
-</main>
+  <main class="container-fluid pk-main-wrapper">
+    {% block content %}{% endblock %}
+  </main>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 {% block extra_js %}{% endblock %}

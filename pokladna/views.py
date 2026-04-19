@@ -1,33 +1,134 @@
 from decimal import Decimal
+import re
 
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth import authenticate, login as auth_login
+from django.contrib.auth.decorators import login_required as django_login_required
 from django.core.exceptions import ValidationError
+from django.db.models import Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 
-from .models import Pokladna, PLUPolozka, PokladniDoklad, PokladnaTile
+from .models import Pokladna, PLUPolozka, PokladniDoklad, PokladniPolozka, PokladnaTile, PokladniUzaverka
+from .reports import dph_souhrn, doklady_za_obdobi, plu_obraty, trzby_podle_druhu, trzby_podle_plateb
 from .services import (
     konto_nastaveni_uzivatele,
     decimal_z_postu,
     pridej_polozku,
+    potvrdit_qr_platbu,
+    qr_payload_data_uri,
+    qr_platba_url,
     smaz_polozku,
     stornuj_doklad,
+    uzavri_denni_uzaverku,
     uzavri_doklad,
     vytvor_doklad,
+    zahaj_qr_platbu,
+    zrus_rozpracovany_doklad,
 )
 from jidelnicek.models import Jidelnicek, Jidlo
-from users.models import CustomUser
+from users.models import CustomUser, Vklad
 
 SESSION_KEY_TEMPLATE = "pokladna_doklad_{pokladna_id}"
+
+
+def login_required(view_func):
+    return django_login_required(view_func, login_url="pokladna:pokladna_login")
+
+
+def _pokladna_session_key(pokladna_id):
+    return SESSION_KEY_TEMPLATE.format(pokladna_id=pokladna_id)
+
+
+def _odhlas_zakaznika_pokladny(request, pokladna_id):
+    session_key = _pokladna_session_key(pokladna_id)
+    doklad_id = request.session.pop(session_key, None)
+    if not doklad_id:
+        return
+
+    PokladniDoklad.objects.filter(
+        pk=doklad_id,
+        stav=PokladniDoklad.STAV_ROZPRACOVANO,
+    ).update(zakaznik=None)
+
+
+def _pokladna_start_url_from_next(next_url):
+    match = re.search(r"/pokladna/(\d+)/", next_url or "")
+    if match:
+        pokladna = Pokladna.objects.filter(pk=match.group(1), aktivni=True).first()
+        if pokladna:
+            return reverse("pokladna:pokladna_view", kwargs={"pokladna_id": pokladna.id})
+
+    pokladna = Pokladna.objects.filter(aktivni=True).order_by("id").first()
+    if pokladna:
+        return reverse("pokladna:pokladna_view", kwargs={"pokladna_id": pokladna.id})
+    return reverse("admin:index")
+
+
+def pokladna_login(request):
+    next_url = request.GET.get("next") or request.POST.get("next") or ""
+    redirect_url = _pokladna_start_url_from_next(next_url)
+
+    if request.user.is_authenticated:
+        return redirect(redirect_url)
+
+    if request.method == "POST":
+        username = request.POST.get("username", "").strip()
+        password = request.POST.get("password", "")
+        user = authenticate(request, username=username, password=password)
+        if user is None:
+            messages.error(request, "Přihlášení se nepovedlo. Zkontroluj uživatelské jméno a heslo.")
+        elif not user.is_active:
+            messages.error(request, "Tento účet není aktivní.")
+        else:
+            auth_login(request, user)
+            messages.success(request, "Přihlášení proběhlo úspěšně.")
+            return redirect(redirect_url)
+
+    return render(
+        request,
+        "pokladna/login.html",
+        {
+            "next": next_url,
+            "redirect_url": redirect_url,
+        },
+    )
 
 
 @login_required
 def pokladna_view(request, pokladna_id):
     pokladna = get_object_or_404(Pokladna, pk=pokladna_id, aktivni=True)
+    today = timezone.localdate()
+    dnes_uzavreno = PokladniDoklad.objects.filter(
+        pokladna=pokladna,
+        stav=PokladniDoklad.STAV_UZAVRENO,
+        datum__date=today,
+    )
+    dnes_trzba = dnes_uzavreno.aggregate(suma=Sum("celkem_s_dph"))["suma"] or Decimal("0")
+    hotovost_dnes = dnes_uzavreno.filter(
+        zpusob_platby=PokladniDoklad.PLATBA_HOTOVOST
+    ).aggregate(suma=Sum("celkem_s_dph"))["suma"] or Decimal("0")
+    ceka_qr = PokladniDoklad.objects.filter(
+        pokladna=pokladna,
+        stav=PokladniDoklad.STAV_CEKA_NA_QR,
+    ).count()
+    return render(request, "pokladna/home.html", {
+        "pokladna": pokladna,
+        "dnes_trzba": dnes_trzba,
+        "dnes_pocet": dnes_uzavreno.count(),
+        "ceka_qr": ceka_qr,
+        "pokladni_hotovost": (pokladna.hotovostni_zustatek or Decimal("0")) + hotovost_dnes,
+    })
 
-    session_key = SESSION_KEY_TEMPLATE.format(pokladna_id=pokladna_id)
+
+@login_required
+def pokladna_ucet(request, pokladna_id):
+    pokladna = get_object_or_404(Pokladna, pk=pokladna_id, aktivni=True)
+
+    session_key = _pokladna_session_key(pokladna_id)
     doklad_id = request.session.get(session_key)
     doklad = (
         PokladniDoklad.objects.filter(pk=doklad_id, stav=PokladniDoklad.STAV_ROZPRACOVANO).first()
@@ -48,23 +149,31 @@ def pokladna_view(request, pokladna_id):
         if akce == "smazat_polozku" and doklad:
             pol_id = request.POST.get("polozka_id")
             try:
-                smaz_polozku(doklad, pol_id)
-                if not doklad.polozky.exists():
-                    request.session.pop(session_key, None)
+                smaz_polozku(doklad, pol_id, user=request.user)
             except ValidationError as exc:
                 messages.error(request, exc.messages[0])
-            return redirect("pokladna:pokladna_view", pokladna_id=pokladna.id)
+            return redirect("pokladna:pokladna_ucet", pokladna_id=pokladna.id)
 
         # storno poslední namarkované položky
         if akce == "storno_posledni" and doklad:
             posledni = doklad.polozky.order_by("-id").first()
             if not posledni:
                 messages.warning(request, "Na účtence není žádná položka ke stornu.")
+                return redirect("pokladna:pokladna_ucet", pokladna_id=pokladna.id)
+            try:
+                smaz_polozku(doklad, posledni.id, user=request.user, duvod="Storno poslední položky")
+            except ValidationError as exc:
+                messages.error(request, exc.messages[0])
+            return redirect("pokladna:pokladna_ucet", pokladna_id=pokladna.id)
+
+        if akce == "zrusit_ucet":
+            if not doklad:
+                messages.info(request, "Není otevřený žádný účet ke zrušení.")
                 return redirect("pokladna:pokladna_view", pokladna_id=pokladna.id)
             try:
-                smaz_polozku(doklad, posledni.id)
-                if not doklad.polozky.exists():
-                    request.session.pop(session_key, None)
+                zrus_rozpracovany_doklad(doklad, user=request.user)
+                request.session.pop(session_key, None)
+                messages.info(request, "Účet byl zrušen a zůstává uložený v přehledu dokladů.")
             except ValidationError as exc:
                 messages.error(request, exc.messages[0])
             return redirect("pokladna:pokladna_view", pokladna_id=pokladna.id)
@@ -75,8 +184,13 @@ def pokladna_view(request, pokladna_id):
                 PokladniDoklad.PLATBA_KONTO if doklad.zakaznik_id else PokladniDoklad.PLATBA_HOTOVOST
             )
             try:
+                if zpusob_platby == PokladniDoklad.PLATBA_QR:
+                    qr_doklad = zahaj_qr_platbu(doklad, user=request.user)
+                    _odhlas_zakaznika_pokladny(request, pokladna.id)
+                    messages.info(request, "QR platba byla připravena. Účet uzavři až po kontrole platby.")
+                    return redirect("pokladna:pokladna_qr_platba", pokladna_id=pokladna.id, doklad_id=qr_doklad.id)
                 uzavri_doklad(doklad, zpusob_platby, user=request.user)
-                request.session.pop(session_key, None)
+                _odhlas_zakaznika_pokladny(request, pokladna.id)
                 messages.success(request, "Účtenka byla uzavřena.")
                 return redirect("pokladna:pokladna_view", pokladna_id=pokladna.id)
             except ValidationError as exc:
@@ -93,25 +207,23 @@ def pokladna_view(request, pokladna_id):
             )
             if not storno_doklad:
                 messages.error(request, "Doklad pro storno nebyl nalezen.")
-                return redirect("pokladna:pokladna_view", pokladna_id=pokladna.id)
+                return redirect("pokladna:pokladna_ucet", pokladna_id=pokladna.id)
             if storno_doklad.obsluha_id != request.user.id and not request.user.is_superuser:
                 messages.error(request, "Stornovat může pouze obsluha dokladu nebo správce.")
-                return redirect("pokladna:pokladna_view", pokladna_id=pokladna.id)
+                return redirect("pokladna:pokladna_ucet", pokladna_id=pokladna.id)
             try:
                 stornuj_doklad(storno_doklad, user=request.user, duvod="Storno z pokladny")
                 messages.success(request, "Doklad byl stornován.")
             except ValidationError as exc:
                 messages.error(request, exc.messages[0])
-            return redirect("pokladna:pokladna_view", pokladna_id=pokladna.id)
+            return redirect("pokladna:pokladna_ucet", pokladna_id=pokladna.id)
 
         # AJAX přiřazení zákazníka z modalu – bez reloadu
         if akce == "pripojit_zakaznika_bez_karty_ajax":
             try:
                 if not doklad:
-                    return JsonResponse(
-                        {"ok": False, "error": "Neexistuje otevřený doklad."},
-                        status=400,
-                    )
+                    doklad = vytvor_doklad(pokladna=pokladna, obsluha=request.user)
+                    request.session[session_key] = doklad.id
 
                 zakaznik_id = request.POST.get("zakaznik_id")
                 if not zakaznik_id:
@@ -173,7 +285,7 @@ def pokladna_view(request, pokladna_id):
             mnozstvi = decimal_z_postu(request.POST.get("mnozstvi", "1"))
         except ValidationError as exc:
             messages.error(request, exc.messages[0])
-            return redirect("pokladna:pokladna_view", pokladna_id=pokladna.id)
+            return redirect("pokladna:pokladna_ucet", pokladna_id=pokladna.id)
 
         if not doklad:
             doklad = vytvor_doklad(pokladna=pokladna, obsluha=request.user)
@@ -190,16 +302,16 @@ def pokladna_view(request, pokladna_id):
             plu = PLUPolozka.objects.filter(jidlo=jidlo, aktivni=True).first()
             if not plu:
                 messages.error(request, "Jídlo nemá aktivní PLU položku.")
-                return redirect("pokladna:pokladna_view", pokladna_id=pokladna.id)
+                return redirect("pokladna:pokladna_ucet", pokladna_id=pokladna.id)
 
         else:
-            return redirect("pokladna:pokladna_view", pokladna_id=pokladna.id)
+            return redirect("pokladna:pokladna_ucet", pokladna_id=pokladna.id)
 
         try:
             pridej_polozku(doklad, plu, mnozstvi=mnozstvi)
         except ValidationError as exc:
             messages.error(request, exc.messages[0])
-        return redirect("pokladna:pokladna_view", pokladna_id=pokladna.id)
+        return redirect("pokladna:pokladna_ucet", pokladna_id=pokladna.id)
 
     # --- GET: data pro šablonu ---
 
@@ -309,3 +421,303 @@ def pokladna_zakaznik_search(request, pokladna_id):
         return JsonResponse({"results": results})
     except Exception:
         return JsonResponse({"results": [], "error": "Vyhledávání zákazníků selhalo."}, status=500)
+
+
+@login_required
+def pokladna_vklad_konto(request, pokladna_id):
+    pokladna = get_object_or_404(Pokladna, pk=pokladna_id, aktivni=True)
+
+    if request.method == "POST":
+        zakaznik_id = request.POST.get("zakaznik_id")
+        poznamka = (request.POST.get("poznamka") or "").strip()
+
+        if not zakaznik_id:
+            messages.error(request, "Nejprve vyber zákazníka, kterému chceš dobít konto.")
+            return redirect("pokladna:pokladna_vklad_konto", pokladna_id=pokladna.id)
+
+        try:
+            castka = decimal_z_postu(request.POST.get("castka"))
+        except ValidationError as exc:
+            messages.error(request, exc.messages[0])
+            return redirect("pokladna:pokladna_vklad_konto", pokladna_id=pokladna.id)
+
+        if castka <= 0:
+            messages.error(request, "Částka vkladu musí být větší než nula.")
+            return redirect("pokladna:pokladna_vklad_konto", pokladna_id=pokladna.id)
+
+        zakaznik = get_object_or_404(CustomUser, pk=zakaznik_id, is_active=True)
+        popis = poznamka or f"Vklad přes pokladnu {pokladna.nazev} ({request.user.get_username()})"
+        try:
+            Vklad.objects.create(
+                uzivatel=zakaznik,
+                castka=castka,
+                poznamka=popis,
+            )
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+            return redirect("pokladna:pokladna_vklad_konto", pokladna_id=pokladna.id)
+
+        jmeno = zakaznik.get_full_name() or zakaznik.username
+        messages.success(request, f"Vklad {castka:.2f} Kč pro {jmeno} byl uložen.")
+        _odhlas_zakaznika_pokladny(request, pokladna.id)
+        return redirect("pokladna:pokladna_view", pokladna_id=pokladna.id)
+
+    posledni_vklady = (
+        Vklad.objects
+        .filter(status="standard", castka__gt=0)
+        .select_related("uzivatel")
+        .order_by("-datum", "-id")[:12]
+    )
+    return render(request, "pokladna/vklad_konto.html", {
+        "pokladna": pokladna,
+        "posledni_vklady": posledni_vklady,
+    })
+
+
+def _trzby_dne_podle_plateb(pokladna, den):
+    doklady = PokladniDoklad.objects.filter(
+        pokladna=pokladna,
+        stav=PokladniDoklad.STAV_UZAVRENO,
+        datum__date=den,
+    )
+    soucty = {
+        platba: Decimal("0")
+        for platba, _ in PokladniDoklad.ZPUSOBY_PLATBY
+    }
+    for platba, suma in doklady.values_list("zpusob_platby").annotate(suma=Sum("celkem_s_dph")):
+        if platba in soucty:
+            soucty[platba] = suma or Decimal("0")
+    celkem = sum(soucty.values(), Decimal("0"))
+    polozky = []
+    barvy = {
+        PokladniDoklad.PLATBA_KONTO: "#18a046",
+        PokladniDoklad.PLATBA_HOTOVOST: "#f28f28",
+        PokladniDoklad.PLATBA_KARTA: "#0d6efd",
+        PokladniDoklad.PLATBA_QR: "#7c3aed",
+    }
+    for platba, nazev in PokladniDoklad.ZPUSOBY_PLATBY:
+        castka = soucty.get(platba, Decimal("0"))
+        procento = int((castka / celkem) * 100) if celkem else 0
+        polozky.append({
+            "kod": platba,
+            "nazev": nazev,
+            "castka": castka,
+            "procento": procento,
+            "barva": barvy.get(platba, "#6c757d"),
+        })
+    return polozky, celkem, doklady.count()
+
+
+@login_required
+def pokladna_prehled(request, pokladna_id):
+    pokladna = get_object_or_404(Pokladna, pk=pokladna_id, aktivni=True)
+    today = timezone.localdate()
+    otevrene = PokladniDoklad.objects.filter(
+        pokladna=pokladna,
+        stav__in=[PokladniDoklad.STAV_ROZPRACOVANO, PokladniDoklad.STAV_CEKA_NA_QR],
+    ).select_related("zakaznik", "obsluha").order_by("-datum")
+    uzavrene = PokladniDoklad.objects.filter(
+        pokladna=pokladna,
+        stav=PokladniDoklad.STAV_UZAVRENO,
+        datum__date=today,
+    ).select_related("zakaznik", "obsluha").order_by("-uzavren_at", "-id")[:15]
+    trzby_podle_plateb, trzba_celkem, pocet_uctu = _trzby_dne_podle_plateb(pokladna, today)
+    return render(request, "pokladna/prehled.html", {
+        "pokladna": pokladna,
+        "otevrene": otevrene,
+        "uzavrene": uzavrene,
+        "trzby_podle_plateb": trzby_podle_plateb,
+        "trzba_celkem": trzba_celkem,
+        "pocet_uctu": pocet_uctu,
+        "today": today,
+    })
+
+
+@login_required
+def pokladna_uzavrene_ucty(request, pokladna_id):
+    pokladna = get_object_or_404(Pokladna, pk=pokladna_id, aktivni=True)
+    doklady = (
+        PokladniDoklad.objects
+        .filter(pokladna=pokladna)
+        .exclude(stav=PokladniDoklad.STAV_ROZPRACOVANO)
+        .select_related("zakaznik", "obsluha", "uzavrel")
+        .order_by("-uzavren_at", "-datum", "-id")[:200]
+    )
+    return render(request, "pokladna/uzavrene_ucty.html", {
+        "pokladna": pokladna,
+        "doklady": doklady,
+    })
+
+
+@login_required
+def pokladna_doklad_detail(request, pokladna_id, doklad_id):
+    pokladna = get_object_or_404(Pokladna, pk=pokladna_id, aktivni=True)
+    doklad = get_object_or_404(
+        PokladniDoklad.objects
+        .select_related("pokladna", "zakaznik", "obsluha", "uzavrel", "stornoval", "uzaverka")
+        .prefetch_related("polozky__plu"),
+        pk=doklad_id,
+        pokladna=pokladna,
+    )
+    return render(request, "pokladna/doklad_detail.html", {
+        "pokladna": pokladna,
+        "doklad": doklad,
+        "polozky": doklad.polozky.all(),
+        "smazane_polozky": doklad.smazane_polozky.select_related("plu", "smazal").all(),
+    })
+
+
+@login_required
+def pokladna_stornovat_doklad(request, pokladna_id, doklad_id):
+    pokladna = get_object_or_404(Pokladna, pk=pokladna_id, aktivni=True)
+    if request.method != "POST":
+        return redirect("pokladna:pokladna_doklad_detail", pokladna_id=pokladna.id, doklad_id=doklad_id)
+
+    doklad = get_object_or_404(
+        PokladniDoklad.objects.select_related("pokladna", "obsluha"),
+        pk=doklad_id,
+        pokladna=pokladna,
+    )
+    if doklad.obsluha_id != request.user.id and not request.user.is_superuser:
+        messages.error(request, "Stornovat může pouze obsluha dokladu nebo správce.")
+        return redirect("pokladna:pokladna_doklad_detail", pokladna_id=pokladna.id, doklad_id=doklad.id)
+    try:
+        stornuj_doklad(doklad, user=request.user, duvod="Storno z pokladny")
+        messages.success(request, "Doklad byl stornován.")
+    except ValidationError as exc:
+        messages.error(request, exc.messages[0])
+    next_url = request.POST.get("next")
+    if next_url == "uzavrene":
+        return redirect("pokladna:pokladna_uzavrene_ucty", pokladna_id=pokladna.id)
+    return redirect("pokladna:pokladna_doklad_detail", pokladna_id=pokladna.id, doklad_id=doklad.id)
+
+
+@login_required
+def pokladna_financni_report(request, pokladna_id):
+    pokladna = get_object_or_404(Pokladna, pk=pokladna_id, aktivni=True)
+    today = timezone.localdate()
+    datum_od = parse_date(request.GET.get("od") or "") or today
+    datum_do = parse_date(request.GET.get("do") or "") or datum_od
+    if datum_do < datum_od:
+        datum_od, datum_do = datum_do, datum_od
+
+    doklady = doklady_za_obdobi(pokladna, datum_od, datum_do)
+    celkem = doklady.aggregate(suma=Sum("celkem_s_dph"))["suma"] or Decimal("0")
+    hotovost = doklady.filter(
+        zpusob_platby=PokladniDoklad.PLATBA_HOTOVOST
+    ).aggregate(suma=Sum("celkem_s_dph"))["suma"] or Decimal("0")
+
+    return render(request, "pokladna/financni_report.html", {
+        "pokladna": pokladna,
+        "datum_od": datum_od,
+        "datum_do": datum_do,
+        "trzby_podle_plateb": trzby_podle_plateb(doklady),
+        "trzby_podle_druhu": trzby_podle_druhu(doklady),
+        "dph_souhrn": dph_souhrn(doklady),
+        "plu_obraty": plu_obraty(doklady),
+        "celkem": celkem,
+        "pocet_dokladu": doklady.count(),
+        "pokladni_hotovost": (pokladna.hotovostni_zustatek or Decimal("0")) + hotovost,
+    })
+
+
+@login_required
+def pokladna_uzaverka(request, pokladna_id):
+    pokladna = get_object_or_404(Pokladna, pk=pokladna_id, aktivni=True)
+    today = timezone.localdate()
+    datum = parse_date(request.GET.get("datum") or "") or today
+    doklady = doklady_za_obdobi(pokladna, datum, datum)
+    hotovost = doklady.filter(
+        zpusob_platby=PokladniDoklad.PLATBA_HOTOVOST
+    ).aggregate(suma=Sum("celkem_s_dph"))["suma"] or Decimal("0")
+    k_odevzdani = hotovost
+    predpokladana_hotovost = (pokladna.hotovostni_zustatek or Decimal("0")) + hotovost
+    uzaverka = PokladniUzaverka.objects.filter(pokladna=pokladna, datum=datum).first()
+
+    if request.method == "POST":
+        datum = parse_date(request.POST.get("datum") or "") or today
+        hotovost_spoctena = request.POST.get("hotovost_spoctena")
+        poznamka = request.POST.get("poznamka", "")
+        try:
+            hotovost_spoctena_dec = Decimal(str(hotovost_spoctena or "0").replace(",", "."))
+        except Exception:
+            messages.error(request, "Spočtená hotovost není platné číslo.")
+            return redirect("pokladna:pokladna_uzaverka", pokladna_id=pokladna.id)
+        try:
+            uzaverka = uzavri_denni_uzaverku(
+                pokladna,
+                datum,
+                user=request.user,
+                hotovost_spoctena=hotovost_spoctena_dec,
+                poznamka=poznamka,
+            )
+        except ValidationError as exc:
+            messages.error(request, exc.messages[0])
+            return redirect("pokladna:pokladna_uzaverka", pokladna_id=pokladna.id)
+        messages.success(request, "Denní uzávěrka byla vytvořena.")
+        return redirect("pokladna:pokladna_uzaverka_detail", pokladna_id=pokladna.id, uzaverka_id=uzaverka.id)
+
+    return render(request, "pokladna/uzaverka.html", {
+        "pokladna": pokladna,
+        "datum": datum,
+        "uzaverka": uzaverka,
+        "trzby_podle_plateb": trzby_podle_plateb(doklady),
+        "dph_souhrn": dph_souhrn(doklady),
+        "pocet_dokladu": doklady.count(),
+        "hotovost": hotovost,
+        "k_odevzdani": k_odevzdani,
+        "predpokladana_hotovost": predpokladana_hotovost,
+        "pokladni_zaklad": pokladna.hotovostni_zustatek or Decimal("0"),
+    })
+
+
+@login_required
+def pokladna_uzaverka_detail(request, pokladna_id, uzaverka_id):
+    pokladna = get_object_or_404(Pokladna, pk=pokladna_id, aktivni=True)
+    uzaverka = get_object_or_404(PokladniUzaverka, pk=uzaverka_id, pokladna=pokladna)
+    doklady = doklady_za_obdobi(pokladna, uzaverka.datum, uzaverka.datum).filter(uzaverka=uzaverka)
+    hotovost_v_pokladne = (pokladna.hotovostni_zustatek or Decimal("0")) + (uzaverka.hotovost or Decimal("0"))
+    bezhotovostne = (uzaverka.karta or Decimal("0")) + (uzaverka.qr or Decimal("0")) + (uzaverka.konto or Decimal("0"))
+    return render(request, "pokladna/uzaverka_detail.html", {
+        "pokladna": pokladna,
+        "uzaverka": uzaverka,
+        "doklady": doklady.order_by("uzavren_at", "id"),
+        "trzby_podle_plateb": trzby_podle_plateb(doklady),
+        "dph_souhrn": dph_souhrn(doklady),
+        "hotovost_v_pokladne": hotovost_v_pokladne,
+        "k_odevzdani": uzaverka.hotovost,
+        "pokladni_zaklad": pokladna.hotovostni_zustatek or Decimal("0"),
+        "bezhotovostne": bezhotovostne,
+    })
+
+
+@login_required
+def pokladna_qr_platba(request, pokladna_id, doklad_id):
+    pokladna = get_object_or_404(Pokladna, pk=pokladna_id, aktivni=True)
+    doklad = get_object_or_404(
+        PokladniDoklad.objects.select_related("pokladna", "zakaznik", "obsluha"),
+        pk=doklad_id,
+        pokladna=pokladna,
+    )
+    if request.method == "POST":
+        akce = request.POST.get("akce")
+        try:
+            if akce == "potvrdit_qr":
+                potvrdit_qr_platbu(doklad, user=request.user)
+                messages.success(request, "QR platba byla potvrzena a účet uzavřen.")
+                return redirect("pokladna:pokladna_view", pokladna_id=pokladna.id)
+            if akce == "zrusit_qr":
+                stornuj_doklad(doklad, user=request.user, duvod="Zrušená QR platba")
+                messages.info(request, "QR platba byla zrušena.")
+                return redirect("pokladna:pokladna_ucet", pokladna_id=pokladna.id)
+        except ValidationError as exc:
+            messages.error(request, exc.messages[0])
+
+    payload = doklad.qr_payload or ""
+    return render(request, "pokladna/qr_platba.html", {
+        "pokladna": pokladna,
+        "doklad": doklad,
+        "payload": payload,
+        "qr_data_uri": qr_payload_data_uri(payload) if payload else "",
+        "qr_deeplink": qr_platba_url(payload) if payload else "",
+    })

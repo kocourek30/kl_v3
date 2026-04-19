@@ -1,0 +1,171 @@
+from collections import defaultdict
+from decimal import Decimal
+
+from django.db.models import Avg, Count, Sum
+from django.utils import timezone
+
+from objednavky.models import OrderItem
+
+from .models import AnketniOtazka, HodnoceniJidla, OdpovedHodnoceni
+
+
+def vydane_polozky_k_hodnoceni(user, target_date=None):
+    target_date = target_date or timezone.localdate()
+    return (
+        OrderItem.objects
+        .filter(order__user=user, vydano=True, order__datum_vydeje=target_date)
+        .select_related("order", "menu_item__jidlo", "menu_item__druh_jidla")
+        .order_by("-datum_vydani", "menu_item__druh_jidla__nazev")
+    )
+
+
+def anketni_prehled_uzivatele(user, target_date=None):
+    hodnotit = []
+    hotovo = []
+    for item in vydane_polozky_k_hodnoceni(user, target_date):
+        if hasattr(item, "hodnoceni"):
+            hotovo.append(item)
+        else:
+            hodnotit.append(item)
+
+    return {
+        "hodnotit": hodnotit,
+        "hotovo": hotovo,
+        "otazky_count": AnketniOtazka.objects.filter(aktivni=True).count(),
+    }
+
+
+def _fmt_avg(value):
+    if value is None:
+        return None
+    return Decimal(str(value)).quantize(Decimal("0.01"))
+
+
+def _pct(part, total):
+    if not total:
+        return Decimal("0.00")
+    return (Decimal(part) * Decimal("100") / Decimal(total)).quantize(Decimal("0.01"))
+
+
+def anketni_report_obdobi(date_from, date_to, *, min_hodnoceni=1):
+    hodnoceni_qs = (
+        HodnoceniJidla.objects
+        .filter(datum_vydeje__gte=date_from, datum_vydeje__lte=date_to)
+        .select_related("user", "order_item", "order_item__menu_item", "order_item__menu_item__jidlo")
+        .prefetch_related("odpovedi__otazka")
+    )
+    odpovedi_qs = OdpovedHodnoceni.objects.filter(
+        hodnoceni_jidla__datum_vydeje__gte=date_from,
+        hodnoceni_jidla__datum_vydeje__lte=date_to,
+    )
+    vydane_qs = OrderItem.objects.filter(
+        vydano=True,
+        order__datum_vydeje__gte=date_from,
+        order__datum_vydeje__lte=date_to,
+    ).select_related("menu_item__jidlo", "menu_item__druh_jidla")
+    objednane_qs = (
+        OrderItem.objects
+        .filter(order__datum_vydeje__gte=date_from, order__datum_vydeje__lte=date_to)
+        .exclude(order__status__in=["zruseno-uzivatelem", "zruseno-obsluhou"])
+        .select_related("menu_item__jidlo", "menu_item__druh_jidla")
+    )
+
+    hodnoceni_count = hodnoceni_qs.count()
+    vydane_count = vydane_qs.aggregate(total=Sum("quantity"))["total"] or 0
+    hodnotitelnost_pct = _pct(hodnoceni_count, vydane_count)
+    prumer = _fmt_avg(odpovedi_qs.aggregate(avg=Avg("znamka"))["avg"])
+
+    jidla = []
+    jidla_map = defaultdict(lambda: {
+        "jidlo": "",
+        "hodnoceni": 0,
+        "odpovedi": 0,
+        "soucet": 0,
+        "objednano": 0,
+        "vydano": 0,
+        "poznamek": 0,
+    })
+
+    for item in objednane_qs:
+        nazev = item.menu_item.jidlo.nazev if item.menu_item_id and item.menu_item.jidlo_id else str(item.menu_item)
+        jidla_map[nazev]["jidlo"] = nazev
+        jidla_map[nazev]["objednano"] += item.quantity or 0
+        if item.vydano:
+            jidla_map[nazev]["vydano"] += item.quantity or 0
+
+    for hodnoceni in hodnoceni_qs:
+        row = jidla_map[hodnoceni.jidlo_nazev]
+        row["jidlo"] = hodnoceni.jidlo_nazev
+        row["hodnoceni"] += 1
+        if hodnoceni.poznamka:
+            row["poznamek"] += 1
+        for odpoved in hodnoceni.odpovedi.all():
+            row["odpovedi"] += 1
+            row["soucet"] += odpoved.znamka
+
+    for row in jidla_map.values():
+        row["prumer"] = _fmt_avg(Decimal(row["soucet"]) / Decimal(row["odpovedi"])) if row["odpovedi"] else None
+        row["navratnost"] = _pct(row["hodnoceni"], row["vydano"])
+        jidla.append(row)
+
+    hodnocena_jidla = [row for row in jidla if row["hodnoceni"] >= min_hodnoceni and row["prumer"] is not None]
+    nejlepsi = sorted(hodnocena_jidla, key=lambda row: (row["prumer"], row["hodnoceni"]), reverse=True)[:10]
+    nejslabsi = sorted(hodnocena_jidla, key=lambda row: (row["prumer"], -row["hodnoceni"]))[:10]
+    nejobjednavanejsi = sorted(jidla, key=lambda row: (row["objednano"], row["hodnoceni"]), reverse=True)[:12]
+    nejvice_poznamek = sorted([row for row in jidla if row["poznamek"]], key=lambda row: row["poznamek"], reverse=True)[:8]
+
+    otazky = [
+        {
+            "otazka": row["otazka__text"],
+            "pocet": row["pocet"],
+            "prumer": _fmt_avg(row["prumer"]),
+        }
+        for row in odpovedi_qs.values("otazka__text").annotate(
+            pocet=Count("id"),
+            prumer=Avg("znamka"),
+        ).order_by("otazka__poradi", "otazka__id")
+    ]
+
+    trendy = []
+    hodnoceni_podle_dne = defaultdict(lambda: {"datum": None, "hodnoceni": 0, "odpovedi": 0, "soucet": 0})
+    for hodnoceni in hodnoceni_qs:
+        row = hodnoceni_podle_dne[hodnoceni.datum_vydeje]
+        row["datum"] = hodnoceni.datum_vydeje
+        row["hodnoceni"] += 1
+        for odpoved in hodnoceni.odpovedi.all():
+            row["odpovedi"] += 1
+            row["soucet"] += odpoved.znamka
+    for row in sorted(hodnoceni_podle_dne.values(), key=lambda item: item["datum"]):
+        row["prumer"] = _fmt_avg(Decimal(row["soucet"]) / Decimal(row["odpovedi"])) if row["odpovedi"] else None
+        trendy.append(row)
+
+    poznamky = [
+        {
+            "jidlo": h.jidlo_nazev,
+            "stravnik": h.user.get_full_name() or h.user.username,
+            "datum": h.datum_vydeje,
+            "poznamka": h.poznamka,
+            "prumer": _fmt_avg(sum(o.znamka for o in h.odpovedi.all()) / len(h.odpovedi.all())) if h.odpovedi.all() else None,
+        }
+        for h in hodnoceni_qs
+        if h.poznamka
+    ][:20]
+
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "hodnoceni_count": hodnoceni_count,
+        "odpovedi_count": odpovedi_qs.count(),
+        "vydane_count": vydane_count,
+        "objednane_count": objednane_qs.aggregate(total=Sum("quantity"))["total"] or 0,
+        "navratnost_pct": hodnotitelnost_pct,
+        "prumer": prumer,
+        "jidla_count": len(jidla),
+        "nejlepsi": nejlepsi,
+        "nejslabsi": nejslabsi,
+        "nejobjednavanejsi": nejobjednavanejsi,
+        "nejvice_poznamek": nejvice_poznamek,
+        "otazky": otazky,
+        "trendy": trendy,
+        "poznamky": poznamky,
+    }

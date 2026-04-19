@@ -1,0 +1,20 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools %}
+  <div class="mb-3 p-3" style="background:#fff;border:1px solid #dce4ea;border-radius:8px;border-top:4px solid #f28f28;">
+    <form method="post" action="{{ vytvorit_url }}" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;">
+      {% csrf_token %}
+      <label style="display:grid;gap:4px;font-weight:800;">Rok
+        <input type="number" name="rok" value="{{ default_rok }}" min="2020" max="2100" class="form-control" style="width:110px;">
+      </label>
+      <label style="display:grid;gap:4px;font-weight:800;">Měsíc
+        <input type="number" name="mesic" value="{{ default_mesic }}" min="1" max="12" class="form-control" style="width:90px;">
+      </label>
+      <button type="submit" class="btn btn-success" style="font-weight:900;">
+        <i class="fas fa-file-invoice-dollar"></i> Vytvořit / přepočítat dávku
+      </button>
+      <span style="color:#66757f;font-weight:700;">Dávka spočítá dotace a srážky zaměstnanců podle nastavení fakturace.</span>
+    </form>
+  </div>
+  {{ block.super }}
+{% endblock %}

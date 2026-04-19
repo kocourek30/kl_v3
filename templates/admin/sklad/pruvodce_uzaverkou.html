@@ -29,26 +29,26 @@
     <div class="col-md-3">
       <div class="card">
         <div class="card-header"><strong>Počáteční hodnota</strong></div>
-        <div class="card-body">{{ data.uzaverka.pocatecni_stav|floatformat:2 }} Kč</div>
+        <div class="card-body">{{ data.uzaverka.pocatecni_stav|floatformat:-2 }} Kč</div>
       </div>
     </div>
     <div class="col-md-3">
       <div class="card">
         <div class="card-header"><strong>Příjmy</strong></div>
-        <div class="card-body">{{ data.uzaverka.prijmy|floatformat:2 }} Kč</div>
+        <div class="card-body">{{ data.uzaverka.prijmy|floatformat:-2 }} Kč</div>
       </div>
     </div>
     <div class="col-md-3">
       <div class="card">
         <div class="card-header"><strong>Výdeje</strong></div>
-        <div class="card-body">{{ data.uzaverka.vydeje|floatformat:2 }} Kč</div>
+        <div class="card-body">{{ data.uzaverka.vydeje|floatformat:-2 }} Kč</div>
       </div>
     </div>
     <div class="col-md-3">
       <div class="card">
         <div class="card-header"><strong>Kontrolní rozdíl</strong></div>
         <div class="card-body {% if data.uzaverka.kontrola_ok %}text-success{% else %}text-danger{% endif %}">
-          {{ data.uzaverka.rozdil_kontroly|floatformat:2 }} Kč
+          {{ data.uzaverka.rozdil_kontroly|floatformat:-2 }} Kč
         </div>
       </div>
     </div>

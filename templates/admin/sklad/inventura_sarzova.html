@@ -19,9 +19,9 @@
     <div class="card-body">
       <div class="row">
         <div class="col-md-3">Položky: <strong>{{ souhrn.pocet_polozek }}</strong></div>
-        <div class="col-md-3">Manko: <strong>{{ souhrn.manko|floatformat:2 }} Kč</strong></div>
-        <div class="col-md-3">Přebytek: <strong>{{ souhrn.prebytek|floatformat:2 }} Kč</strong></div>
-        <div class="col-md-3">Čistý rozdíl: <strong>{{ souhrn.cisty_rozdil|floatformat:2 }} Kč</strong></div>
+        <div class="col-md-3">Manko: <strong>{{ souhrn.manko|floatformat:-2 }} Kč</strong></div>
+        <div class="col-md-3">Přebytek: <strong>{{ souhrn.prebytek|floatformat:-2 }} Kč</strong></div>
+        <div class="col-md-3">Čistý rozdíl: <strong>{{ souhrn.cisty_rozdil|floatformat:-2 }} Kč</strong></div>
       </div>
     </div>
   </div>
@@ -104,7 +104,7 @@
                       <span class="badge badge-secondary">sedí</span>
                     {% endif %}
                   </td>
-                  <td>{{ row.hodnota|floatformat:2 }} Kč</td>
+                  <td>{{ row.hodnota|floatformat:-2 }} Kč</td>
                   <td>
                     {% if inventura.uzavreny or inventura.stornovano %}
                       {{ row.polozka.poznamka }}

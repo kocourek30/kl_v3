@@ -1,0 +1,150 @@
+{% extends "pokladna/base_pokladna.html" %}
+
+{% block title %}Report uzávěrky - {{ pokladna.nazev }}{% endblock %}
+
+{% block content %}
+<style>
+  .rep-page { display: grid; gap: 16px; max-width: 1180px; margin: 0 auto; }
+  .rep-head { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .rep-title { margin: 0; font-size: 1.65rem; font-weight: 900; color: #17202a; }
+  .rep-meta { color: #607080; }
+  .rep-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
+  .rep-card { background: #fff; border: 1px solid #dbe1e8; border-radius: 8px; padding: 14px; box-shadow: 0 8px 24px rgba(23,32,42,.05); }
+  .rep-label { color: #607080; font-size: .86rem; font-weight: 800; }
+  .rep-value { font-size: 1.45rem; font-weight: 900; margin-top: 5px; }
+  .rep-value-main { color: #135f2d; font-size: 2rem; }
+  .rep-panel { background: #fff; border: 1px solid #dbe1e8; border-radius: 8px; overflow: hidden; box-shadow: 0 8px 24px rgba(23,32,42,.05); }
+  .rep-panel h2 { margin: 0; padding: 13px 15px; font-size: 1rem; font-weight: 900; border-bottom: 1px solid #edf0f3; }
+  .rep-table { width: 100%; border-collapse: collapse; }
+  .rep-table th { background: #f6f8fa; color: #607080; font-size: .86rem; text-align: left; padding: 11px 12px; border-bottom: 1px solid #e5e9ef; }
+  .rep-table td { padding: 12px; border-bottom: 1px solid #edf0f3; }
+  .rep-table tr:last-child td { border-bottom: 0; }
+  .rep-num { text-align: right; white-space: nowrap; font-weight: 900; }
+  .rep-link { border-radius: 8px; min-height: 42px; padding: 10px 14px; background: #e9eef2; color: #17202a; text-decoration: none; font-weight: 900; display: inline-flex; align-items: center; }
+  @media (max-width: 900px) { .rep-grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) { .rep-grid { grid-template-columns: 1fr; } }
+</style>
+
+<div class="rep-page">
+  <div class="rep-head">
+    <div>
+      <h1 class="rep-title">Report denní uzávěrky</h1>
+      <div class="rep-meta">{{ pokladna.nazev }} · {{ uzaverka.datum|date:"d.m.Y" }} · uzavřel {{ uzaverka.uzavrel.get_full_name|default:uzaverka.uzavrel.username }}</div>
+    </div>
+    <a class="rep-link" href="{% url 'pokladna:pokladna_uzaverka' pokladna.id %}?datum={{ uzaverka.datum|date:'Y-m-d' }}">Zpět na uzávěrku</a>
+  </div>
+
+  <div class="rep-grid">
+    <div class="rep-card">
+      <div class="rep-label">Hotovost k odevzdání</div>
+      <div class="rep-value rep-value-main">{{ k_odevzdani|floatformat:-2 }} Kč</div>
+    </div>
+    <div class="rep-card">
+      <div class="rep-label">Spočtená hotovost</div>
+      <div class="rep-value">{% if uzaverka.hotovost_spoctena is not None %}{{ uzaverka.hotovost_spoctena|floatformat:-2 }} Kč{% else %}-{% endif %}</div>
+    </div>
+    <div class="rep-card">
+      <div class="rep-label">Hotovost v zásuvce před odevzdáním</div>
+      <div class="rep-value">{{ hotovost_v_pokladne|floatformat:-2 }} Kč</div>
+    </div>
+    <div class="rep-card">
+      <div class="rep-label">Rozdíl hotovosti</div>
+      <div class="rep-value">{{ uzaverka.rozdil_hotovosti|floatformat:-2 }} Kč</div>
+    </div>
+  </div>
+
+  <section class="rep-panel">
+    <h2>Instrukce pro pokladní</h2>
+    <table class="rep-table">
+      <tbody>
+        <tr>
+          <td>Odevzdat hotovostní tržbu</td>
+          <td class="rep-num">{{ k_odevzdani|floatformat:-2 }} Kč</td>
+        </tr>
+        <tr>
+          <td>Ponechat pokladní základ v pokladně</td>
+          <td class="rep-num">{{ pokladni_zaklad|floatformat:-2 }} Kč</td>
+        </tr>
+        <tr>
+          <td>Karta, QR a konto se fyzicky neodevzdávají jako hotovost</td>
+          <td class="rep-num">{{ bezhotovostne|floatformat:-2 }} Kč</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="rep-panel">
+    <h2>Tržby podle platební metody</h2>
+    <table class="rep-table">
+      <thead>
+        <tr>
+          <th>Platba</th>
+          <th class="text-end">Dokladů</th>
+          <th class="text-end">Částka</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in trzby_podle_plateb %}
+          <tr>
+            <td>{{ p.nazev }}</td>
+            <td class="rep-num">{{ p.pocet }}</td>
+            <td class="rep-num">{{ p.castka|floatformat:-2 }} Kč</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="rep-panel">
+    <h2>DPH v uzávěrce</h2>
+    <table class="rep-table">
+      <thead>
+        <tr>
+          <th>Sazba DPH</th>
+          <th class="text-end">Základ</th>
+          <th class="text-end">DPH</th>
+          <th class="text-end">Celkem</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in dph_souhrn %}
+          <tr>
+            <td>{{ d.dph_sazba|floatformat:-2 }} %</td>
+            <td class="rep-num">{{ d.zaklad|floatformat:-2 }} Kč</td>
+            <td class="rep-num">{{ d.dph|floatformat:-2 }} Kč</td>
+            <td class="rep-num">{{ d.celkem|floatformat:-2 }} Kč</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4">Žádné položky v uzávěrce.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="rep-panel">
+    <h2>Doklady v uzávěrce</h2>
+    <table class="rep-table">
+      <thead>
+        <tr>
+          <th>Doklad</th>
+          <th>Zákazník</th>
+          <th>Platba</th>
+          <th class="text-end">Částka</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in doklady %}
+          <tr>
+            <td><a href="{% url 'pokladna:pokladna_doklad_detail' pokladna.id d.id %}">{{ d.cislo_dokladu|default:d.id }}</a></td>
+            <td>{% if d.zakaznik %}{{ d.zakaznik.get_full_name|default:d.zakaznik.username }}{% else %}Anonymní zákazník{% endif %}</td>
+            <td>{{ d.get_zpusob_platby_display }}</td>
+            <td class="rep-num">{{ d.celkem_s_dph|floatformat:-2 }} Kč</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4">Uzávěrka nemá přiřazené doklady.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endblock %}

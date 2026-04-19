@@ -31,7 +31,7 @@
       <div class="card">
         <div class="card-header"><strong>Hodnota stavu</strong></div>
         <div class="card-body">
-          <p class="mb-0"><strong>{{ data.hodnota_stavu|floatformat:2 }} Kč</strong></p>
+          <p class="mb-0"><strong>{{ data.hodnota_stavu|floatformat:-2 }} Kč</strong></p>
         </div>
       </div>
     </div>
@@ -40,7 +40,7 @@
         <div class="card-header"><strong>Spotřeba období</strong></div>
         <div class="card-body">
           <p><strong>{{ data.spotreba_obdobi_display }}</strong></p>
-          <p class="mb-0">{{ data.naklady_spotreby|floatformat:2 }} Kč</p>
+          <p class="mb-0">{{ data.naklady_spotreby|floatformat:-2 }} Kč</p>
         </div>
       </div>
     </div>
@@ -48,8 +48,8 @@
       <div class="card">
         <div class="card-header"><strong>Odpisy a inventury</strong></div>
         <div class="card-body">
-          <p>Odpisy: {{ data.odpisy|floatformat:2 }} Kč</p>
-          <p class="mb-0">Inventury: {{ data.inventurni_rozdily|floatformat:2 }} Kč</p>
+          <p>Odpisy: {{ data.odpisy|floatformat:-2 }} Kč</p>
+          <p class="mb-0">Inventury: {{ data.inventurni_rozdily|floatformat:-2 }} Kč</p>
         </div>
       </div>
     </div>
@@ -68,7 +68,7 @@
                   <td>{{ sarze.sarze|default:"–" }}</td>
                   <td>{{ sarze.datum_spotreby|date:"d.m.Y"|default:"–" }}</td>
                   <td>{{ sarze.mnozstvi_zbyva }} {{ data.surovina.jednotka }}</td>
-                  <td>{{ sarze.cena_za_jednotku|floatformat:4 }} Kč</td>
+                  <td>{{ sarze.cena_za_jednotku|floatformat:-2 }} Kč</td>
                   <td>{{ sarze.get_stav_display }}</td>
                 </tr>
               {% empty %}
@@ -92,7 +92,7 @@
                   <td>{{ pol.prijem.datum|date:"d.m.Y" }}</td>
                   <td>{{ pol.prijem.dodavatel|default:"–" }}</td>
                   <td>{{ pol.mnozstvi }} {{ data.surovina.jednotka }}</td>
-                  <td>{{ pol.jednotkova_cena|floatformat:4 }} Kč</td>
+                  <td>{{ pol.jednotkova_cena|floatformat:-2 }} Kč</td>
                 </tr>
               {% empty %}
                 <tr><td colspan="4" class="text-center text-muted py-3">Zatím bez nákupní historie.</td></tr>
@@ -115,7 +115,7 @@
               <td>{{ pohyb.datum|date:"d.m.Y H:i" }}</td>
               <td>{{ pohyb.get_typ_display }}</td>
               <td>{{ pohyb.mnozstvi }} {{ data.surovina.jednotka }}</td>
-              <td>{{ pohyb.cena_za_jednotku|floatformat:4 }} Kč</td>
+              <td>{{ pohyb.cena_za_jednotku|floatformat:-2 }} Kč</td>
               <td>
                 {% if pohyb.prijem_id %}Příjemka #{{ pohyb.prijem_id }}{% endif %}
                 {% if pohyb.vydejka_id %}Výdejka #{{ pohyb.vydejka_id }}{% endif %}

@@ -67,25 +67,25 @@
               <tr>
                 <td>Příjmy surovin (nákupy)</td>
                 <td class="text-right">
-                  {{ souhrnne_naklady.prijmy|floatformat:2 }} Kč
+                  {{ souhrnne_naklady.prijmy|floatformat:-2 }} Kč
                 </td>
               </tr>
               <tr>
                 <td>Výdeje surovin (spotřeba)</td>
                 <td class="text-right">
-                  {{ souhrnne_naklady.vydeje|floatformat:2 }} Kč
+                  {{ souhrnne_naklady.vydeje|floatformat:-2 }} Kč
                 </td>
               </tr>
               <tr>
                 <td>Odpisy expirací</td>
                 <td class="text-right">
-                  {{ souhrnne_naklady.odpisy_expirace|floatformat:2 }} Kč
+                  {{ souhrnne_naklady.odpisy_expirace|floatformat:-2 }} Kč
                 </td>
               </tr>
               <tr class="table-warning font-weight-bold">
                 <td>Náklady celkem včetně odpisů</td>
                 <td class="text-right">
-                  {{ souhrnne_naklady.naklady_celkem|floatformat:2 }} Kč
+                  {{ souhrnne_naklady.naklady_celkem|floatformat:-2 }} Kč
                 </td>
               </tr>
               <tr>
@@ -97,7 +97,7 @@
               <tr class="table-info font-weight-bold">
                 <td>Náklady na 1 porci</td>
                 <td class="text-right">
-                  {{ souhrnne_naklady.cena_na_porci|floatformat:2 }} Kč
+                  {{ souhrnne_naklady.cena_na_porci|floatformat:-2 }} Kč
                 </td>
               </tr>
             </tbody>
@@ -117,47 +117,47 @@
             <tbody>
               <tr>
                 <td>Počáteční hodnota skladu</td>
-                <td class="text-right">{{ skladova_uzaverka.pocatecni_stav|floatformat:2 }} Kč</td>
+                <td class="text-right">{{ skladova_uzaverka.pocatecni_stav|floatformat:-2 }} Kč</td>
               </tr>
               <tr>
                 <td>+ Příjmy</td>
-                <td class="text-right">{{ skladova_uzaverka.prijmy|floatformat:2 }} Kč</td>
+                <td class="text-right">{{ skladova_uzaverka.prijmy|floatformat:-2 }} Kč</td>
               </tr>
               <tr>
                 <td>- Storna příjmů</td>
-                <td class="text-right">{{ skladova_uzaverka.storna_prijmu|floatformat:2 }} Kč</td>
+                <td class="text-right">{{ skladova_uzaverka.storna_prijmu|floatformat:-2 }} Kč</td>
               </tr>
               <tr>
                 <td>- Výdeje do spotřeby</td>
-                <td class="text-right">{{ skladova_uzaverka.vydeje|floatformat:2 }} Kč</td>
+                <td class="text-right">{{ skladova_uzaverka.vydeje|floatformat:-2 }} Kč</td>
               </tr>
               <tr>
                 <td>+ Storna výdejek</td>
-                <td class="text-right">{{ skladova_uzaverka.storna_vydeju|floatformat:2 }} Kč</td>
+                <td class="text-right">{{ skladova_uzaverka.storna_vydeju|floatformat:-2 }} Kč</td>
               </tr>
               <tr>
                 <td>- Odpisy expirací</td>
-                <td class="text-right">{{ skladova_uzaverka.odpisy_expirace|floatformat:2 }} Kč</td>
+                <td class="text-right">{{ skladova_uzaverka.odpisy_expirace|floatformat:-2 }} Kč</td>
               </tr>
               <tr>
                 <td>+ Inventurní přebytky</td>
-                <td class="text-right">{{ skladova_uzaverka.inventura_plus|floatformat:2 }} Kč</td>
+                <td class="text-right">{{ skladova_uzaverka.inventura_plus|floatformat:-2 }} Kč</td>
               </tr>
               <tr>
                 <td>- Inventurní manka</td>
-                <td class="text-right">{{ skladova_uzaverka.inventura_minus|floatformat:2 }} Kč</td>
+                <td class="text-right">{{ skladova_uzaverka.inventura_minus|floatformat:-2 }} Kč</td>
               </tr>
               <tr class="table-secondary font-weight-bold">
                 <td>Vypočtená konečná hodnota</td>
-                <td class="text-right">{{ skladova_uzaverka.vypocet_konecneho_stavu|floatformat:2 }} Kč</td>
+                <td class="text-right">{{ skladova_uzaverka.vypocet_konecneho_stavu|floatformat:-2 }} Kč</td>
               </tr>
               <tr class="table-secondary font-weight-bold">
                 <td>Skutečná konečná hodnota z pohybů</td>
-                <td class="text-right">{{ skladova_uzaverka.konecny_stav|floatformat:2 }} Kč</td>
+                <td class="text-right">{{ skladova_uzaverka.konecny_stav|floatformat:-2 }} Kč</td>
               </tr>
               <tr class="{% if skladova_uzaverka.kontrola_ok %}table-success{% else %}table-danger{% endif %} font-weight-bold">
                 <td>Kontrolní rozdíl</td>
-                <td class="text-right">{{ skladova_uzaverka.rozdil_kontroly|floatformat:2 }} Kč</td>
+                <td class="text-right">{{ skladova_uzaverka.rozdil_kontroly|floatformat:-2 }} Kč</td>
               </tr>
             </tbody>
           </table>
@@ -190,7 +190,7 @@
                   <span class="text-muted">– {{ radek.skupina_nazev }}</span>
                 </td>
                 <td class="text-right">
-                  {{ radek.naklady|floatformat:2 }} Kč
+                  {{ radek.naklady|floatformat:-2 }} Kč
                 </td>
                 <td class="text-right">
                   {% if souhrnne_naklady.vydeje > 0 %}
@@ -223,7 +223,7 @@
               {% for row in managersky_report.top_spotreba %}
               <tr>
                 <td>{{ row.surovina.nazev }}</td>
-                <td class="text-right">{{ row.hodnota|floatformat:2 }} Kč</td>
+                <td class="text-right">{{ row.hodnota|floatformat:-2 }} Kč</td>
               </tr>
               {% empty %}
               <tr><td colspan="2" class="text-center text-muted py-3">Bez výdejů.</td></tr>
@@ -246,7 +246,7 @@
               {% for row in managersky_report.top_odpisy %}
               <tr>
                 <td>{{ row.surovina.nazev }}</td>
-                <td class="text-right">{{ row.hodnota|floatformat:2 }} Kč</td>
+                <td class="text-right">{{ row.hodnota|floatformat:-2 }} Kč</td>
               </tr>
               {% empty %}
               <tr><td colspan="2" class="text-center text-muted py-3">Bez odpisů.</td></tr>
@@ -269,7 +269,7 @@
               {% for row in managersky_report.top_inventury %}
               <tr>
                 <td>{{ row.surovina.nazev }}</td>
-                <td class="text-right">{{ row.hodnota|floatformat:2 }} Kč</td>
+                <td class="text-right">{{ row.hodnota|floatformat:-2 }} Kč</td>
               </tr>
               {% empty %}
               <tr><td colspan="2" class="text-center text-muted py-3">Bez inventurních rozdílů.</td></tr>

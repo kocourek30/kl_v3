@@ -1,0 +1,105 @@
+{% extends "pokladna/base_pokladna.html" %}
+
+{% block title %}QR platba - {{ pokladna.nazev }}{% endblock %}
+
+{% block content %}
+<style>
+  .qr-page { display: grid; gap: 16px; max-width: 1180px; margin: 0 auto; }
+  .qr-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .qr-title { margin: 0; font-size: 1.55rem; font-weight: 900; color: #17202a; }
+  .qr-subtitle { color: #52606d; font-size: .98rem; }
+  .qr-layout { display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 16px; align-items: stretch; }
+  .qr-card { background: #fff; border: 1px solid #dbe1e8; border-radius: 8px; padding: 18px; }
+  .qr-box { display: grid; place-items: center; min-height: 360px; border: 1px dashed #c4ccd6; border-radius: 8px; background: #f8fafc; padding: 18px; }
+  .qr-box img { width: min(320px, 100%); height: auto; image-rendering: crisp-edges; }
+  .qr-fallback { color: #52606d; text-align: center; max-width: 320px; }
+  .qr-amount { font-size: 2.4rem; font-weight: 900; color: #d40000; line-height: 1; }
+  .qr-details { display: grid; gap: 10px; margin-top: 16px; }
+  .qr-row { display: grid; grid-template-columns: 150px 1fr; gap: 12px; border-bottom: 1px solid #edf0f3; padding-bottom: 8px; }
+  .qr-label { color: #52606d; }
+  .qr-value { font-weight: 800; text-align: right; }
+  .qr-payload { width: 100%; min-height: 92px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .82rem; border-radius: 8px; border: 1px solid #dbe1e8; padding: 10px; background: #f8fafc; }
+  .qr-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+  .qr-btn { border: 0; border-radius: 8px; min-height: 56px; font-weight: 900; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; padding: 12px 16px; }
+  .qr-btn-success { background: #18a046; color: #fff; }
+  .qr-btn-danger { background: #ff3b40; color: #fff; }
+  .qr-btn-light { background: #e9eef2; color: #17202a; }
+  .qr-alert { border-radius: 8px; padding: 12px 14px; border: 1px solid #b7d7c2; background: #e9f8ee; color: #135f2d; font-weight: 700; }
+  .qr-warning { border-color: #f2c572; background: #fff5df; color: #754a00; }
+  @media (max-width: 900px) {
+    .qr-layout { grid-template-columns: 1fr; }
+    .qr-row { grid-template-columns: 1fr; }
+    .qr-value { text-align: left; }
+  }
+</style>
+
+<div class="qr-page">
+  <div class="qr-header">
+    <div>
+      <h1 class="qr-title">QR platba</h1>
+      <div class="qr-subtitle">{{ pokladna.nazev }} · {{ doklad.cislo_dokladu|default:doklad.id }}</div>
+    </div>
+    <a class="qr-btn qr-btn-light" href="{% url 'pokladna:pokladna_prehled' pokladna.id %}">Zpět na přehled</a>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="qr-alert {% if message.tags == 'error' %}qr-warning{% endif %}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="qr-layout">
+    <section class="qr-card">
+      <div class="qr-box">
+        {% if qr_data_uri %}
+          <img src="{{ qr_data_uri }}" alt="QR kód pro platbu">
+        {% else %}
+          <div class="qr-fallback">
+            <strong>QR obrázek zatím není dostupný.</strong><br>
+            V prostředí chybí knihovna pro generování QR. Platební data jsou níže a po instalaci balíčku se zde zobrazí skenovatelný kód.
+          </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="qr-card">
+      <div class="qr-label">Částka k úhradě</div>
+      <div class="qr-amount">{{ doklad.celkem_s_dph|floatformat:-2 }} Kč</div>
+
+      <div class="qr-details">
+        <div class="qr-row">
+          <div class="qr-label">Zákazník</div>
+          <div class="qr-value">
+            {% if doklad.zakaznik %}{{ doklad.zakaznik.get_full_name|default:doklad.zakaznik.username }}{% else %}Anonymní zákazník{% endif %}
+          </div>
+        </div>
+        <div class="qr-row">
+          <div class="qr-label">Stav dokladu</div>
+          <div class="qr-value">{{ doklad.get_stav_display }}</div>
+        </div>
+        <div class="qr-row">
+          <div class="qr-label">Vytvořeno</div>
+          <div class="qr-value">{{ doklad.qr_vytvoren_at|date:"d.m.Y H:i"|default:"-" }}</div>
+        </div>
+        <div class="qr-row">
+          <div class="qr-label">Variabilní symbol</div>
+          <div class="qr-value">{{ doklad.id|stringformat:"010d" }}</div>
+        </div>
+      </div>
+
+      <label class="qr-label mt-3 mb-1" for="qrPayload">Platební data</label>
+      <textarea class="qr-payload" id="qrPayload" readonly>{{ payload }}</textarea>
+
+      {% if qr_deeplink %}
+        <a class="qr-btn qr-btn-light mt-2 w-100" href="{{ qr_deeplink }}">Otevřít v bankovní aplikaci</a>
+      {% endif %}
+
+      <form method="post" class="qr-actions">
+        {% csrf_token %}
+        <button class="qr-btn qr-btn-success" type="submit" name="akce" value="potvrdit_qr">Platba přijata</button>
+        <button class="qr-btn qr-btn-danger" type="submit" name="akce" value="zrusit_qr">Zrušit QR platbu</button>
+      </form>
+    </section>
+  </div>
+</div>
+{% endblock %}

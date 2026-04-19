@@ -524,28 +524,17 @@ def build_day_menu_context(user, selected_date):
 
 
 def build_week_menu_context(user, selected_date):
-    """Build context pro týden - ZOBRAZÍ VŠECHNY DNY S JÍDELNÍČKEM - DEBUG"""
+    """Build context pro týden - zobrazí všechny dny s jídelníčkem."""
     menu_items_by_day = {}
     week_start = selected_date - timedelta(days=selected_date.weekday())
     week_end = week_start + timedelta(days=6)
 
-    print(
-        f"🔍 TÝDEN DEBUG: selected_date={selected_date}, "
-        f"week_start={week_start}, week_end={week_end}"
-    )
-
     current = week_start
     while current <= week_end:
-        print(f"   📅 Zpracovávám den: {current}")
-
         jidelnicky_den = Jidelnicek.objects.filter(
             platnost_od__lte=current,
             platnost_do__gte=current,
         )
-
-        print(f"      📋 Nalezeno jídelníčků: {jidelnicky_den.count()}")
-        for j in jidelnicky_den:
-            print(f"         📄 Jídelníček {j.id}: {j.platnost_od} → {j.platnost_do}")
 
         if jidelnicky_den.exists():
             day_items = (
@@ -558,26 +547,17 @@ def build_week_menu_context(user, selected_date):
             # ✅ filtrovat podle skupiny uživatele
             day_items = _filter_items_for_user_group(user, day_items)
 
-            print(f"      🍽️ Nalezeno položek (po filtraci): {day_items.count()}")
-
             items_list = []
             for item in day_items:
                 validate_item_for_display(user, item, current)
                 item.target_date = current
                 items_list.append(item)
                 item.common_allergens = item.jidlo.spolecne_alergeny(user) 
-                print(f"         ✅ Položka: {item.jidlo.nazev} (ID={item.id})")
 
             if items_list:
                 menu_items_by_day[current] = items_list
-                print(f"      ✅ Přidáno {len(items_list)} položek pro {current}")
-        else:
-            print(f"      ⚠️ Žádný jídelníček pro {current}")
 
         current += timedelta(days=1)
-
-    print(f"✅ TÝDEN VÝSLEDEK: {len(menu_items_by_day)} dnů s jídlem")
-    print(f"   📊 Dny: {list(menu_items_by_day.keys())}")
 
     menu_items_by_day_grouped = {}
     for day, items in menu_items_by_day.items():
@@ -589,9 +569,6 @@ def build_week_menu_context(user, selected_date):
             day_grouped[druh].append(item)
         menu_items_by_day_grouped[day] = day_grouped
 
-    print(f"✅ SESKUPENÍ: {len(menu_items_by_day_grouped)} dnů")
-    print("─" * 80)
-
     return {
         "menu_items_by_day": menu_items_by_day,
         "menu_items_by_day_grouped": menu_items_by_day_grouped,
@@ -601,22 +578,10 @@ def build_week_menu_context(user, selected_date):
 
 
 def build_month_menu_context(user, first_day_month, last_day_month):
-    """Build context pro měsíc - ZOBRAZÍ VŠECHNY DNY S JÍDELNÍČKEM - DEBUG"""
+    """Build context pro měsíc - zobrazí všechny dny s jídelníčkem."""
     menu_items_by_day = {}
 
-    print(f"🔍 MĚSÍC DEBUG: {first_day_month} → {last_day_month}")
-
-    jidelnicky_mesic = Jidelnicek.objects.filter(
-        platnost_od__lte=last_day_month,
-        platnost_do__gte=first_day_month,
-    )
-
-    print(f"   📋 Jídelníčky v měsíci: {jidelnicky_mesic.count()}")
-    for j in jidelnicky_mesic:
-        print(f"      📄 {j.id}: {j.platnost_od} → {j.platnost_do}")
-
     current_date = first_day_month
-    days_processed = 0
 
     while current_date <= last_day_month:
         jidelnicky_den = Jidelnicek.objects.filter(
@@ -644,14 +609,8 @@ def build_month_menu_context(user, first_day_month, last_day_month):
 
             if items_list:
                 menu_items_by_day[current_date] = items_list
-                days_processed += 1
-                if days_processed <= 5:
-                    print(f"   ✅ {current_date}: {len(items_list)} položek")
 
         current_date += timedelta(days=1)
-
-    print(f"✅ MĚSÍC VÝSLEDEK: {len(menu_items_by_day)} dnů s jídlem")
-    print("─" * 80)
 
     menu_items_by_day_grouped = {}
     for day, items in menu_items_by_day.items():
