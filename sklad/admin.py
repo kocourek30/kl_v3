@@ -3,10 +3,12 @@ from decimal import Decimal
 from io import BytesIO
 import calendar
 import os
+import zipfile
 
 from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
+from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
 from django.core.exceptions import ValidationError
 from django.db.models import Sum
 from django.http import HttpResponse
@@ -108,6 +110,7 @@ from .services import (
     spocitej_souhrn_spotrebniho_kose,
     zkontroluj_jidelnicek_sk,
     zdravi_skladu,
+    doklady_k_oprave,
 )
 
 from .forms import SpotrebniKosForm
@@ -287,12 +290,42 @@ def _uzaverka_mesice_link(obj):
     if not obj or not getattr(obj, "datum", None):
         return "-"
     url = reverse("admin:sklad_uzaverka_mesic", args=[obj.datum.year, obj.datum.month])
+    label = f"Uzávěrka {obj.datum.month:02d}/{obj.datum.year}"
     return format_html(
-        '<a class="button" href="{}">Uzávěrka {:02d}/{}</a>',
+        '<a class="button" href="{}">{}</a>',
         url,
-        obj.datum.month,
-        obj.datum.year,
+        label,
     )
+
+
+def _storno_action_s_duvodem(modeladmin, request, queryset, *, title, action_name, callback, success_label):
+    selected = request.POST.getlist(ACTION_CHECKBOX_NAME)
+    if request.POST.get("apply"):
+        form = StornoDuvodForm(request.POST)
+        if form.is_valid():
+            duvod = form.cleaned_data["duvod"].strip()
+            stornovano = 0
+            for obj in queryset:
+                try:
+                    if callback(obj, request.user, duvod):
+                        stornovano += 1
+                except ValidationError as exc:
+                    messages.error(request, f"{obj}: {' '.join(exc.messages)}")
+            messages.success(request, f"{success_label}: {stornovano}.")
+            return None
+    else:
+        form = StornoDuvodForm()
+
+    context = dict(
+        modeladmin.admin_site.each_context(request),
+        title=title,
+        form=form,
+        queryset=queryset,
+        action_name=action_name,
+        selected=selected,
+        opts=modeladmin.model._meta,
+    )
+    return TemplateResponse(request, "admin/sklad/storno_s_duvodem.html", context)
 
 
 def _dopln_vydejku_z_objednavek_pokud_je_prazdna(vydejka):
@@ -360,6 +393,12 @@ class NavrhNakupuForm(forms.Form):
         widget=forms.DateInput(attrs={"type": "date"}),
         help_text="Když necháš prázdné, počítá se 7 dní od data Od.",
     )
+    dodavatel = forms.ModelChoiceField(
+        label="Dodavatel",
+        queryset=Dodavatel.objects.all(),
+        required=False,
+        help_text="Volitelné filtrování podle posledního dodavatele suroviny.",
+    )
 
     def clean(self):
         cleaned = super().clean()
@@ -374,6 +413,15 @@ class ImportPrijemXlsxForm(forms.Form):
     soubor = forms.FileField(
         label="Excel soubor",
         help_text="Očekávané sloupce: surovina, mnozstvi, jednotkova_cena, pocet_baleni, mnozstvi_v_baleni, jednotka_baleni, cena_za_baleni_bez_dph, sazba_dph, sarze, datum_spotreby.",
+    )
+
+
+class StornoDuvodForm(forms.Form):
+    duvod = forms.CharField(
+        label="Důvod storna",
+        max_length=255,
+        widget=forms.Textarea(attrs={"rows": 3}),
+        help_text="Důvod se uloží k dokladu a zůstane součástí auditní stopy.",
     )
 
 
@@ -599,6 +647,11 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
                 name="sklad_navrh_nakupu",
             ),
             path(
+                "navrh-nakupu/xlsx/",
+                self.admin_site.admin_view(self.navrh_nakupu_xlsx_view),
+                name="sklad_navrh_nakupu_xlsx",
+            ),
+            path(
                 "zdravi-skladu/",
                 self.admin_site.admin_view(self.zdravi_skladu_view),
                 name="sklad_zdravi_skladu",
@@ -607,6 +660,11 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
                 "zdravi-skladu/pdf/",
                 self.admin_site.admin_view(self.zdravi_skladu_pdf_view),
                 name="sklad_zdravi_skladu_pdf",
+            ),
+            path(
+                "doklady-k-oprave/",
+                self.admin_site.admin_view(self.doklady_k_oprave_view),
+                name="sklad_doklady_k_oprave",
             ),
         ]
         return custom + urls
@@ -684,8 +742,20 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
             "zdravi_skladu": zdravi_skladu(target_date),
             "zdravi_skladu_url": "zdravi-skladu/",
             "zdravi_skladu_pdf_url": f"zdravi-skladu/pdf/?date={target_date.isoformat()}",
+            "doklady_k_oprave_url": "doklady-k-oprave/",
         })
         return super().changelist_view(request, extra_context=extra_context)
+
+    def doklady_k_oprave_view(self, request):
+        date_to = parse_date(request.GET.get("date_to") or "") or date.today()
+        date_from = parse_date(request.GET.get("date_from") or "") or (date_to - timedelta(days=30))
+        data = doklady_k_oprave(date_from=date_from, date_to=date_to)
+        context = dict(
+            self.admin_site.each_context(request),
+            title="Doklady k opravě",
+            data=data,
+        )
+        return TemplateResponse(request, "admin/sklad/doklady_k_oprave.html", context)
 
     def zdravi_skladu_view(self, request):
         target_date = parse_date(request.GET.get("date") or "") or date.today()
@@ -750,7 +820,11 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
         if form.is_valid():
             date_from = form.cleaned_data["date_from"]
             date_to = form.cleaned_data["date_to"]
+            dodavatel = form.cleaned_data["dodavatel"]
             data = navrh_nakupu(date_from=date_from, date_to=date_to)
+            if dodavatel:
+                data["radky"] = [row for row in data["radky"] if row["dodavatel"] == dodavatel]
+                data["odhad_celkem"] = sum((row["odhad_ceny"] for row in data["radky"]), Decimal("0"))
         elif not request.GET:
             form = NavrhNakupuForm(initial={"date_from": date.today()})
             data = navrh_nakupu(date_from=date.today())
@@ -760,8 +834,55 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
             title="Návrh nákupu",
             form=form,
             data=data,
+            xlsx_url="xlsx/?" + request.GET.urlencode() if request.GET else "xlsx/",
         )
         return TemplateResponse(request, "admin/sklad/navrh_nakupu.html", context)
+
+    def navrh_nakupu_xlsx_view(self, request):
+        form = NavrhNakupuForm(request.GET or None)
+        if form.is_valid():
+            date_from = form.cleaned_data["date_from"]
+            date_to = form.cleaned_data["date_to"]
+            dodavatel = form.cleaned_data["dodavatel"]
+        else:
+            date_from = date.today()
+            date_to = None
+            dodavatel = None
+        data = navrh_nakupu(date_from=date_from, date_to=date_to)
+        if dodavatel:
+            data["radky"] = [row for row in data["radky"] if row["dodavatel"] == dodavatel]
+            data["odhad_celkem"] = sum((row["odhad_ceny"] for row in data["radky"]), Decimal("0"))
+
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Návrh nákupu"
+        ws.append(["Návrh nákupu", f"{data['date_from'].strftime('%d.%m.%Y')} - {data['date_to'].strftime('%d.%m.%Y')}"])
+        ws.append([])
+        ws.append(["Surovina", "Aktuální stav", "Minimum", "Plán", "Doporučené množství", "Dodavatel", "Cena", "Odhad Kč"])
+        for row in data["radky"]:
+            ws.append([
+                row["surovina"].nazev,
+                row["aktualni_display"],
+                row["minimum_display"],
+                row["plan_display"],
+                row["chybi_display"],
+                str(row["dodavatel"] or ""),
+                row["cena_display"],
+                float(row["odhad_ceny"] or 0),
+            ])
+        ws.append([])
+        ws.append(["Odhad celkem Kč", float(data["odhad_celkem"] or 0)])
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        response = HttpResponse(
+            output.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="navrh_nakupu.xlsx"'
+        return response
 
     @method_decorator(never_cache)
     def spotrebni_kos_view(self, request):
@@ -1766,18 +1887,20 @@ class PrijemSkladuAdmin(admin.ModelAdmin):
 
     @admin.action(description="Stornovat příjemky a vytvořit opačné pohyby")
     def stornovat_prijemky(self, request, queryset):
-        stornovano = 0
-        for prijem in queryset:
-            try:
-                if stornuj_prijem(prijem, user=request.user):
-                    stornovano += 1
-            except ValidationError as exc:
-                messages.error(request, f"Příjemka #{prijem.id}: {' '.join(exc.messages)}")
-        messages.success(request, f"Stornováno příjemek: {stornovano}.")
+        return _storno_action_s_duvodem(
+            self,
+            request,
+            queryset,
+            title="Storno příjemek",
+            action_name="stornovat_prijemky",
+            callback=lambda prijem, user, duvod: stornuj_prijem(prijem, user=user, duvod=duvod),
+            success_label="Stornováno příjemek",
+        )
 
 
 @admin.register(Inventura)
 class InventuraAdmin(admin.ModelAdmin):
+    change_list_template = "admin/sklad/inventura/change_list.html"
     list_display = ("id", "datum", "vytvoril", "uzavreny", "stornovano", "uzaverka_mesice_link", "inventurni_pdf_link", "uzavren_at", "uzavrel")
     list_filter = ("uzavreny", "stornovano", "datum")
     readonly_fields = (
@@ -1812,6 +1935,27 @@ class InventuraAdmin(admin.ModelAdmin):
         return _stav_dokladu_text(obj)
 
     stav_dokladu.short_description = "Stav dokladu"
+
+    def add_view(self, request, form_url="", extra_context=None):
+        if request.method != "GET":
+            return super().add_view(request, form_url=form_url, extra_context=extra_context)
+        if not self.has_add_permission(request):
+            return super().add_view(request, form_url=form_url, extra_context=extra_context)
+
+        datum = parse_date(request.GET.get("datum") or "") or date.today()
+        inventura = Inventura.objects.create(
+            datum=datum,
+            popis="Šaržová inventura",
+            vytvoril=request.user if request.user.is_authenticated else None,
+        )
+        self._napln_polozky_ze_stavu(inventura)
+        pocet_sarzi = napln_sarzovou_inventuru(inventura)
+        synchronizuj_surovinove_polozky_inventury(inventura)
+        messages.success(
+            request,
+            f"Nová inventura #{inventura.id} byla založena a načetla {pocet_sarzi} aktivních šarží.",
+        )
+        return redirect(reverse("admin:sklad_inventura_sarzova", args=[inventura.pk]))
 
     def get_urls(self):
         urls = super().get_urls()
@@ -2003,14 +2147,15 @@ class InventuraAdmin(admin.ModelAdmin):
 
     @admin.action(description="Stornovat inventury a vytvořit opačné pohyby")
     def stornovat_inventury(self, request, queryset):
-        stornovano = 0
-        for inventura in queryset:
-            try:
-                if stornuj_inventuru(inventura, user=request.user):
-                    stornovano += 1
-            except ValidationError as exc:
-                messages.error(request, f"Inventura #{inventura.id}: {' '.join(exc.messages)}")
-        messages.success(request, f"Stornováno inventur: {stornovano}.")
+        return _storno_action_s_duvodem(
+            self,
+            request,
+            queryset,
+            title="Storno inventur",
+            action_name="stornovat_inventury",
+            callback=lambda inventura, user, duvod: stornuj_inventuru(inventura, user=user, duvod=duvod),
+            success_label="Stornováno inventur",
+        )
 
 
 @admin.register(OdpisExpirace)
@@ -2098,6 +2243,7 @@ class SkladovaUzaverkaAdmin(admin.ModelAdmin):
         "uzavreny",
         "stornovano",
         "pripraveno_display",
+        "pruvodce_list_display",
         "konecny_stav_display",
         "rozdil_kontroly_display",
         "exporty_list_display",
@@ -2156,8 +2302,10 @@ class SkladovaUzaverkaAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         custom_urls = [
             path("mesic/<int:rok>/<int:mesic>/", self.admin_site.admin_view(self.otevrit_mesicni_uzaverku), name="sklad_uzaverka_mesic"),
+            path("<int:uzaverka_id>/pruvodce/", self.admin_site.admin_view(self.pruvodce_view), name="sklad_uzaverka_pruvodce"),
             path("<int:uzaverka_id>/xlsx/", self.admin_site.admin_view(self.export_xlsx), name="sklad_uzaverka_xlsx"),
             path("<int:uzaverka_id>/pdf/", self.admin_site.admin_view(self.export_pdf), name="sklad_uzaverka_pdf"),
+            path("<int:uzaverka_id>/archiv/", self.admin_site.admin_view(self.export_archiv), name="sklad_uzaverka_archiv"),
         ]
         return custom_urls + urls
 
@@ -2213,14 +2361,28 @@ class SkladovaUzaverkaAdmin(admin.ModelAdmin):
 
     exporty_list_display.short_description = "Export"
 
+    def pruvodce_list_display(self, obj):
+        if not obj or not obj.pk:
+            return "-"
+        return format_html(
+            '<a class="button" href="{}">Průvodce</a>',
+            reverse("admin:sklad_uzaverka_pruvodce", args=[obj.pk]),
+        )
+
+    pruvodce_list_display.short_description = "Průvodce"
+
     def exporty_display(self, obj):
         if not obj or not obj.pk:
             return "Export bude dostupný po uložení uzávěrky."
         return format_html(
             '<a class="button" href="{}">Stáhnout XLSX</a> '
-            '<a class="button" href="{}">Stáhnout PDF</a>',
+            '<a class="button" href="{}">Stáhnout PDF</a> '
+            '<a class="button" href="{}">Archiv ZIP</a> '
+            '<a class="button" href="{}">Otevřít průvodce</a>',
             f"{obj.pk}/xlsx/",
             f"{obj.pk}/pdf/",
+            reverse("admin:sklad_uzaverka_archiv", args=[obj.pk]),
+            reverse("admin:sklad_uzaverka_pruvodce", args=[obj.pk]),
         )
 
     exporty_display.short_description = "Exporty"
@@ -2257,6 +2419,76 @@ class SkladovaUzaverkaAdmin(admin.ModelAdmin):
 
     pruvodce_uzaverkou_display.short_description = "Průvodce uzávěrkou"
 
+    def pruvodce_view(self, request, uzaverka_id):
+        uzaverka = get_object_or_404(SkladovaUzaverka, pk=uzaverka_id)
+        if request.method == "POST" and request.POST.get("action") == "close":
+            try:
+                if uzavri_skladovou_uzaverku(uzaverka, user=request.user):
+                    messages.success(request, "Skladová uzávěrka byla uzavřena.")
+                else:
+                    messages.info(request, "Skladová uzávěrka už byla uzavřená.")
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+            return redirect(reverse("admin:sklad_uzaverka_pruvodce", args=[uzaverka.pk]))
+
+        data = pruvodce_skladovou_uzaverkou(uzaverka.rok, uzaverka.mesic)
+        kroky = [
+            {
+                "cislo": 1,
+                "nazev": "Uzavřít všechny příjemky",
+                "popis": "Příjemky v měsíci musí mít propsané skladové pohyby a ceny.",
+                "kontrola": data["kontroly"][0],
+                "url": reverse("admin:sklad_prijemskladu_changelist") + f"?datum__gte={data['date_from'].isoformat()}&datum__lte={data['date_to'].isoformat()}",
+            },
+            {
+                "cislo": 2,
+                "nazev": "Uzavřít všechny výdejky",
+                "popis": "Výdejky musí odepsat suroviny ze skladu a ocenit spotřebu.",
+                "kontrola": data["kontroly"][1],
+                "url": reverse("admin:sklad_vydejka_changelist") + f"?datum__gte={data['date_from'].isoformat()}&datum__lte={data['date_to'].isoformat()}",
+            },
+            {
+                "cislo": 3,
+                "nazev": "Zpracovat inventury",
+                "popis": "Inventurní rozdíly musí být uzavřené a promítnuté do skladu.",
+                "kontrola": data["kontroly"][2],
+                "url": reverse("admin:sklad_inventura_changelist") + f"?datum__gte={data['date_from'].isoformat()}&datum__lte={data['date_to'].isoformat()}",
+            },
+            {
+                "cislo": 4,
+                "nazev": "Odepsat prošlé šarže",
+                "popis": "Prošlé potraviny nesmí zůstat jako použitelný sklad.",
+                "kontrola": data["kontroly"][4],
+                "url": reverse("admin:sklad_odpisexpirace_changelist"),
+            },
+            {
+                "cislo": 5,
+                "nazev": "Zkontrolovat stav skladu proti šaržím",
+                "popis": "Součet aktivních šarží má odpovídat stavu skladu.",
+                "kontrola": data["kontroly"][5],
+                "url": reverse("admin:sklad_skladdashboard_changelist"),
+            },
+            {
+                "cislo": 6,
+                "nazev": "Uzavřít skladový měsíc",
+                "popis": "Po splnění kontrol uzavři měsíc a stáhni protokol.",
+                "kontrola": data["kontroly"][6],
+                "url": reverse("admin:sklad_skladovauzaverka_change", args=[uzaverka.pk]),
+            },
+        ]
+        context = dict(
+            self.admin_site.each_context(request),
+            title=f"Průvodce skladovou uzávěrkou {uzaverka.mesic:02d}/{uzaverka.rok}",
+            uzaverka=uzaverka,
+            data=data,
+            kroky=kroky,
+            pdf_url=reverse("admin:sklad_uzaverka_pdf", args=[uzaverka.pk]),
+            xlsx_url=reverse("admin:sklad_uzaverka_xlsx", args=[uzaverka.pk]),
+            archiv_url=reverse("admin:sklad_uzaverka_archiv", args=[uzaverka.pk]),
+            change_url=reverse("admin:sklad_skladovauzaverka_change", args=[uzaverka.pk]),
+        )
+        return TemplateResponse(request, "admin/sklad/pruvodce_uzaverkou.html", context)
+
     def save_model(self, request, obj, form, change):
         if not obj.pk and not obj.vytvoril:
             obj.vytvoril = request.user
@@ -2290,11 +2522,15 @@ class SkladovaUzaverkaAdmin(admin.ModelAdmin):
     uzavrit_uzaverky.short_description = "Uzavřít vybrané skladové uzávěrky"
 
     def stornovat_uzaverky(self, request, queryset):
-        pocet = 0
-        for uzaverka in queryset:
-            if otevri_skladovou_uzaverku(uzaverka, user=request.user):
-                pocet += 1
-        self.message_user(request, f"Stornováno uzávěrek: {pocet}.", messages.WARNING)
+        return _storno_action_s_duvodem(
+            self,
+            request,
+            queryset,
+            title="Storno skladových uzávěrek",
+            action_name="stornovat_uzaverky",
+            callback=lambda uzaverka, user, duvod: otevri_skladovou_uzaverku(uzaverka, user=user, duvod=duvod),
+            success_label="Stornováno uzávěrek",
+        )
 
     stornovat_uzaverky.short_description = "Stornovat vybrané uzávěrky a otevřít období"
 
@@ -2375,6 +2611,34 @@ class SkladovaUzaverkaAdmin(admin.ModelAdmin):
         buffer.seek(0)
         response = HttpResponse(buffer.read(), content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="skladova_uzaverka_{uzaverka.rok}_{uzaverka.mesic:02d}.pdf"'
+        return response
+
+    def export_archiv(self, request, uzaverka_id):
+        uzaverka = get_object_or_404(SkladovaUzaverka, pk=uzaverka_id)
+        pruvodce = pruvodce_skladovou_uzaverkou(uzaverka.rok, uzaverka.mesic)
+        opravne = doklady_k_oprave(pruvodce["date_from"], pruvodce["date_to"])
+
+        output = BytesIO()
+        with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            souhrn = [
+                f"Skladová uzávěrka {uzaverka.mesic:02d}/{uzaverka.rok}",
+                "",
+                *[f"{nazev};{hodnota:.2f} Kč" for nazev, hodnota in self._export_rows(uzaverka)],
+            ]
+            archive.writestr("01_souhrn_uzaverky.csv", "\n".join(souhrn).encode("utf-8-sig"))
+
+            kontroly = ["Kontrola;Počet;Stav"]
+            for kontrola in pruvodce["kontroly"]:
+                kontroly.append(f"{kontrola['nazev']};{kontrola['pocet']};{'OK' if kontrola['ok'] else 'KONTROLA'}")
+            archive.writestr("02_kontrolni_checklist.csv", "\n".join(kontroly).encode("utf-8-sig"))
+
+            doklady = ["Sekce;Počet"]
+            for sekce in opravne["sekce"]:
+                doklady.append(f"{sekce['nazev']};{sekce['pocet']}")
+            archive.writestr("03_doklady_k_oprave.csv", "\n".join(doklady).encode("utf-8-sig"))
+        output.seek(0)
+        response = HttpResponse(output.read(), content_type="application/zip")
+        response["Content-Disposition"] = f'attachment; filename="archiv_skladove_uzaverky_{uzaverka.rok}_{uzaverka.mesic:02d}.zip"'
         return response
 
 
@@ -2581,14 +2845,15 @@ class VydejkaAdmin(admin.ModelAdmin):
 
     @admin.action(description="Stornovat výdejky a vrátit suroviny na sklad")
     def stornovat_vydejky(self, request, queryset):
-        stornovano = 0
-        for vydejka in queryset:
-            try:
-                if stornuj_vydejku(vydejka, user=request.user):
-                    stornovano += 1
-            except ValidationError as exc:
-                messages.error(request, f"Výdejka #{vydejka.id}: {' '.join(exc.messages)}")
-        messages.success(request, f"Stornováno výdejek: {stornovano}.")
+        return _storno_action_s_duvodem(
+            self,
+            request,
+            queryset,
+            title="Storno výdejek",
+            action_name="stornovat_vydejky",
+            callback=lambda vydejka, user, duvod: stornuj_vydejku(vydejka, user=user, duvod=duvod),
+            success_label="Stornováno výdejek",
+        )
 
     def get_readonly_fields(self, request, obj=None):
         ro = list(super().get_readonly_fields(request, obj))

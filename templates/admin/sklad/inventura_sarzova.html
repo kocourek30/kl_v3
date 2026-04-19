@@ -2,7 +2,15 @@
 
 {% block content %}
 <div class="container-fluid">
-  <h1>{{ title }}</h1>
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="mb-1">{{ title }}</h1>
+      <p class="text-muted mb-0">
+        1. Zkontroluj fyzický stav. 2. Ulož přepočet. 3. Uzavři inventuru až po kontrole rozdílů.
+      </p>
+    </div>
+    <a class="btn btn-outline-secondary" href="../change/">Detail dokladu</a>
+  </div>
 
   <div class="card mb-3">
     <div class="card-header">
@@ -62,7 +70,7 @@
             </thead>
             <tbody>
               {% for row in souhrn.radky %}
-                <tr class="{% if row.rozdil < 0 %}table-warning{% elif row.rozdil > 0 %}table-success{% endif %}">
+                <tr class="{% if row.rozdil < 0 %}table-danger{% elif row.rozdil > 0 %}table-success{% endif %}">
                   <td><strong>{{ row.surovina.nazev }}</strong></td>
                   <td>
                     {{ row.sarze|default:"–" }}
@@ -86,7 +94,16 @@
                       >
                     {% endif %}
                   </td>
-                  <td>{{ row.rozdil_display }}</td>
+                  <td>
+                    <strong>{{ row.rozdil_display }}</strong>
+                    {% if row.rozdil < 0 %}
+                      <span class="badge badge-danger">manko</span>
+                    {% elif row.rozdil > 0 %}
+                      <span class="badge badge-success">přebytek</span>
+                    {% else %}
+                      <span class="badge badge-secondary">sedí</span>
+                    {% endif %}
+                  </td>
                   <td>{{ row.hodnota|floatformat:2 }} Kč</td>
                   <td>
                     {% if inventura.uzavreny or inventura.stornovano %}

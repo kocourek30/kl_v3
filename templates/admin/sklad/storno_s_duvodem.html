@@ -1,0 +1,70 @@
+{% extends "admin/base_site.html" %}
+{% load form_tags %}
+
+{% block content %}
+<div class="container-fluid">
+  <h1>{{ title }}</h1>
+
+  <div class="alert alert-warning">
+    Storno vytvoří opačné skladové pohyby a uloží důvod k dokladu. Pokračuj pouze tehdy, pokud je storno věcně správné.
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header"><strong>Vybrané doklady</strong></div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-striped mb-0">
+        <thead>
+          <tr>
+            <th>Doklad</th>
+            <th>Datum</th>
+            <th>Stav</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for obj in queryset %}
+            <tr>
+              <td>{{ obj }}</td>
+              <td>{{ obj.datum|date:"d.m.Y" }}</td>
+              <td>
+                {% if obj.uzavreny %}
+                  <span class="badge badge-success">Uzavřený</span>
+                {% else %}
+                  <span class="badge badge-secondary">Otevřený</span>
+                {% endif %}
+                {% if obj.stornovano %}
+                  <span class="badge badge-danger">Stornovaný</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="{{ action_name }}">
+    <input type="hidden" name="apply" value="1">
+    {% for pk in selected %}
+      <input type="hidden" name="_selected_action" value="{{ pk }}">
+    {% endfor %}
+
+    <div class="card">
+      <div class="card-header"><strong>Důvod storna</strong></div>
+      <div class="card-body">
+        <div class="form-group">
+          <label for="{{ form.duvod.id_for_label }}">{{ form.duvod.label }}</label>
+          {{ form.duvod|add_class:"form-control" }}
+          <small class="form-text text-muted">{{ form.duvod.help_text }}</small>
+          {% if form.duvod.errors %}
+            <div class="text-danger">{{ form.duvod.errors }}</div>
+          {% endif %}
+        </div>
+        <button type="submit" class="btn btn-danger">Potvrdit storno</button>
+        <a href="." class="btn btn-secondary">Zpět</a>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}

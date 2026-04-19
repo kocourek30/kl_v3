@@ -3,7 +3,9 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.contrib import admin
+from django.contrib.messages.storage.fallback import FallbackStorage
 from django.core.exceptions import ValidationError
+from django.contrib.sessions.middleware import SessionMiddleware
 from django.test import RequestFactory
 from django.test import TestCase
 
@@ -67,6 +69,7 @@ from .services import (
     uzavri_prijem,
     uzavri_vydejku,
     zdravi_skladu,
+    doklady_k_oprave,
 )
 
 
@@ -181,6 +184,8 @@ class SkladovePohybyTests(TestCase):
             surovina=ryze,
             mnozstvi=Decimal("5.000"),
             jednotkova_cena=Decimal("35.0000"),
+            sarze="RYZE-TEST",
+            typ_data_spotreby="NEUVADI_SE",
         )
 
         self.assertTrue(uzavri_prijem(prijem, user=self.user))
@@ -250,6 +255,8 @@ class SkladovePohybyTests(TestCase):
             surovina=ryze,
             mnozstvi=Decimal("0.000"),
             jednotkova_cena=Decimal("35.0000"),
+            sarze="RYZE-NULA",
+            typ_data_spotreby="NEUVADI_SE",
         )
 
         with self.assertRaises(ValidationError):
@@ -266,13 +273,16 @@ class SkladovePohybyTests(TestCase):
             surovina=ryze,
             mnozstvi=Decimal("5.000"),
             jednotkova_cena=Decimal("35.0000"),
+            sarze="RYZE-STORNO",
+            typ_data_spotreby="NEUVADI_SE",
         )
         uzavri_prijem(prijem, user=self.user)
 
-        self.assertTrue(stornuj_prijem(prijem, user=self.user))
+        self.assertTrue(stornuj_prijem(prijem, user=self.user, duvod="Chybně zadaná faktura"))
 
         prijem.refresh_from_db()
         self.assertTrue(prijem.stornovano)
+        self.assertEqual(prijem.stornovano_duvod, "Chybně zadaná faktura")
         self.assertEqual(StavSkladu.objects.get(surovina=ryze).mnozstvi, Decimal("0.000"))
         self.assertEqual(PohybSkladu.objects.filter(prijem=prijem).count(), 2)
         self.assertFalse(stornuj_prijem(prijem, user=self.user))
@@ -287,6 +297,8 @@ class SkladovePohybyTests(TestCase):
             surovina=ryze,
             mnozstvi=Decimal("5.000"),
             jednotkova_cena=Decimal("35.0000"),
+            sarze="RYZE-ADMIN",
+            typ_data_spotreby="NEUVADI_SE",
         )
         uzavri_prijem(prijem, user=self.admin_user)
         prijem.refresh_from_db()
@@ -422,11 +434,12 @@ class SkladovePohybyTests(TestCase):
         PolozkaVydejky.objects.create(vydejka=vydejka, surovina=mouka, mnozstvi=Decimal("200.000"))
         uzavri_vydejku(vydejka, user=self.user)
 
-        self.assertTrue(stornuj_vydejku(vydejka, user=self.user))
+        self.assertTrue(stornuj_vydejku(vydejka, user=self.user, duvod="Duplicitní výdejka"))
 
         vydejka.refresh_from_db()
         sarze.refresh_from_db()
         self.assertTrue(vydejka.stornovano)
+        self.assertEqual(vydejka.stornovano_duvod, "Duplicitní výdejka")
         self.assertEqual(StavSkladu.objects.get(surovina=mouka).mnozstvi, Decimal("1000.000"))
         self.assertEqual(sarze.mnozstvi_zbyva, Decimal("1000.000"))
         self.assertEqual(PohybSkladu.objects.filter(vydejka=vydejka).count(), 2)
@@ -488,6 +501,8 @@ class SkladovePohybyTests(TestCase):
             surovina=mouka,
             mnozstvi=Decimal("500.000"),
             jednotkova_cena=Decimal("2.0000"),
+            sarze="MOUKA-REK",
+            typ_data_spotreby="NEUVADI_SE",
         )
         uzavri_prijem(prijem, user=self.user)
         vydejka = Vydejka.objects.create(
@@ -557,6 +572,7 @@ class SkladovePohybyTests(TestCase):
             mnozstvi=Decimal("10.000"),
             jednotkova_cena=Decimal("10.0000"),
             sarze="RYZE-10",
+            typ_data_spotreby="NEUVADI_SE",
         )
         uzavri_prijem(prijem, user=self.user)
 
@@ -877,10 +893,11 @@ class SkladovePohybyTests(TestCase):
         )
         uzavri_inventuru(inventura, user=self.user)
 
-        self.assertTrue(stornuj_inventuru(inventura, user=self.user))
+        self.assertTrue(stornuj_inventuru(inventura, user=self.user, duvod="Kontrolní přepočet inventury"))
 
         inventura.refresh_from_db()
         self.assertTrue(inventura.stornovano)
+        self.assertEqual(inventura.stornovano_duvod, "Kontrolní přepočet inventury")
         self.assertEqual(StavSkladu.objects.get(surovina=cukr).mnozstvi, Decimal("10.000"))
         self.assertEqual(PohybSkladu.objects.filter(inventura=inventura).count(), 2)
         self.assertEqual(
@@ -939,6 +956,27 @@ class SkladovePohybyTests(TestCase):
         self.assertEqual(StavSkladu.objects.get(surovina=ryze).mnozstvi, Decimal("2.000"))
         self.assertEqual(PohybSkladu.objects.get(inventura=inventura).typ, PohybSkladu.TYP_INVENTURA_PLUS)
 
+    def test_admin_pridat_inventuru_otevre_nove_sarzove_rozhrani(self):
+        from .admin import InventuraAdmin
+
+        mouka = Surovina.objects.create(nazev="Mouka add inventura", jednotka="kg")
+        StavSkladu.objects.create(surovina=mouka, mnozstvi=Decimal("5.000"))
+        self.pridej_sarzi(mouka, Decimal("5.000"), sarze="ADD-INV")
+        model_admin = InventuraAdmin(Inventura, admin.site)
+        request = RequestFactory().get("/admin/sklad/inventura/add/")
+        request.user = self.admin_user
+        SessionMiddleware(lambda req: None).process_request(request)
+        request.session.save()
+        setattr(request, "_messages", FallbackStorage(request))
+
+        response = model_admin.add_view(request)
+
+        inventura = Inventura.objects.get(popis="Šaržová inventura")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(f"/admin/sklad/inventura/{inventura.id}/sarzova/", response["Location"])
+        self.assertEqual(inventura.sarze_polozky.count(), 1)
+        self.assertEqual(inventura.polozky.count(), 1)
+
     def test_inventurni_pdf_report_se_vygeneruje(self):
         from .admin import inventura_pdf_view
 
@@ -965,6 +1003,15 @@ class SkladovePohybyTests(TestCase):
         self.assertEqual(response["Content-Type"], "application/pdf")
         self.assertIn("inventura_", response["Content-Disposition"])
         self.assertTrue(response.content.startswith(b"%PDF"))
+
+    def test_odkaz_na_mesicni_uzaverku_v_adminu_nepada_na_formatovani(self):
+        from .admin import _uzaverka_mesice_link
+
+        inventura = Inventura.objects.create(datum=date(2026, 4, 30))
+
+        html = str(_uzaverka_mesice_link(inventura))
+
+        self.assertIn("Uzávěrka 04/2026", html)
 
     def test_zdravi_skladu_vraci_kontrolni_rizika(self):
         mouka = Surovina.objects.create(nazev="Mouka zdraví skladu", jednotka="kg", skupina_sk="")
@@ -1000,6 +1047,7 @@ class SkladovePohybyTests(TestCase):
             mnozstvi=Decimal("10.000"),
             jednotkova_cena=Decimal("15.0000"),
             sarze="UZ-1",
+            typ_data_spotreby="NEUVADI_SE",
         )
         uzavri_prijem(prijem, user=self.user)
         uzaverka = SkladovaUzaverka.objects.create(
@@ -1020,6 +1068,7 @@ class SkladovePohybyTests(TestCase):
             mnozstvi=Decimal("1.000"),
             jednotkova_cena=Decimal("15.0000"),
             sarze="UZ-2",
+            typ_data_spotreby="NEUVADI_SE",
         )
         with self.assertRaises(ValidationError):
             uzavri_prijem(dalsi_prijem, user=self.user)
@@ -1091,3 +1140,39 @@ class SkladovePohybyTests(TestCase):
         varovani = validace_prijemky_pred_uzavrenim(prijem)
 
         self.assertGreaterEqual(len(varovani), 2)
+
+    def test_prijem_bez_sarze_nebo_data_nelze_uzavrit(self):
+        mouka = Surovina.objects.create(nazev="Mouka povinná šarže", jednotka="kg")
+        prijem = PrijemSkladu.objects.create(datum=self.datum)
+        PolozkaPrijmu.objects.create(
+            prijem=prijem,
+            surovina=mouka,
+            mnozstvi=Decimal("1.000"),
+            jednotkova_cena=Decimal("10.0000"),
+        )
+
+        with self.assertRaises(ValidationError):
+            uzavri_prijem(prijem, user=self.user)
+
+        prijem.refresh_from_db()
+        self.assertFalse(prijem.uzavreny)
+
+    def test_doklady_k_oprave_najde_chybejici_udaje(self):
+        mouka = Surovina.objects.create(nazev="Mouka doklady k opravě", jednotka="kg", skupina_sk="")
+        prijem = PrijemSkladu.objects.create(datum=self.datum)
+        PolozkaPrijmu.objects.create(
+            prijem=prijem,
+            surovina=mouka,
+            mnozstvi=Decimal("1.000"),
+            jednotkova_cena=Decimal("10.0000"),
+        )
+
+        data = doklady_k_oprave(self.datum, self.datum)
+
+        pocty = {sekce["nazev"]: sekce["pocet"] for sekce in data["sekce"]}
+        self.assertGreaterEqual(pocty["Příjemky bez dodavatele"], 1)
+        self.assertGreaterEqual(pocty["Položky příjmu bez šarže"], 1)
+        self.assertGreaterEqual(pocty["Suroviny bez skupiny spotřebního koše"], 1)
+        prijemky = next(sekce for sekce in data["sekce"] if sekce["nazev"] == "Příjemky bez dodavatele")
+        self.assertEqual(prijemky["polozky"][0]["label"], f"Příjemka #{prijem.id}")
+        self.assertEqual(prijemky["polozky"][0]["url"], f"/admin/sklad/prijemskladu/{prijem.id}/change/")

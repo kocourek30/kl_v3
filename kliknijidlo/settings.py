@@ -1,4 +1,5 @@
 import os
+import sys
 import secrets
 from pathlib import Path
 from dotenv import load_dotenv
@@ -51,7 +52,7 @@ SESSION_COOKIE_HTTPONLY = False
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = 'Lax'
-SESSION_SAVE_EVERY_REQUEST = True
+SESSION_SAVE_EVERY_REQUEST = False
 SESSION_COOKIE_AGE = 86400  # 24 hodin
 
 
@@ -370,6 +371,11 @@ JAZZMIN_SETTINGS = {
         "sklad.RecepturaPolozka": "fas fa-list-ul",
         "sklad.PrijemSkladu": "fas fa-truck-loading",
         "sklad.PolozkaPrijmu": "fas fa-plus-square",
+        "sklad.Dodavatel": "fas fa-truck",
+        "sklad.KomponentaJidla": "fas fa-layer-group",
+        "sklad.SarzeSkladu": "fas fa-box-open",
+        "sklad.OdpisExpirace": "fas fa-calendar-times",
+        "sklad.SkladovaUzaverka": "fas fa-lock",
         "sklad.Inventura": "fas fa-clipboard-check",
         "sklad.PolozkaInventury": "fas fa-list-check",
         "sklad.InventurniDoklad": "fas fa-file-invoice",
@@ -387,6 +393,7 @@ JAZZMIN_SETTINGS = {
         "pokladna.Pokladna": "fas fa-cash-register",
         "pokladna.PokladniDoklad": "fas fa-file-invoice-dollar",
         "pokladna.PokladniPolozka": "fas fa-list-ol",
+        "pokladna.PokladniUzaverka": "fas fa-clipboard-check",
         "pokladna.PokladnaTile": "fas fa-square",
 
         # === AUTH fallback ===
@@ -441,7 +448,7 @@ JAZZMIN_SETTINGS = {
         },
         {
             "name": "Výdej jídelna",
-            "url": "admin:vydej_jidel_vydejsettings_change",
+            "url": "admin:vydej_jidel_vydejsettings_changelist",
             "icon": "fas fa-concierge-bell",
         },
         {
@@ -456,7 +463,7 @@ JAZZMIN_SETTINGS = {
         },
         {
             "name": "Frontend",
-            "url": "admin:frontend_page_changelist",
+            "url": "home",
             "icon": "fas fa-globe",
         },
         {
@@ -503,6 +510,21 @@ JAZZMIN_SETTINGS = {
                 "name": "Měsíční spotřební koš",
                 "url": "admin:sklad_mesicni_spotrebni_kos",
                 "icon": "fas fa-chart-pie",
+            },
+            {
+                "name": "Zdraví skladu",
+                "url": "admin:sklad_zdravi_skladu",
+                "icon": "fas fa-heartbeat",
+            },
+            {
+                "name": "Doklady k opravě",
+                "url": "admin:sklad_doklady_k_oprave",
+                "icon": "fas fa-triangle-exclamation",
+            },
+            {
+                "name": "Návrh nákupu",
+                "url": "admin:sklad_navrh_nakupu",
+                "icon": "fas fa-cart-plus",
             },
         ],
     },
@@ -556,8 +578,27 @@ if DEBUG:
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
+            "OPTIONS": {
+                "timeout": 30,
+            },
         }
     }
+
+
+if DATABASES["default"]["ENGINE"] == "django.db.backends.sqlite3" and "test" not in sys.argv:
+    DATABASES["default"].setdefault("OPTIONS", {}).setdefault("timeout", 30)
+
+    from django.db.backends.signals import connection_created
+
+    def _configure_local_sqlite(sender, connection, **kwargs):
+        if connection.vendor != "sqlite":
+            return
+        with connection.cursor() as cursor:
+            cursor.execute("PRAGMA journal_mode=OFF")
+            cursor.execute("PRAGMA synchronous=OFF")
+            cursor.execute("PRAGMA temp_store=MEMORY")
+
+    connection_created.connect(_configure_local_sqlite)
 
 
 # =============================================================================

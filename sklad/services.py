@@ -1086,6 +1086,150 @@ def zdravi_skladu(target_date=None):
     }
 
 
+def doklady_k_oprave(date_from=None, date_to=None):
+    date_to = date_to or timezone.localdate()
+    date_from = date_from or (date_to - timedelta(days=30))
+
+    def prijem_label(prijem):
+        cislo = prijem.cislo_faktury or prijem.cislo_dodaciho_listu or f"#{prijem.id}"
+        return f"Příjemka {cislo}"
+
+    def polozka_prijmu_label(polozka):
+        return f"Příjemka #{polozka.prijem_id} / {polozka.surovina.nazev}"
+
+    def pohyb_label(pohyb):
+        return f"Pohyb #{pohyb.id} / {pohyb.surovina.nazev}"
+
+    def sarze_label(sarze):
+        return f"{sarze.surovina.nazev} / {sarze.sarze or 'bez šarže'}"
+
+    def rows_from_objects(objects, label_func, url_func, detail_func, oprava):
+        return [
+            {
+                "label": label_func(obj),
+                "detail": detail_func(obj),
+                "url": url_func(obj),
+                "oprava": oprava,
+            }
+            for obj in objects
+        ]
+
+    prijemky_bez_dodavatele = PrijemSkladu.objects.filter(
+        datum__gte=date_from,
+        datum__lte=date_to,
+        dodavatel__isnull=True,
+        stornovano=False,
+    ).order_by("datum", "id")[:50]
+    prijemky_bez_dokladu = PrijemSkladu.objects.filter(
+        datum__gte=date_from,
+        datum__lte=date_to,
+        stornovano=False,
+        cislo_faktury="",
+        cislo_dodaciho_listu="",
+    ).order_by("datum", "id")[:50]
+    polozky_bez_sarze = PolozkaPrijmu.objects.filter(
+        prijem__datum__gte=date_from,
+        prijem__datum__lte=date_to,
+        prijem__stornovano=False,
+        sarze="",
+    ).select_related("prijem", "surovina").order_by("prijem__datum", "id")[:50]
+    polozky_bez_data = PolozkaPrijmu.objects.filter(
+        prijem__datum__gte=date_from,
+        prijem__datum__lte=date_to,
+        prijem__stornovano=False,
+        datum_spotreby__isnull=True,
+    ).exclude(typ_data_spotreby="NEUVADI_SE").select_related("prijem", "surovina").order_by("prijem__datum", "id")[:50]
+    pohyby_bez_ceny = PohybSkladu.objects.filter(
+        datum__date__gte=date_from,
+        datum__date__lte=date_to,
+    ).filter(Q(cena_za_jednotku__isnull=True) | Q(cena_za_jednotku=0)).select_related("surovina", "prijem", "vydejka", "inventura", "odpis_expirace").order_by("datum", "id")[:50]
+    suroviny_bez_skupiny = Surovina.objects.filter(Q(skupina_sk__isnull=True) | Q(skupina_sk="")).order_by("nazev")[:50]
+    sarze_s_nulovou_cenou = SarzeSkladu.objects.filter(
+        mnozstvi_zbyva__gt=0,
+    ).filter(Q(cena_za_jednotku__isnull=True) | Q(cena_za_jednotku=0)).select_related("surovina").order_by("surovina__nazev", "id")[:50]
+
+    sekce = [
+        (
+            "Příjemky bez dodavatele",
+            rows_from_objects(
+                prijemky_bez_dodavatele,
+                prijem_label,
+                lambda obj: f"/admin/sklad/prijemskladu/{obj.id}/change/",
+                lambda obj: obj.datum.strftime("%d.%m.%Y"),
+                "Doplň dodavatele.",
+            ),
+        ),
+        (
+            "Příjemky bez faktury nebo dodacího listu",
+            rows_from_objects(
+                prijemky_bez_dokladu,
+                prijem_label,
+                lambda obj: f"/admin/sklad/prijemskladu/{obj.id}/change/",
+                lambda obj: obj.datum.strftime("%d.%m.%Y"),
+                "Doplň číslo faktury nebo dodacího listu.",
+            ),
+        ),
+        (
+            "Položky příjmu bez šarže",
+            rows_from_objects(
+                polozky_bez_sarze,
+                polozka_prijmu_label,
+                lambda obj: f"/admin/sklad/prijemskladu/{obj.prijem_id}/change/",
+                lambda obj: f"{obj.mnozstvi} {obj.surovina.jednotka}",
+                "Doplň šarži na položce příjmu.",
+            ),
+        ),
+        (
+            "Položky příjmu bez data spotřeby",
+            rows_from_objects(
+                polozky_bez_data,
+                polozka_prijmu_label,
+                lambda obj: f"/admin/sklad/prijemskladu/{obj.prijem_id}/change/",
+                lambda obj: f"{obj.mnozstvi} {obj.surovina.jednotka}",
+                "Doplň datum spotřeby nebo změň typ data na „Neuvádí se“.",
+            ),
+        ),
+        (
+            "Pohyby skladu bez ceny",
+            rows_from_objects(
+                pohyby_bez_ceny,
+                pohyb_label,
+                lambda obj: f"/admin/sklad/pohybskladu/{obj.id}/change/",
+                lambda obj: obj.datum.strftime("%d.%m.%Y"),
+                "Doplň cenu pohybu nebo oprav zdrojový doklad.",
+            ),
+        ),
+        (
+            "Suroviny bez skupiny spotřebního koše",
+            rows_from_objects(
+                suroviny_bez_skupiny,
+                lambda obj: obj.nazev,
+                lambda obj: f"/admin/sklad/surovina/{obj.id}/change/",
+                lambda obj: obj.jednotka,
+                "Doplň skupinu spotřebního koše.",
+            ),
+        ),
+        (
+            "Aktivní šarže s nulovou cenou",
+            rows_from_objects(
+                sarze_s_nulovou_cenou,
+                sarze_label,
+                lambda obj: f"/admin/sklad/sarzeskladu/{obj.id}/change/",
+                lambda obj: f"Zbývá {obj.mnozstvi_zbyva} {obj.surovina.jednotka}",
+                "Oprav cenu šarže nebo příjemku.",
+            ),
+        ),
+    ]
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "sekce": [
+            {"nazev": nazev, "polozky": polozky, "pocet": len(polozky)}
+            for nazev, polozky in sekce
+        ],
+    }
+
+
 def navrh_nakupu(date_from=None, date_to=None, dnu=7):
     date_from = date_from or timezone.localdate()
     date_to = date_to or (date_from + timedelta(days=dnu - 1))
@@ -1628,6 +1772,18 @@ def uzavri_prijem(prijem: PrijemSkladu, user=None) -> bool:
             raise ValidationError(
                 f"Položka příjemky '{surovina}' musí mít kladné množství."
             )
+        if prijata_cena <= 0:
+            raise ValidationError(
+                f"Položka příjemky '{surovina}' musí mít vyplněnou kladnou cenu."
+            )
+        if not pol.sarze:
+            raise ValidationError(
+                f"Položka příjemky '{surovina}' musí mít vyplněnou šarži."
+            )
+        if not pol.datum_spotreby and pol.typ_data_spotreby != "NEUVADI_SE":
+            raise ValidationError(
+                f"Položka příjemky '{surovina}' musí mít datum spotřeby nebo minimální trvanlivosti."
+            )
 
         nove_mnozstvi = stare_mnozstvi + prijate_mnozstvi
 
@@ -1681,6 +1837,10 @@ def uzavri_vydejku(vydejka: Vydejka, user=None) -> bool:
         stav = get_or_create_stav_for_update(surovina)
 
         mnozstvi = pol.mnozstvi or Decimal("0")
+        if mnozstvi <= 0:
+            raise ValidationError(
+                f"Položka výdejky '{surovina}' musí mít kladné množství."
+            )
         cerpani_sarzi = odeber_ze_sarzi_fefo(surovina, mnozstvi, vydejka=vydejka)
         stav.mnozstvi = (stav.mnozstvi or Decimal("0")) - mnozstvi
         stav.save(update_fields=["mnozstvi"])
@@ -1730,6 +1890,10 @@ def uzavri_inventuru(inventura: Inventura, user=None) -> bool:
         for pol in inventura.sarze_polozky.select_related("surovina", "sarze_skladu").all():
             surovina = pol.surovina
             stav = get_or_create_stav_for_update(surovina)
+            if pol.fyzicky_stav is None:
+                raise ValidationError(
+                    f"Šaržová inventura položky '{surovina}' nemá vyplněný fyzický stav."
+                )
             rozdil = pol.rozdil or Decimal("0")
             if rozdil == 0:
                 continue
@@ -1791,6 +1955,10 @@ def uzavri_inventuru(inventura: Inventura, user=None) -> bool:
         stav = get_or_create_stav_for_update(surovina)
 
         aktualni = stav.mnozstvi or Decimal("0")
+        if pol.fyzicky_stav is None:
+            raise ValidationError(
+                f"Inventura položky '{surovina}' nemá vyplněný fyzický stav."
+            )
         fyzicky = pol.fyzicky_stav or Decimal("0")
         rozdil = fyzicky - aktualni
 
