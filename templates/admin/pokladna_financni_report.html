@@ -38,14 +38,16 @@
   </form>
 
   <div class="rep-grid">
-    <div class="rep-card"><div class="rep-label">Tržba celkem</div><div class="rep-value">{{ celkem|floatformat:-2 }} Kč</div></div>
+    <div class="rep-card"><div class="rep-label">Pokladní příjem celkem</div><div class="rep-value">{{ celkem|floatformat:-2 }} Kč</div></div>
+    <div class="rep-card"><div class="rep-label">Tržba z prodeje</div><div class="rep-value">{{ prodej_celkem|floatformat:-2 }} Kč</div></div>
+    <div class="rep-card"><div class="rep-label">Vklady na konta</div><div class="rep-value">{{ vklady_celkem|floatformat:-2 }} Kč</div></div>
     <div class="rep-card"><div class="rep-label">Dokladů</div><div class="rep-value">{{ pocet_dokladu }}</div></div>
     <div class="rep-card"><div class="rep-label">Pokladní hotovost</div><div class="rep-value">{{ pokladni_hotovost|floatformat:-2 }} Kč</div></div>
     <div class="rep-card"><div class="rep-label">Období</div><div class="rep-value">{{ datum_od|date:"d.m" }} - {{ datum_do|date:"d.m" }}</div></div>
   </div>
 
   <section class="rep-panel">
-    <h2>Tržby podle platební metody</h2>
+    <h2>Pokladní příjem podle platební metody</h2>
     <table class="rep-table">
       <tr><th>Platba</th><th class="rep-num">Dokladů</th><th class="rep-num">Částka</th></tr>
       {% for r in trzby_podle_plateb %}

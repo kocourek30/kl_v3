@@ -35,7 +35,6 @@ class Command(BaseCommand):
             help="Před historií spustí seed_demo_data a seed_sou_users, pokud chybí data.",
         )
 
-    @transaction.atomic
     def handle(self, *args, **options):
         months = max(1, int(options["months"]))
         if options["seed_base"]:
@@ -98,6 +97,8 @@ class Command(BaseCommand):
         for jidlo in Jidlo.objects.select_related("druh").prefetch_related("komponenty_jidla").order_by("nazev"):
             if not jidlo.druh:
                 continue
+            if jidlo.nazev.startswith("Prezentační"):
+                continue
             if jidlo.druh.nazev in data and jidlo.komponenty_jidla.exists():
                 data[jidlo.druh.nazev].append(jidlo)
         return data
@@ -130,7 +131,10 @@ class Command(BaseCommand):
                         mnozstvi=mnozstvi,
                         jednotkova_cena=surovina.prumerna_cena_za_jednotku or Decimal("1.0000"),
                         sarze=f"HIST-{month.strftime('%Y%m')}-{surovina.id}",
-                        datum_spotreby=month + timedelta(days=self.expirace_dnu(surovina)),
+                        datum_spotreby=max(
+                            month + timedelta(days=self.expirace_dnu(surovina)),
+                            date.today() + timedelta(days=365),
+                        ),
                     )
             if not prijem.uzavreny:
                 uzavri_prijem(prijem)
@@ -228,7 +232,7 @@ class Command(BaseCommand):
             defaults={"ikona": "bi-calendar-week"},
         )
 
-        existing_count = menu.polozky.count()
+        existing_count = menu.polozky.exclude(jidlo__nazev__startswith="Prezentační").count()
         if existing_count >= 15:
             return menu
 
@@ -247,7 +251,12 @@ class Command(BaseCommand):
 
     def menu_items_for_day(self, menu, day):
         day_index = day.weekday()
-        polozky = list(menu.polozky.select_related("druh_jidla", "jidlo").order_by("id"))
+        polozky = list(
+            menu.polozky
+            .select_related("druh_jidla", "jidlo")
+            .exclude(jidlo__nazev__startswith="Prezentační")
+            .order_by("id")
+        )
         start = day_index * 3
         return polozky[start:start + 3]
 

@@ -26,6 +26,7 @@ from .services import (
     uzavri_denni_uzaverku,
     uzavri_doklad,
     vytvor_doklad,
+    vytvor_vklad_konta,
     zahaj_qr_platbu,
     zrus_rozpracovany_doklad,
 )
@@ -111,6 +112,7 @@ def pokladna_view(request, pokladna_id):
     hotovost_dnes = dnes_uzavreno.filter(
         zpusob_platby=PokladniDoklad.PLATBA_HOTOVOST
     ).aggregate(suma=Sum("celkem_s_dph"))["suma"] or Decimal("0")
+    vklady_kont = _vklady_kont_podle_uhrady(pokladna, today, today)
     ceka_qr = PokladniDoklad.objects.filter(
         pokladna=pokladna,
         stav=PokladniDoklad.STAV_CEKA_NA_QR,
@@ -430,9 +432,14 @@ def pokladna_vklad_konto(request, pokladna_id):
     if request.method == "POST":
         zakaznik_id = request.POST.get("zakaznik_id")
         poznamka = (request.POST.get("poznamka") or "").strip()
+        zpusob_uhrady = request.POST.get("zpusob_uhrady") or Vklad.ZPUSOB_HOTOVOST
 
         if not zakaznik_id:
             messages.error(request, "Nejprve vyber zákazníka, kterému chceš dobít konto.")
+            return redirect("pokladna:pokladna_vklad_konto", pokladna_id=pokladna.id)
+
+        if zpusob_uhrady not in dict(Vklad.ZPUSOBY_UHRADY):
+            messages.error(request, "Vyber platný způsob úhrady vkladu.")
             return redirect("pokladna:pokladna_vklad_konto", pokladna_id=pokladna.id)
 
         try:
@@ -446,11 +453,17 @@ def pokladna_vklad_konto(request, pokladna_id):
             return redirect("pokladna:pokladna_vklad_konto", pokladna_id=pokladna.id)
 
         zakaznik = get_object_or_404(CustomUser, pk=zakaznik_id, is_active=True)
-        popis = poznamka or f"Vklad přes pokladnu {pokladna.nazev} ({request.user.get_username()})"
+        popis = poznamka or (
+            f"Vklad přes pokladnu {pokladna.nazev} "
+            f"({dict(Vklad.ZPUSOBY_UHRADY)[zpusob_uhrady]}, {request.user.get_username()})"
+        )
         try:
-            Vklad.objects.create(
-                uzivatel=zakaznik,
+            vklad, doklad = vytvor_vklad_konta(
+                pokladna=pokladna,
+                zakaznik=zakaznik,
                 castka=castka,
+                zpusob_uhrady=zpusob_uhrady,
+                obsluha=request.user,
                 poznamka=popis,
             )
         except ValidationError as exc:
@@ -458,7 +471,13 @@ def pokladna_vklad_konto(request, pokladna_id):
             return redirect("pokladna:pokladna_vklad_konto", pokladna_id=pokladna.id)
 
         jmeno = zakaznik.get_full_name() or zakaznik.username
-        messages.success(request, f"Vklad {castka:.2f} Kč pro {jmeno} byl uložen.")
+        messages.success(
+            request,
+            (
+                f"Vklad {vklad.castka:.2f} Kč pro {jmeno} byl uložen "
+                f"({dict(Vklad.ZPUSOBY_UHRADY)[zpusob_uhrady]}, doklad {doklad.cislo_dokladu})."
+            ),
+        )
         _odhlas_zakaznika_pokladny(request, pokladna.id)
         return redirect("pokladna:pokladna_view", pokladna_id=pokladna.id)
 
@@ -471,6 +490,8 @@ def pokladna_vklad_konto(request, pokladna_id):
     return render(request, "pokladna/vklad_konto.html", {
         "pokladna": pokladna,
         "posledni_vklady": posledni_vklady,
+        "zpusoby_uhrady": Vklad.ZPUSOBY_UHRADY,
+        "vychozi_zpusob_uhrady": Vklad.ZPUSOB_HOTOVOST,
     })
 
 
@@ -506,6 +527,30 @@ def _trzby_dne_podle_plateb(pokladna, den):
             "barva": barvy.get(platba, "#6c757d"),
         })
     return polozky, celkem, doklady.count()
+
+
+def _vklady_kont_podle_uhrady(pokladna, datum_od, datum_do):
+    vklady = Vklad.objects.filter(
+        pokladna=pokladna,
+        datum__date__gte=datum_od,
+        datum__date__lte=datum_do,
+        status="standard",
+        castka__gt=0,
+    )
+    polozky = []
+    for kod, nazev in Vklad.ZPUSOBY_UHRADY:
+        qs = vklady.filter(zpusob_uhrady=kod)
+        polozky.append({
+            "kod": kod,
+            "nazev": nazev,
+            "pocet": qs.count(),
+            "castka": qs.aggregate(suma=Sum("castka"))["suma"] or Decimal("0"),
+        })
+    return {
+        "celkem": vklady.aggregate(suma=Sum("castka"))["suma"] or Decimal("0"),
+        "hotovost": vklady.filter(zpusob_uhrady=Vklad.ZPUSOB_HOTOVOST).aggregate(suma=Sum("castka"))["suma"] or Decimal("0"),
+        "polozky": polozky,
+    }
 
 
 @login_required
@@ -602,21 +647,31 @@ def pokladna_financni_report(request, pokladna_id):
         datum_od, datum_do = datum_do, datum_od
 
     doklady = doklady_za_obdobi(pokladna, datum_od, datum_do)
-    celkem = doklady.aggregate(suma=Sum("celkem_s_dph"))["suma"] or Decimal("0")
+    prodejni_doklady = doklady.filter(typ_dokladu=PokladniDoklad.TYP_PRODEJ)
+    vkladove_doklady = doklady.filter(typ_dokladu=PokladniDoklad.TYP_VKLAD_KONTA)
+    prodej_celkem = prodejni_doklady.aggregate(suma=Sum("celkem_s_dph"))["suma"] or Decimal("0")
+    vklady_celkem = vkladove_doklady.aggregate(suma=Sum("celkem_s_dph"))["suma"] or Decimal("0")
+    celkem = prodej_celkem + vklady_celkem
     hotovost = doklady.filter(
         zpusob_platby=PokladniDoklad.PLATBA_HOTOVOST
     ).aggregate(suma=Sum("celkem_s_dph"))["suma"] or Decimal("0")
+    vklady_kont = _vklady_kont_podle_uhrady(pokladna, datum_od, datum_do)
 
     return render(request, "pokladna/financni_report.html", {
         "pokladna": pokladna,
         "datum_od": datum_od,
         "datum_do": datum_do,
         "trzby_podle_plateb": trzby_podle_plateb(doklady),
-        "trzby_podle_druhu": trzby_podle_druhu(doklady),
-        "dph_souhrn": dph_souhrn(doklady),
-        "plu_obraty": plu_obraty(doklady),
+        "trzby_podle_druhu": trzby_podle_druhu(prodejni_doklady),
+        "dph_souhrn": dph_souhrn(prodejni_doklady),
+        "plu_obraty": plu_obraty(prodejni_doklady),
+        "prodej_celkem": prodej_celkem,
+        "vklady_celkem": vklady_celkem,
         "celkem": celkem,
         "pocet_dokladu": doklady.count(),
+        "pocet_prodejnich_dokladu": prodejni_doklady.count(),
+        "pocet_vkladovych_dokladu": vkladove_doklady.count(),
+        "vklady_kont": vklady_kont,
         "pokladni_hotovost": (pokladna.hotovostni_zustatek or Decimal("0")) + hotovost,
     })
 
@@ -630,8 +685,9 @@ def pokladna_uzaverka(request, pokladna_id):
     hotovost = doklady.filter(
         zpusob_platby=PokladniDoklad.PLATBA_HOTOVOST
     ).aggregate(suma=Sum("celkem_s_dph"))["suma"] or Decimal("0")
+    vklady_kont = _vklady_kont_podle_uhrady(pokladna, datum, datum)
     k_odevzdani = hotovost
-    predpokladana_hotovost = (pokladna.hotovostni_zustatek or Decimal("0")) + hotovost
+    predpokladana_hotovost = (pokladna.hotovostni_zustatek or Decimal("0")) + k_odevzdani
     uzaverka = PokladniUzaverka.objects.filter(pokladna=pokladna, datum=datum).first()
 
     if request.method == "POST":
@@ -665,6 +721,7 @@ def pokladna_uzaverka(request, pokladna_id):
         "dph_souhrn": dph_souhrn(doklady),
         "pocet_dokladu": doklady.count(),
         "hotovost": hotovost,
+        "vklady_kont": vklady_kont,
         "k_odevzdani": k_odevzdani,
         "predpokladana_hotovost": predpokladana_hotovost,
         "pokladni_zaklad": pokladna.hotovostni_zustatek or Decimal("0"),

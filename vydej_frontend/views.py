@@ -1,4 +1,5 @@
-# vydej_frontend/views.py
+import logging
+
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
@@ -17,11 +18,13 @@ from canteen_settings.models import MealPickupTime
 from jidelnicek.models import PolozkaJidelnicku
 from django.db.models import Count, Sum, Q
 from django.contrib.auth import get_user_model
+from django.conf import settings
 
 from .decorators import obsluha_required
 from sklad.utils import odeber_ze_skladu_pro_jidlo
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 # vydej_frontend/views.py
 from django.http import JsonResponse
@@ -286,14 +289,12 @@ def issue_order(request, order_id):
             'error': 'Objednávka nenalezena',
         }, status=404)
 
-    except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f'Chyba při vydávání objednávky {order_id}: {str(e)}', exc_info=True)
+    except Exception:
+        logger.exception('Chyba při vydávání objednávky %s.', order_id)
 
         return JsonResponse({
             'success': False,
-            'error': f'Chyba při vytváření účtenky: {str(e)}',
+            'error': 'Chyba při vytváření účtenky.',
         }, status=500)
 
 
@@ -471,36 +472,26 @@ def rfid_scan(request):
         
     except json.JSONDecodeError:
         return JsonResponse({'success': False, 'error': 'Neplatný JSON formát'})
-    except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f'Chyba při RFID scan: {str(e)}', exc_info=True)
-        return JsonResponse({'success': False, 'error': f'Systémová chyba: {str(e)}'})
+    except Exception:
+        logger.exception('Chyba při RFID scan.')
+        return JsonResponse({'success': False, 'error': 'Systémová chyba.'}, status=500)
 
 
-@csrf_exempt
+@login_required
+@obsluha_required
+@require_POST
 def rfid_debug(request):
     """Debug endpoint pro testování RFID"""
-    if request.method == 'POST':
-        data = json.loads(request.body)
-        rfid = data.get('rfid_tag', '').strip()
-        
-        # Získej všechny uživatele s RFID
-        all_users = list(User.objects.filter(
-            identifikacni_medium__isnull=False
-        ).values_list('username', 'first_name', 'last_name', 'identifikacni_medium'))
-        
-        # Zkus najít přesnou shodu
-        user = User.objects.filter(identifikacni_medium=rfid).first()
-        
-        return JsonResponse({
-            'input_rfid': rfid,
-            'found': bool(user),
-            'user': f"{user.first_name} {user.last_name}" if user else None,
-            'all_users_sample': all_users[:10]
-        })
-    
-    return JsonResponse({'error': 'POST only'}, status=405)
+    data = json.loads(request.body)
+    rfid = data.get('rfid_tag', '').strip()
+
+    user = User.objects.filter(identifikacni_medium=rfid).first()
+
+    return JsonResponse({
+        'input_rfid': rfid,
+        'found': bool(user),
+        'user': f"{user.first_name} {user.last_name}" if user else None,
+    })
 
 @login_required
 @obsluha_required
@@ -677,13 +668,11 @@ def issue_single_item(request, item_id):
             'success': False,
             'error': 'Položka nenalezena'
         }, status=404)
-    except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f'Chyba při vydávání položky {item_id}: {str(e)}', exc_info=True)
+    except Exception:
+        logger.exception('Chyba při vydávání položky %s.', item_id)
         return JsonResponse({
             'success': False,
-            'error': f'Chyba při vytváření účtenky: {str(e)}'
+            'error': 'Chyba při vytváření účtenky.'
         }, status=500)
 
 
@@ -694,6 +683,9 @@ from django.views.decorators.http import require_http_methods
 @require_http_methods(["GET"])
 def auto_login_kiosk(request):
     """Automatické přihlášení pro výdejní terminál"""
+    if not getattr(settings, "DEBUG", False) and not getattr(settings, "KIOSK_AUTO_LOGIN_ENABLED", False):
+        return redirect('admin:login')
+
     if request.user.is_authenticated:
         return redirect('vydej_frontend:dashboard')
     
@@ -720,6 +712,6 @@ def auto_login_kiosk(request):
             # Žádný vhodný uživatel
             return redirect('admin:login')
             
-    except Exception as e:
-        print(f"Chyba auto-login: {e}")
+    except Exception:
+        logger.exception("Chyba při automatickém přihlášení výdejního terminálu.")
         return redirect('admin:login')

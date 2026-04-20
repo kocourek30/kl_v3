@@ -184,6 +184,39 @@
     background: #dfe7ee;
   }
 
+  .deposit-method-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .deposit-method {
+    position: relative;
+    display: grid;
+    place-items: center;
+    min-height: 52px;
+    border-radius: 8px;
+    border: 2px solid #dfe6ee;
+    background: #fff;
+    color: #17202a;
+    font-weight: 950;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .deposit-method input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .deposit-method:has(input:checked) {
+    border-color: #18a046;
+    background: #eaf7ee;
+    color: #135f2d;
+    box-shadow: 0 0 0 3px rgba(24,160,70,.12);
+  }
+
   .deposit-submit {
     min-height: 58px;
     border: 0;
@@ -231,6 +264,19 @@
     color: #607080;
     font-size: .9rem;
     font-weight: 700;
+  }
+
+  .deposit-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    border-radius: 999px;
+    background: #eef8f0;
+    color: #135f2d;
+    padding: 2px 9px;
+    font-size: .78rem;
+    font-weight: 950;
+    margin-top: 6px;
   }
 
   .deposit-money {
@@ -296,7 +342,7 @@
                 class="deposit-input"
                 id="depositCustomerSearch"
                 type="search"
-                placeholder="Začni psát jméno, příjmení, login nebo osobní číslo"
+                placeholder="Začni psát jméno, příjmení, přihlašovací jméno nebo osobní číslo"
               >
               <div class="deposit-results" id="depositCustomerResults"></div>
             </div>
@@ -318,6 +364,23 @@
               <button class="deposit-chip" type="button" data-amount="200">200 Kč</button>
               <button class="deposit-chip" type="button" data-amount="500">500 Kč</button>
               <button class="deposit-chip" type="button" data-amount="1000">1 000 Kč</button>
+            </div>
+          </div>
+
+          <div>
+            <div class="deposit-label">Způsob úhrady</div>
+            <div class="deposit-method-row">
+              {% for kod, nazev in zpusoby_uhrady %}
+                <label class="deposit-method">
+                  <input
+                    type="radio"
+                    name="zpusob_uhrady"
+                    value="{{ kod }}"
+                    {% if kod == vychozi_zpusob_uhrady %}checked{% endif %}
+                  >
+                  {{ nazev }}
+                </label>
+              {% endfor %}
             </div>
           </div>
 
@@ -349,6 +412,9 @@
               <div>
                 <div class="deposit-name">{{ vklad.uzivatel.get_full_name|default:vklad.uzivatel.username }}</div>
                 <div class="deposit-meta">{{ vklad.datum|date:"d.m.Y H:i" }}</div>
+                {% if vklad.zpusob_uhrady %}
+                  <div class="deposit-badge">{{ vklad.get_zpusob_uhrady_display }}</div>
+                {% endif %}
                 {% if vklad.poznamka %}
                   <div class="deposit-meta">{{ vklad.poznamka|truncatechars:90 }}</div>
                 {% endif %}

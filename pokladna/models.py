@@ -91,7 +91,7 @@ class Pokladna(models.Model):
         max_digits=12,
         decimal_places=2,
         default=0,
-        help_text="Výchozí hotovost v pokladně. Používá se pro provozní přehledy a finanční reporty.",
+        help_text="Výchozí hotovost v pokladně. Používá se pro provozní a finanční přehledy.",
     )
     qr_iban = models.CharField(
         "IBAN pro QR platby",
@@ -127,6 +127,14 @@ class Pokladna(models.Model):
 
 
 class PokladniDoklad(models.Model):
+    TYP_PRODEJ = "PRODEJ"
+    TYP_VKLAD_KONTA = "VKLAD_KONTA"
+
+    TYPY_DOKLADU = [
+        (TYP_PRODEJ, "Prodej"),
+        (TYP_VKLAD_KONTA, "Vklad na konto"),
+    ]
+
     STAV_ROZPRACOVANO = "ROZPRACOVANO"
     STAV_CEKA_NA_QR = "CEKA_NA_QR"
     STAV_UZAVRENO = "UZAVRENO"
@@ -152,6 +160,13 @@ class PokladniDoklad(models.Model):
     ]
 
     pokladna = models.ForeignKey(Pokladna, on_delete=models.PROTECT)
+    typ_dokladu = models.CharField(
+        "Typ dokladu",
+        max_length=20,
+        choices=TYPY_DOKLADU,
+        default=TYP_PRODEJ,
+        db_index=True,
+    )
     datum = models.DateTimeField(auto_now_add=True)
     cislo_dokladu = models.CharField(
         "Číslo dokladu", max_length=40, unique=True, null=True, blank=True
@@ -228,7 +243,7 @@ class PokladniDoklad(models.Model):
 
     def __str__(self):
         cislo = self.cislo_dokladu or f"#{self.id}"
-        return f"Účtenka {cislo} ({self.datum:%d.%m.%Y %H:%M})"
+        return f"{self.get_typ_dokladu_display()} {cislo} ({self.datum:%d.%m.%Y %H:%M})"
 
     @property
     def je_rozpracovany(self):

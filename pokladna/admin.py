@@ -150,6 +150,7 @@ class PokladniDokladAdmin(admin.ModelAdmin):
         "cislo_dokladu",
         "datum",
         "pokladna",
+        "typ_dokladu",
         "stav",
         "zpusob_platby",
         "qr_stav",
@@ -157,7 +158,7 @@ class PokladniDokladAdmin(admin.ModelAdmin):
         "obsluha",
         "celkem_s_dph",
     )
-    list_filter = ("stav", "zpusob_platby", "pokladna", "datum")
+    list_filter = ("typ_dokladu", "stav", "zpusob_platby", "pokladna", "datum")
     search_fields = ("id", "cislo_dokladu", "obsluha__username", "zakaznik__username")
     inlines = [PokladniPolozkaInline, PokladniSmazanaPolozkaInline]
     readonly_fields = (
@@ -184,7 +185,7 @@ class PokladniDokladAdmin(admin.ModelAdmin):
         (None, {
             "fields": (
                 ("pokladna", "cislo_dokladu", "stav"),
-                ("datum", "obsluha", "zakaznik"),
+                ("datum", "typ_dokladu", "obsluha", "zakaznik"),
                 "zpusob_platby",
             )
         }),
@@ -295,24 +296,33 @@ class PokladniUzaverkaAdmin(admin.ModelAdmin):
         pokladna_id = request.GET.get("pokladna")
         pokladna = pokladny.filter(pk=pokladna_id).first() if pokladna_id else pokladny.first()
         doklady = doklady_za_obdobi(pokladna, datum_od, datum_do) if pokladna else PokladniDoklad.objects.none()
+        prodejni_doklady = doklady.filter(typ_dokladu=PokladniDoklad.TYP_PRODEJ)
+        vkladove_doklady = doklady.filter(typ_dokladu=PokladniDoklad.TYP_VKLAD_KONTA)
         hotovost = doklady.filter(
             zpusob_platby=PokladniDoklad.PLATBA_HOTOVOST
         ).aggregate(suma=Sum("celkem_s_dph"))["suma"] or Decimal("0")
+        prodej_celkem = prodejni_doklady.aggregate(suma=Sum("celkem_s_dph"))["suma"] or Decimal("0")
+        vklady_celkem = vkladove_doklady.aggregate(suma=Sum("celkem_s_dph"))["suma"] or Decimal("0")
+        celkem = prodej_celkem + vklady_celkem
 
         return {
             **self.admin_site.each_context(request),
-            "title": "Finanční report pokladny",
+            "title": "Finanční přehled pokladny",
             "opts": self.model._meta,
             "pokladny": pokladny,
             "pokladna": pokladna,
             "datum_od": datum_od,
             "datum_do": datum_do,
             "trzby_podle_plateb": trzby_podle_plateb(doklady),
-            "trzby_podle_druhu": trzby_podle_druhu(doklady),
-            "dph_souhrn": dph_souhrn(doklady),
-            "plu_obraty": plu_obraty(doklady),
-            "celkem": doklady.aggregate(suma=Sum("celkem_s_dph"))["suma"] or Decimal("0"),
+            "trzby_podle_druhu": trzby_podle_druhu(prodejni_doklady),
+            "dph_souhrn": dph_souhrn(prodejni_doklady),
+            "plu_obraty": plu_obraty(prodejni_doklady),
+            "prodej_celkem": prodej_celkem,
+            "vklady_celkem": vklady_celkem,
+            "celkem": celkem,
             "pocet_dokladu": doklady.count(),
+            "pocet_prodejnich_dokladu": prodejni_doklady.count(),
+            "pocet_vkladovych_dokladu": vkladove_doklady.count(),
             "pokladni_hotovost": ((pokladna.hotovostni_zustatek if pokladna else Decimal("0")) or Decimal("0")) + hotovost,
         }
 
@@ -330,14 +340,20 @@ class PokladniUzaverkaAdmin(admin.ModelAdmin):
 
     def _export_xls(self, context):
         response = HttpResponse(content_type="application/vnd.ms-excel; charset=utf-8")
-        response["Content-Disposition"] = 'attachment; filename="financni-report-pokladny.xls"'
+        response["Content-Disposition"] = 'attachment; filename="financni-prehled-pokladny.xls"'
         rows = [
             "<html><head><meta charset='utf-8'></head><body>",
-            "<h1>Finanční report pokladny</h1>",
+            "<h1>Finanční přehled pokladny</h1>",
             f"<p>{context['datum_od']:%d.%m.%Y} - {context['datum_do']:%d.%m.%Y}</p>",
             f"<p>Pokladna: {html_cell(context['pokladna'] or '-')}</p>",
-            f"<p>Tržba celkem: {money_cs(context['celkem'])}</p>",
-            "<h2>Tržby podle platební metody</h2><table border='1'><tr><th>Platební metoda</th><th>Dokladů</th><th>Částka Kč</th></tr>",
+            f"<p>Pokladní příjem celkem: {money_cs(context['celkem'])}</p>",
+            "<table border='1'>",
+            "<tr><th>Ukazatel</th><th>Částka Kč</th></tr>",
+            f"<tr><td>Tržba z prodeje</td><td>{money_cs(context['prodej_celkem'])}</td></tr>",
+            f"<tr><td>Vklady na konta</td><td>{money_cs(context['vklady_celkem'])}</td></tr>",
+            f"<tr><td>Pokladní příjem celkem</td><td>{money_cs(context['celkem'])}</td></tr>",
+            "</table>",
+            "<h2>Pokladní příjem podle platební metody</h2><table border='1'><tr><th>Platební metoda</th><th>Dokladů</th><th>Částka Kč</th></tr>",
         ]
         for r in context["trzby_podle_plateb"]:
             rows.append(f"<tr><td>{html_cell(r['nazev'])}</td><td>{r['pocet']}</td><td>{self._fmt2(r['castka'])}</td></tr>")
@@ -359,12 +375,20 @@ class PokladniUzaverkaAdmin(admin.ModelAdmin):
         doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=24, leftMargin=24, topMargin=24, bottomMargin=24)
         styles, font_name = czech_pdf_styles()
         story = [
-            Paragraph("Finanční report pokladny", styles["Title"]),
+            Paragraph("Finanční přehled pokladny", styles["Title"]),
             Paragraph(f"Pokladna: {context['pokladna'] or '-'} | Období: {context['datum_od']:%d.%m.%Y} - {context['datum_do']:%d.%m.%Y}", styles["Normal"]),
-            Paragraph(f"Tržba celkem: {money_cs(context['celkem'])} | Dokladů: {context['pocet_dokladu']} | Pokladní hotovost: {money_cs(context['pokladni_hotovost'])}", styles["Normal"]),
+            Paragraph(f"Pokladní příjem celkem: {money_cs(context['celkem'])} | Dokladů: {context['pocet_dokladu']} | Pokladní hotovost: {money_cs(context['pokladni_hotovost'])}", styles["Normal"]),
             Spacer(1, 12),
         ]
-        story.append(Paragraph("Tržby podle platební metody", styles["Heading2"]))
+        story.append(self._pdf_table([
+            ["Ukazatel", "Částka"],
+            ["Tržba z prodeje", money_cs(context["prodej_celkem"])],
+            ["Vklady na konta", money_cs(context["vklady_celkem"])],
+            ["Pokladní příjem celkem", money_cs(context["celkem"])],
+        ], [260, 140], font_name=font_name))
+        story.append(Spacer(1, 10))
+
+        story.append(Paragraph("Pokladní příjem podle platební metody", styles["Heading2"]))
         data = [["Platební metoda", "Dokladů", "Částka"]]
         data += [[r["nazev"], r["pocet"], money_cs(r["castka"])] for r in context["trzby_podle_plateb"]]
         story.append(self._pdf_table(data, [240, 90, 130], font_name=font_name))
@@ -383,7 +407,7 @@ class PokladniUzaverkaAdmin(admin.ModelAdmin):
 
         doc.build(story)
         response = HttpResponse(buffer.getvalue(), content_type="application/pdf")
-        response["Content-Disposition"] = 'attachment; filename="financni-report-pokladny.pdf"'
+        response["Content-Disposition"] = 'attachment; filename="financni-prehled-pokladny.pdf"'
         return response
 
     def _pdf_table(self, data, col_widths, font_name=None):

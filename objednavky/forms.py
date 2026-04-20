@@ -1,60 +1,72 @@
 from django import forms
-from .models import Objednavka, PolozkaObjednavky
-from jidelnicek.models import Jidelnicek, PolozkaJidelnicku
+
+from jidelnicek.models import PolozkaJidelnicku
+
+from .models import Order, OrderItem, OrderValidator
 
 
 class ObjednavkaForm(forms.ModelForm):
-    jidlo_ids = forms.MultipleChoiceField(
+    """
+    Kompatibilní formulář nad aktuálním modelem Order.
+
+    Původní verze odkazovala na odstraněné modely Objednavka/PolozkaObjednavky,
+    takže pouhý import formulářů mohl spadnout. Název třídy necháváme kvůli
+    případným starším importům.
+    """
+
+    menu_items = forms.ModelMultipleChoiceField(
         label="Jídla k objednání",
         required=False,
+        queryset=PolozkaJidelnicku.objects.none(),
         widget=forms.CheckboxSelectMultiple,
-        choices=[]
     )
 
     class Meta:
-        model = Objednavka
-        fields = ['uzivatel', 'datum_objednavky', 'poznamka']
+        model = Order
+        fields = ['user', 'datum_vydeje', 'status']
         widgets = {
-            'datum_objednavky': forms.DateInput(attrs={'type': 'date'}),
+            'datum_vydeje': forms.DateInput(attrs={'type': 'date'}, format='%Y-%m-%d'),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        datum = None
-
-        # Hodnota data buď z POST, nebo instance (editace)
-        if 'datum_objednavky' in self.data:
-            datum = self.data.get('datum_objednavky')
-        elif self.instance.pk:
-            datum = self.instance.datum_objednavky
+        datum = self.data.get('datum_vydeje') or getattr(self.instance, 'datum_vydeje', None)
 
         if datum:
-            jidelnicky = Jidelnicek.objects.filter(platnost_od__lte=datum, platnost_do__gte=datum)
-            if jidelnicky.exists():
-                jidelnicek = jidelnicky.first()
-                polozky = PolozkaJidelnicku.objects.filter(jidelnicek=jidelnicek).select_related('jidlo')
-                choices = [(str(p.jidlo.id), f'{p.jidlo.nazev} ({p.jidlo.cena} Kč)') for p in polozky]
-                self.fields['jidlo_ids'].choices = choices
-            else:
-                self.fields['jidlo_ids'].choices = []
-        else:
-            self.fields['jidlo_ids'].choices = []
+            self.fields['menu_items'].queryset = (
+                PolozkaJidelnicku.objects
+                .filter(
+                    jidelnicek__platnost_od__lte=datum,
+                    jidelnicek__platnost_do__gte=datum,
+                )
+                .select_related('jidlo', 'druh_jidla')
+            )
 
-        # Předvyplnit již existující položky při editaci
         if self.instance.pk:
-            existujici = self.instance.polozky.values_list('jidlo_id', flat=True)
-            self.initial['jidlo_ids'] = [str(i) for i in existujici]
+            self.initial['menu_items'] = list(
+                self.instance.items.values_list('menu_item_id', flat=True)
+            )
 
     def save(self, commit=True):
-        objednavka = super().save(commit=False)
-        if commit:
-            objednavka.save()  # Uložení objednávky, aby měla PK
+        order = super().save(commit=False)
+        if not commit:
+            return order
 
-            # Pro přepsání položek odstraníme staré 
-            objednavka.polozky.all().delete()
+        order.save()
+        order.items.all().delete()
 
-            jidlo_ids = self.cleaned_data.get('jidlo_ids', [])
-            for jidlo_id in jidlo_ids:
-                jidlo_obj = PolozkaObjednavky.objects.model.jidlo.field.remote_field.model.objects.get(pk=jidlo_id)
-                PolozkaObjednavky.objects.create(objednavka=objednavka, jidlo=jidlo_obj, pocet=1)
-        return objednavka
+        items_to_create = []
+        for menu_item in self.cleaned_data.get('menu_items', []):
+            items_to_create.append(
+                OrderItem(
+                    order=order,
+                    menu_item=menu_item,
+                    quantity=1,
+                    cena=OrderValidator.get_price_for_user(order.user, menu_item),
+                )
+            )
+
+        if items_to_create:
+            OrderItem.objects.bulk_create(items_to_create)
+
+        return order

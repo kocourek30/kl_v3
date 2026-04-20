@@ -4,7 +4,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.db import transaction, models
-from django.db.models import Count, Max, Sum
+from django.db.models import Max, Prefetch, Sum
 from django.http import JsonResponse
 from decimal import Decimal
 from django.contrib import admin, messages
@@ -18,7 +18,7 @@ from .models import (
 )
 from .services import recalculate_order_prices, get_recalculation_summary_by_user
 from jidelnicek.models import Jidelnicek, PolozkaJidelnicku
-from dotace.models import DotacniPolitika, DotaceProJidelniskouSkupinu
+from dotace.models import DotaceProJidelniskouSkupinu
 
 User = get_user_model()
 
@@ -126,6 +126,20 @@ class OrderAdmin(admin.ModelAdmin):
     ]
     list_select_related = ('user',)
 
+    def get_queryset(self, request):
+        return (
+            super()
+            .get_queryset(request)
+            .select_related('user')
+            .prefetch_related(
+                Prefetch(
+                    'items',
+                    queryset=OrderItem.objects.select_related('menu_item__jidlo'),
+                )
+            )
+            .annotate(total_quantity_sum=Sum('items__quantity'))
+        )
+
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
@@ -163,15 +177,18 @@ class OrderAdmin(admin.ModelAdmin):
     def formatted_datum(self, obj):
         return obj.datum_vydeje.strftime('%d.%m.%Y')
 
-    @admin.display(description="Počet položek", ordering='items__quantity')
+    @admin.display(description="Počet položek", ordering='total_quantity_sum')
     def total_items(self, obj):
-        return sum(item.quantity for item in obj.items.all())
+        if getattr(obj, 'total_quantity_sum', None) is not None:
+            return obj.total_quantity_sum
+        return obj.total_quantity()
 
     @admin.display(description="Položky objednávky a cena")
     def show_items(self, obj):
+        items = list(obj.items.all())[:3]
         return ", ".join(
             f"{item.menu_item.jidlo.nazev} x{item.quantity} ({item.cena} Kč)"
-            for item in obj.items.select_related('menu_item__jidlo')[:3]
+            for item in items
         )
 
     @admin.display(description="Zákazník")

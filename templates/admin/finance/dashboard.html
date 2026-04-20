@@ -48,7 +48,7 @@
       <label>Do
         <input type="date" name="do" value="{{ datum_do|date:'Y-m-d' }}">
       </label>
-      <label>Report
+      <label>Přehled
         <select name="report">
           {% for value, label in report_types %}
             <option value="{{ value }}" {% if value == report_type %}selected{% endif %}>{{ label }}</option>
@@ -79,7 +79,7 @@
       <div class="fin-value">{{ objednavky_trzba|floatformat:-2 }} Kč</div>
     </div>
     <div class="fin-card">
-      <strong>Dotace/slevy objednávek</strong>
+      <strong>Dotace a slevy objednávek</strong>
       <div class="fin-value orange">{{ objednavky_sleva_dotace|floatformat:-2 }} Kč</div>
     </div>
     <div class="fin-card">
@@ -109,7 +109,7 @@
           {% endfor %}
         </tr>
       {% empty %}
-        <tr><td colspan="{{ report_headers|length }}">Pro zvolený report nejsou v období žádná data.</td></tr>
+        <tr><td colspan="{{ report_headers|length }}">Pro zvolený přehled nejsou v období žádná data.</td></tr>
       {% endfor %}
     </table>
   </section>
@@ -141,6 +141,12 @@
       <table class="fin-table">
         <tr><th>Pohyb</th><th class="fin-num">Částka</th></tr>
         <tr><td>Vklady na konta</td><td class="fin-num">{{ vklady_kladne|floatformat:-2 }} Kč</td></tr>
+        {% for row in vklady_podle_uhrady %}
+          <tr>
+            <td class="text-muted ps-3">z toho {{ row.nazev }}</td>
+            <td class="fin-num text-muted">{{ row.castka|floatformat:-2 }} Kč</td>
+          </tr>
+        {% endfor %}
         <tr><td>Čerpání kont v pokladně</td><td class="fin-num">{{ cerpani_konta|floatformat:-2 }} Kč</td></tr>
         <tr><td>Čerpání kont objednávkami</td><td class="fin-num">{{ konta_report.totals.cerpani_objednavky|floatformat:-2 }} Kč</td></tr>
         <tr><td>Dotace na konta</td><td class="fin-num">{{ konta_report.totals.dotace|floatformat:-2 }} Kč</td></tr>
@@ -210,7 +216,7 @@
       <tr><td>Pokladních dokladů</td><td class="fin-num">{{ pocet_pokladnich_dokladu }}</td></tr>
       <tr><td>Objednávek zahrnutých do tržeb</td><td class="fin-num">{{ pocet_objednavek }}</td></tr>
       <tr><td>Porcí zahrnutých do tržeb</td><td class="fin-num">{{ pocet_porci }}</td></tr>
-      <tr><td>Ceníková hodnota objednávek před slevami/dotacemi</td><td class="fin-num">{{ objednavky_cenik|floatformat:-2 }} Kč</td></tr>
+      <tr><td>Ceníková hodnota objednávek před slevami a dotacemi</td><td class="fin-num">{{ objednavky_cenik|floatformat:-2 }} Kč</td></tr>
       <tr><td>Slevy a dotace v objednávkách</td><td class="fin-num">{{ objednavky_sleva_dotace|floatformat:-2 }} Kč</td></tr>
       <tr><td>Připsané dotace na konta</td><td class="fin-num">{{ dotace_pripsane|floatformat:-2 }} Kč</td></tr>
       <tr><td>Stornované pokladní doklady v období</td><td class="fin-num">{{ storna_pokladna|floatformat:-2 }} Kč</td></tr>

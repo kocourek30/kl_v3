@@ -120,7 +120,7 @@ class FakturacniDavkaAdmin(admin.ModelAdmin):
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = f'attachment; filename="fakturace-{davka.rok}-{davka.mesic:02d}.csv"'
         response.write("\ufeff")
-        response.write(csv_row(["Typ", "Jméno", "Login", "Osobní číslo", "Skupina", "Počet porcí", "Částka Kč", "Detail"]))
+        response.write(csv_row(["Typ", "Jméno", "Přihlašovací jméno", "Osobní číslo", "Skupina", "Počet porcí", "Částka Kč", "Detail"]))
         for p in self._rows(davka):
             response.write(csv_row([
                 p.get_typ_display(),
@@ -141,7 +141,7 @@ class FakturacniDavkaAdmin(admin.ModelAdmin):
             "<meta charset='utf-8'>",
             f"<h1>Fakturace {davka.mesic:02d}/{davka.rok}</h1>",
             f"<p>Dotace: {money_cs(davka.dotace_celkem)} | Srážky ze mzdy: {money_cs(davka.srazky_celkem)}</p>",
-            "<table border='1'><tr><th>Typ</th><th>Jméno</th><th>Login</th><th>Osobní číslo</th><th>Skupina</th><th>Počet porcí</th><th>Částka Kč</th><th>Detail</th></tr>",
+            "<table border='1'><tr><th>Typ</th><th>Jméno</th><th>Přihlašovací jméno</th><th>Osobní číslo</th><th>Skupina</th><th>Počet porcí</th><th>Částka Kč</th><th>Detail</th></tr>",
         ]
         for p in self._rows(davka):
             rows.append(

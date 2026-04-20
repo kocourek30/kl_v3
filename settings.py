@@ -312,7 +312,7 @@ ALLOWED_UPLOAD_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.pdf', '.doc', '.
 JAZZMIN_SETTINGS = {
     "site_title": "KlikniJídlo Admin",
     "site_header": "KlikniJídlo",
-    "site_brand": "Kliknijidlo.cz",
+    "site_brand": "KlikniJídlo.cz",
     "show_ui_builder": DEBUG,  # Only show in development
     
     "icons": {

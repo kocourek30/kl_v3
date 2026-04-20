@@ -1,33 +1,41 @@
-# frontend/views.py
 import json
+import logging
+
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.contrib.auth import login
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+
 from users.models import CustomUser
 
+
+logger = logging.getLogger(__name__)
+
+
 @csrf_exempt
+@require_POST
 def rfid_login_api(request):
-    print('>>> RFID LOGIN API HIT', request.method)  # debug
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body.decode('utf-8'))
-        except json.JSONDecodeError:
-            return JsonResponse({'success': False, 'error': 'Neplatný JSON'}, status=400)
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Neplatný JSON'}, status=400)
 
-        rfid = data.get('rfid')
-        if not rfid:
-            return JsonResponse({'success': False, 'error': 'RFID chybí'}, status=400)
+    rfid = (data.get('rfid') or '').strip()
+    if not rfid:
+        return JsonResponse({'success': False, 'error': 'RFID chybí'}, status=400)
 
-        rfid = rfid.strip()
-        user = CustomUser.objects.filter(identifikacni_medium__iexact=rfid).first()
-        if user:
-            login(request, user)
-            return JsonResponse({'success': True, 'username': user.username})
-        else:
-            return JsonResponse({'success': False, 'error': 'Uživatel nenalezen'}, status=404)
-    else:
-        return JsonResponse({'success': False, 'error': 'Nepodporovaný HTTP metod'}, status=405)
+    user = CustomUser.objects.filter(
+        identifikacni_medium__iexact=rfid,
+        is_active=True,
+    ).first()
+    if not user:
+        logger.warning("Neúspěšný RFID login pro neznámý tag.")
+        return JsonResponse({'success': False, 'error': 'Uživatel nenalezen'}, status=404)
+
+    login(request, user)
+    return JsonResponse({'success': True, 'username': user.username})
+
 
 def rfid_login_page(request):
     if request.user.is_authenticated:

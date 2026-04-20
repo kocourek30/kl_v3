@@ -1,6 +1,6 @@
 {% extends "pokladna/base_pokladna.html" %}
 
-{% block title %}Uzavřené účty - {{ pokladna.nazev }}{% endblock %}
+{% block title %}Uzavřené doklady - {{ pokladna.nazev }}{% endblock %}
 
 {% block content %}
 <style>
@@ -36,7 +36,7 @@
 <div class="closed-page">
   <div class="closed-header">
     <div>
-      <h1 class="closed-title">Uzavřené účty</h1>
+      <h1 class="closed-title">Uzavřené doklady</h1>
       <div class="closed-meta">{{ pokladna.nazev }} · posledních 200 dokladů</div>
     </div>
     <div class="closed-actions">
@@ -56,7 +56,7 @@
       <table class="closed-table">
         <thead>
           <tr>
-            <th>Účet</th>
+            <th>Doklad</th>
             <th>Zákazník</th>
             <th>Platba</th>
             <th>Stav</th>
@@ -109,7 +109,7 @@
         </tbody>
       </table>
     {% else %}
-      <div class="closed-empty">Zatím tu nejsou žádné uzavřené ani stornované účty.</div>
+      <div class="closed-empty">Zatím tu nejsou žádné uzavřené ani stornované doklady.</div>
     {% endif %}
   </section>
 </div>

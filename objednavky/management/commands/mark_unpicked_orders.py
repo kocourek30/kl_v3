@@ -1,9 +1,8 @@
 from django.core.management.base import BaseCommand
-from django.utils import timezone
 from datetime import date
 
 from objednavky.models import Order
-from objednavky.services import mark_order_as_not_picked
+from jidelnicek.services import mark_order_as_not_picked
 
 
 class Command(BaseCommand):

@@ -1,6 +1,6 @@
 {% extends "pokladna/base_pokladna.html" %}
 
-{% block title %}Detail účtu - {{ doklad.cislo_dokladu|default:doklad.id }}{% endblock %}
+{% block title %}Detail dokladu - {{ doklad.cislo_dokladu|default:doklad.id }}{% endblock %}
 
 {% block content %}
 <style>
@@ -42,11 +42,11 @@
 <div class="detail-page">
   <div class="detail-head">
     <div>
-      <h1 class="detail-title">Detail účtu</h1>
+      <h1 class="detail-title">Detail dokladu</h1>
       <div class="detail-meta">{{ doklad.cislo_dokladu|default:doklad.id }} · {{ doklad.datum|date:"d.m.Y H:i" }}</div>
     </div>
     <div class="detail-actions">
-      <a class="detail-btn detail-btn-light" href="{% url 'pokladna:pokladna_uzavrene_ucty' pokladna.id %}">Uzavřené účty</a>
+      <a class="detail-btn detail-btn-light" href="{% url 'pokladna:pokladna_uzavrene_ucty' pokladna.id %}">Uzavřené doklady</a>
       <a class="detail-btn detail-btn-light" href="{% url 'pokladna:pokladna_prehled' pokladna.id %}">Přehled</a>
     </div>
   </div>
@@ -59,7 +59,7 @@
 
   <div class="detail-grid">
     <aside class="detail-card">
-      <h2>Účet</h2>
+      <h2>Doklad</h2>
       <div class="detail-body">
         <div class="detail-row">
           <div class="detail-label">Částka</div>
@@ -82,6 +82,10 @@
           <div class="detail-value">{{ doklad.get_zpusob_platby_display|default:"-" }}</div>
         </div>
         <div class="detail-row">
+          <div class="detail-label">Typ dokladu</div>
+          <div class="detail-value">{{ doklad.get_typ_dokladu_display }}</div>
+        </div>
+        <div class="detail-row">
           <div class="detail-label">Zákazník</div>
           <div class="detail-value">{% if doklad.zakaznik %}{{ doklad.zakaznik.get_full_name|default:doklad.zakaznik.username }}{% else %}Anonymní zákazník{% endif %}</div>
         </div>
@@ -102,7 +106,7 @@
         {% if doklad.je_uzavreny and not doklad.uzaverka_id %}
           <form method="post" action="{% url 'pokladna:pokladna_stornovat_doklad' pokladna.id doklad.id %}">
             {% csrf_token %}
-            <button class="detail-btn detail-btn-danger w-100" type="submit">Stornovat účet</button>
+            <button class="detail-btn detail-btn-danger w-100" type="submit">Stornovat doklad</button>
           </form>
         {% endif %}
       </div>
@@ -137,7 +141,7 @@
           </tbody>
         </table>
       {% else %}
-        <div class="detail-empty">Účet nemá žádné položky.</div>
+        <div class="detail-empty">Doklad nemá žádné položky.</div>
       {% endif %}
     </main>
   </div>

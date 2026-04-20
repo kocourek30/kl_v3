@@ -1,82 +1,20 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="row">
-  <!-- Levý sloupec 3: Menu + DETAIL KONTA -->
-  <div class="col-md-3 mb-4">
-    <h4><i class="fas fa-user me-2"></i>{{ user.first_name }} {{ user.last_name }}</h4>
-    
-    <!-- Detail konta -->
-    <div class="card shadow-sm mb-3">
-      <div class="card-header bg-light">
-        <strong class="text-muted"><i class="fa-solid fa-wallet me-2"></i>Detail konta</strong>
-      </div>
-      <div class="card-body p-3 small">
-        {% if not user_settings.cerpani_debit %}
-        <div class="d-flex justify-content-between mb-2">
-          <span><i class="fa-solid fa-arrow-down text-success me-1"></i>Vklady celkem:</span>
-          <span class="text-success fw-semibold">{{ balance_breakdown.vklady|floatformat:2 }} Kč</span>
-        </div>
-        <hr class="my-2">
-        {% endif %}
-        
-        <div class="d-flex justify-content-between mb-2">
-          <span><i class="fa-solid fa-utensils text-danger me-1"></i>Vydané objednávky:</span>
-          <span class="text-danger fw-semibold">-{{ balance_breakdown.vydane|floatformat:2 }} Kč</span>
-        </div>
-        
-        <div class="d-flex justify-content-between mb-2">
-          <span><i class="fa-solid fa-clock text-warning me-1"></i>Zálohy za objednávky:</span>
-          <span class="text-warning fw-semibold">-{{ balance_breakdown.zalohy|floatformat:2 }} Kč</span>
-        </div>
-        
-        <hr class="my-2 border-2">
-        
-        <div class="d-flex justify-content-between">
-          <span class="fw-bold fs-6">
-            <i class="fa-solid fa-equals me-1"></i>
-            {% if user_settings.cerpani_debit %}
-              Aktuální spotřeba:
-            {% else %}
-              Aktuální zůstatek:
-            {% endif %}
-          </span>
-          <span class="fw-bold fs-5 {% if balance_breakdown.celkem >= 0 %}text-success{% else %}text-danger{% endif %}">
-            {{ balance_breakdown.celkem|floatformat:2 }} Kč
-          </span>
-        </div>
-        
-        {% if user_settings.cerpani_debit %}
-        <div class="mt-2 pt-2 border-top">
-          <div class="d-flex justify-content-between text-muted">
-            <span><i class="fa-solid fa-gauge-high me-1"></i>Debetní limit:</span>
-            <span class="fw-semibold">{{ user_settings.debit_limit|floatformat:2 }} Kč</span>
-          </div>
-        </div>
-        {% endif %}
-      </div>
-    </div>
+{% include "users/_account_styles.html" %}
 
-    <nav class="nav flex-column nav-pills mt-3" aria-orientation="vertical">
-      <a class="nav-link {% if request.resolver_match.url_name == 'user-profile' %}active{% endif %}" href="{% url 'users:user-profile' %}">
-        <i class="fas fa-id-card me-1"></i>Můj profil
-      </a>
-      <a class="nav-link {% if request.resolver_match.url_name == 'consumption-history' %}active{% endif %}" href="{% url 'users:consumption-history' %}">
-        <i class="fas fa-history me-1"></i>Historie konzumace
-      </a>
-      <a class="nav-link {% if request.resolver_match.url_name == 'account-history' %}active{% endif %}" href="{% url 'users:account-history' %}">
-        <i class="fas fa-file-invoice-dollar me-1"></i>Historie konta
-      </a>
-    </nav>
+<div class="row customer-layout">
+  <div class="col-lg-3 col-md-4 mb-4">
+    {% include "users/_account_sidebar.html" %}
   </div>
 
   <!-- Pravý sloupec 9: Historie konzumace -->
-  <div class="col-md-9">
+  <div class="col-lg-9 col-md-8">
     <h2><i class="fas fa-history me-2"></i>Historie konzumace</h2>
     <p class="text-muted">Přehled všech vydaných objednávek</p>
     
     <!-- ✅ FILTR -->
-    <div class="card shadow-sm mb-4">
+    <div class="card shadow-sm mb-4 customer-filter">
       <div class="card-header" style="background-color: #54ae43; color: white;">
         <strong><i class="fas fa-filter me-2"></i>Filtrovat období</strong>
       </div>
@@ -201,28 +139,6 @@
     {% endif %}
   </div>
 </div>
-
-<style>
-  /* Zvýraznění aktivního radio tlačítka zelenou */
-  .btn-check:checked + .btn-outline-success {
-    background-color: #54ae43;
-    border-color: #54ae43;
-    color: white;
-  }
-  
-  .btn-outline-success:hover {
-    background-color: #54ae43;
-    border-color: #54ae43;
-    color: white;
-  }
-  
-  /* Hover efekt pro zelená tlačítka */
-  .btn[style*="background-color: #54ae43"]:hover {
-    background-color: #469738 !important;
-    opacity: 0.9;
-  }
-</style>
-
 <script>
 function toggleCustomDates() {
   const customRadio = document.getElementById('filter_custom');

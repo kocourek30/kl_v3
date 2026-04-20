@@ -72,6 +72,24 @@
             {% endfor %}
           </tbody>
         </table>
+        <table class="close-table">
+          <thead>
+            <tr>
+              <th>Vklady na konta</th>
+              <th class="text-end">Vkladů</th>
+              <th class="text-end">Částka</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in vklady_kont.polozky %}
+              <tr>
+                <td>{{ p.nazev }}</td>
+                <td class="close-num">{{ p.pocet }}</td>
+                <td class="close-num">{{ p.castka|floatformat:-2 }} Kč</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     </main>
 

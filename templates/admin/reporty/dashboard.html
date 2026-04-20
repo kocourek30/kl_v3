@@ -215,9 +215,9 @@ document.addEventListener('DOMContentLoaded', function() {
         
         {# Exporty odděleny do vlastní sekce #}
         <div class="export-section">
-            <span class="mr-3" style="font-weight: bold; color: var(--my-orange);">EXPORT DAT:</span>
-            <a href="?export=csv&{{ request.GET.urlencode }}" class="btn btn-outline-success btn-sm">📄 CSV Export</a>
-            <a href="?export=pdf&{{ request.GET.urlencode }}" class="btn btn-outline-danger btn-sm">📑 PDF Export</a>
+            <span class="mr-3" style="font-weight: bold; color: var(--my-orange);">Export dat:</span>
+            <a href="?export=csv&{{ request.GET.urlencode }}" class="btn btn-outline-success btn-sm">Stáhnout CSV</a>
+            <a href="?export=pdf&{{ request.GET.urlencode }}" class="btn btn-outline-danger btn-sm">Stáhnout PDF</a>
             
         </div>
     </form>

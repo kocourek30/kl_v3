@@ -21,6 +21,7 @@ from .services import (
     uzavri_denni_uzaverku,
     uzavri_doklad,
     vytvor_doklad,
+    vytvor_vklad_konta,
     zahaj_qr_platbu,
     zrus_rozpracovany_doklad,
 )
@@ -125,6 +126,46 @@ class PokladnaServiceTests(TestCase):
         self.assertEqual(uzaverka.konto, Decimal("0.00"))
         self.assertEqual(uzaverka.rozdil_hotovosti, Decimal("0.00"))
         self.assertEqual(PokladniDoklad.objects.filter(uzaverka=uzaverka).count(), 2)
+
+    def test_vklad_konta_vytvori_pokladni_doklad_o_platbe(self):
+        vklad, doklad = vytvor_vklad_konta(
+            self.pokladna,
+            self.zakaznik,
+            Decimal("300.00"),
+            Vklad.ZPUSOB_KARTA,
+            self.obsluha,
+            "Test vklad kartou",
+        )
+
+        self.assertEqual(vklad.zpusob_uhrady, Vklad.ZPUSOB_KARTA)
+        self.assertEqual(vklad.pokladna, self.pokladna)
+        self.assertEqual(doklad.typ_dokladu, PokladniDoklad.TYP_VKLAD_KONTA)
+        self.assertEqual(doklad.zpusob_platby, PokladniDoklad.PLATBA_KARTA)
+        self.assertEqual(doklad.konto_pohyb, vklad)
+        self.assertEqual(doklad.celkem_s_dph, Decimal("300.00"))
+        self.assertEqual(doklad.celkem_dph, Decimal("0.00"))
+        self.assertEqual(doklad.stav, PokladniDoklad.STAV_UZAVRENO)
+        self.assertTrue(doklad.cislo_dokladu.startswith("VKL-"))
+
+    def test_denni_uzaverka_zahrne_vklad_konta_do_plateb(self):
+        vytvor_vklad_konta(
+            self.pokladna,
+            self.zakaznik,
+            Decimal("300.00"),
+            Vklad.ZPUSOB_KARTA,
+            self.obsluha,
+            "Test vklad kartou",
+        )
+
+        uzaverka = uzavri_denni_uzaverku(
+            self.pokladna,
+            timezone.localdate(),
+            user=self.obsluha,
+        )
+
+        self.assertEqual(uzaverka.pocet_dokladu, 1)
+        self.assertEqual(uzaverka.karta, Decimal("300.00"))
+        self.assertEqual(uzaverka.celkem_trzba, Decimal("300.00"))
 
     def test_denni_uzaverka_zahrne_potvrzene_qr_platby(self):
         self.pokladna.qr_iban = "CZ6508000000192000145399"

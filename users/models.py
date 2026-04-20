@@ -1,4 +1,6 @@
 from django.contrib.auth.models import AbstractUser
+import logging
+
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -6,11 +8,11 @@ from django.conf import settings
 from django.utils.timezone import now
 from django.db.models import Sum, F
 from decimal import Decimal
-from objednavky.models import OrderItem, Order
-
-
-from django.db import models
+from objednavky.models import OrderItem
 from django.contrib.auth.models import Group
+
+
+logger = logging.getLogger(__name__)
 
 
 class StravovaciSkupina(models.Model):
@@ -65,9 +67,35 @@ class Vklad(models.Model):
         ('standard', 'Standardní vklad'),
         ('nulovani_konta', 'Nulování konta'),
     ]
+    ZPUSOB_HOTOVOST = "HOTOVOST"
+    ZPUSOB_KARTA = "KARTA"
+    ZPUSOB_QR = "QR"
+    ZPUSOBY_UHRADY = [
+        (ZPUSOB_HOTOVOST, "Hotově"),
+        (ZPUSOB_KARTA, "Kartou"),
+        (ZPUSOB_QR, "QR platbou"),
+    ]
+
     uzivatel = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='vklady')
+    pokladna = models.ForeignKey(
+        "pokladna.Pokladna",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="vklady_kont",
+        verbose_name="Pokladna",
+        help_text="Vyplňuje se u vkladů vytvořených přes pokladní modul.",
+    )
     castka = models.DecimalField(max_digits=10, decimal_places=2)
     datum = models.DateTimeField(default=now)
+    zpusob_uhrady = models.CharField(
+        "Způsob úhrady",
+        max_length=20,
+        choices=ZPUSOBY_UHRADY,
+        blank=True,
+        default="",
+        help_text="Vyplňuje se u běžných vkladů na konto. Systémové nulování a čerpání konta jej mít nemusí.",
+    )
     poznamka = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default='standard', editable=False)
 
@@ -152,6 +180,6 @@ class CustomUser(AbstractUser):
             zustatek = soucet_vkladu + soucet_dotaci - soucet_objednavek
             return zustatek.quantize(Decimal('0.01'))
             
-        except Exception as e:
-            print(f"⚠️ aktualni_zustatek CHYBA: {e}")
+        except Exception:
+            logger.exception("Chyba při výpočtu aktuálního zůstatku uživatele.")
             return Decimal('0')

@@ -634,11 +634,8 @@ class StornovaneObjednavkyAdmin(admin.ModelAdmin):
         return obj.user.get_full_name() or obj.user.username
     user_full_name.short_description = 'Uživatel'
     
-    # ✅ JEDINÁ storno_info metoda
     def storno_info(self, obj):
-        """DEBUG - KDO a KDY storno provedl"""
-        print(f"DEBUG storno_info: ID={obj.id}, user={obj.storno_user}, datum={obj.storno_datum}")  # DEBUG
-        
+        """Kdo a kdy provedl storno."""
         if obj.storno_user and obj.storno_datum:
             return format_html(
                 '{}<br><small style="color: #dc3545;">{}</small>',

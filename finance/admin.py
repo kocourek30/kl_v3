@@ -150,6 +150,23 @@ class FinancniDashboardAdmin(admin.ModelAdmin):
 
         vklady = Vklad.objects.filter(datum__date__gte=datum_od, datum__date__lte=datum_do)
         vklady_kladne = _sum(vklady.filter(castka__gt=0, status="standard"), "castka")
+        vklady_podle_uhrady = []
+        for kod, nazev in Vklad.ZPUSOBY_UHRADY:
+            qs = vklady.filter(castka__gt=0, status="standard", zpusob_uhrady=kod)
+            vklady_podle_uhrady.append({
+                "kod": kod,
+                "nazev": nazev,
+                "pocet": qs.count(),
+                "castka": _sum(qs, "castka"),
+            })
+        vklady_bez_uhrady = vklady.filter(castka__gt=0, status="standard", zpusob_uhrady="")
+        if vklady_bez_uhrady.exists():
+            vklady_podle_uhrady.append({
+                "kod": "",
+                "nazev": "Bez uvedené úhrady",
+                "pocet": vklady_bez_uhrady.count(),
+                "castka": _sum(vklady_bez_uhrady, "castka"),
+            })
         cerpani_konta = abs(_sum(vklady.filter(castka__lt=0, status="standard"), "castka"))
         nulovani_konta = _sum(vklady.filter(status="nulovani_konta"), "castka")
 
@@ -274,6 +291,7 @@ class FinancniDashboardAdmin(admin.ModelAdmin):
             "dotace_pripsane": dotace_pripsane,
             "storna_pokladna": storna_pokladna,
             "vklady_kladne": vklady_kladne,
+            "vklady_podle_uhrady": vklady_podle_uhrady,
             "cerpani_konta": _money(cerpani_konta),
             "nulovani_konta": nulovani_konta,
             "konta_report": konta_report,
@@ -292,12 +310,108 @@ class FinancniDashboardAdmin(admin.ModelAdmin):
 
     def _konta_report(self, datum_od, datum_do):
         User = get_user_model()
-        users = (
+        users = list(
             User.objects
             .filter(is_active=True)
             .select_related("stravovaci_skupina")
             .order_by("last_name", "first_name", "username")
         )
+        user_ids = [user.id for user in users]
+        if not user_ids:
+            return {
+                "rows": [],
+                "totals": {
+                    "pocatecni": Decimal("0"),
+                    "vklady": Decimal("0"),
+                    "dotace": Decimal("0"),
+                    "cerpani_objednavky": Decimal("0"),
+                    "cerpani_pokladna": Decimal("0"),
+                    "nulovani": Decimal("0"),
+                    "konecny": Decimal("0"),
+                },
+            }
+
+        order_total_expr = ExpressionWrapper(F("quantity") * F("cena"), output_field=MONEY_FIELD)
+
+        def grouped_sum(qs, user_field, value_field):
+            return {
+                row[user_field]: _money(row["total"])
+                for row in qs.values(user_field).annotate(total=Sum(value_field))
+            }
+
+        def grouped_order_sum(qs):
+            return {
+                row["order__user_id"]: _money(row["total"])
+                for row in qs.values("order__user_id").annotate(total=Sum(order_total_expr))
+            }
+
+        before_vklady_map = grouped_sum(
+            Vklad.objects.filter(uzivatel_id__in=user_ids, datum__date__lt=datum_od),
+            "uzivatel_id",
+            "castka",
+        )
+        before_dotace_map = grouped_sum(
+            Dotace.objects.filter(uzivatel_id__in=user_ids, datum__lt=datum_od),
+            "uzivatel_id",
+            "castka",
+        )
+        before_orders_map = grouped_order_sum(
+            OrderItem.objects.filter(
+                order__user_id__in=user_ids,
+                order__datum_vydeje__lt=datum_od,
+                order__status__in=BALANCE_ORDER_STATUSES,
+            )
+        )
+        vklady_map = grouped_sum(
+            Vklad.objects.filter(
+                uzivatel_id__in=user_ids,
+                datum__date__gte=datum_od,
+                datum__date__lte=datum_do,
+                status="standard",
+                castka__gt=0,
+            ),
+            "uzivatel_id",
+            "castka",
+        )
+        cerpani_pokladna_map = grouped_sum(
+            Vklad.objects.filter(
+                uzivatel_id__in=user_ids,
+                datum__date__gte=datum_od,
+                datum__date__lte=datum_do,
+                status="standard",
+                castka__lt=0,
+            ),
+            "uzivatel_id",
+            "castka",
+        )
+        nulovani_map = grouped_sum(
+            Vklad.objects.filter(
+                uzivatel_id__in=user_ids,
+                datum__date__gte=datum_od,
+                datum__date__lte=datum_do,
+                status="nulovani_konta",
+            ),
+            "uzivatel_id",
+            "castka",
+        )
+        dotace_map = grouped_sum(
+            Dotace.objects.filter(
+                uzivatel_id__in=user_ids,
+                datum__gte=datum_od,
+                datum__lte=datum_do,
+            ),
+            "uzivatel_id",
+            "castka",
+        )
+        cerpani_objednavky_map = grouped_order_sum(
+            OrderItem.objects.filter(
+                order__user_id__in=user_ids,
+                order__datum_vydeje__gte=datum_od,
+                order__datum_vydeje__lte=datum_do,
+                order__status__in=BALANCE_ORDER_STATUSES,
+            )
+        )
+
         rows = []
         totals = {
             "pocatecni": Decimal("0"),
@@ -310,58 +424,16 @@ class FinancniDashboardAdmin(admin.ModelAdmin):
         }
 
         for user in users:
-            before_vklady = _sum(Vklad.objects.filter(uzivatel=user, datum__date__lt=datum_od), "castka")
-            before_dotace = _sum(Dotace.objects.filter(uzivatel=user, datum__lt=datum_od), "castka")
-            before_orders = _order_sum(
-                OrderItem.objects.filter(
-                    order__user=user,
-                    order__datum_vydeje__lt=datum_od,
-                    order__status__in=BALANCE_ORDER_STATUSES,
-                )
-            )
+            before_vklady = before_vklady_map.get(user.id, Decimal("0"))
+            before_dotace = before_dotace_map.get(user.id, Decimal("0"))
+            before_orders = before_orders_map.get(user.id, Decimal("0"))
             pocatecni = _money(before_vklady + before_dotace - before_orders)
 
-            vklady = _sum(
-                Vklad.objects.filter(
-                    uzivatel=user,
-                    datum__date__gte=datum_od,
-                    datum__date__lte=datum_do,
-                    status="standard",
-                    castka__gt=0,
-                ),
-                "castka",
-            )
-            cerpani_pokladna = abs(_sum(
-                Vklad.objects.filter(
-                    uzivatel=user,
-                    datum__date__gte=datum_od,
-                    datum__date__lte=datum_do,
-                    status="standard",
-                    castka__lt=0,
-                ),
-                "castka",
-            ))
-            nulovani = _sum(
-                Vklad.objects.filter(
-                    uzivatel=user,
-                    datum__date__gte=datum_od,
-                    datum__date__lte=datum_do,
-                    status="nulovani_konta",
-                ),
-                "castka",
-            )
-            dotace = _sum(
-                Dotace.objects.filter(uzivatel=user, datum__gte=datum_od, datum__lte=datum_do),
-                "castka",
-            )
-            cerpani_objednavky = _order_sum(
-                OrderItem.objects.filter(
-                    order__user=user,
-                    order__datum_vydeje__gte=datum_od,
-                    order__datum_vydeje__lte=datum_do,
-                    order__status__in=BALANCE_ORDER_STATUSES,
-                )
-            )
+            vklady = vklady_map.get(user.id, Decimal("0"))
+            cerpani_pokladna = abs(cerpani_pokladna_map.get(user.id, Decimal("0")))
+            nulovani = nulovani_map.get(user.id, Decimal("0"))
+            dotace = dotace_map.get(user.id, Decimal("0"))
+            cerpani_objednavky = cerpani_objednavky_map.get(user.id, Decimal("0"))
             konecny = _money(pocatecni + vklady + dotace + nulovani - cerpani_objednavky - cerpani_pokladna)
 
             if not any([pocatecni, vklady, dotace, cerpani_objednavky, cerpani_pokladna, nulovani, konecny]):
@@ -393,7 +465,7 @@ class FinancniDashboardAdmin(admin.ModelAdmin):
                     [r["nazev"], percent_cs(r["dph_sazba"]), r["radku"], decimal_cs(r["mnozstvi"]), r["zaklad"], r["dph"], r["celkem"]]
                     for r in dph_souhrn
                 ],
-                "Report podle DPH",
+                "Přehled podle DPH",
             )
         if report_type == "plu":
             return (
@@ -402,20 +474,20 @@ class FinancniDashboardAdmin(admin.ModelAdmin):
                     [r["nazev"], r["kategorie"], percent_cs(r["dph_sazba"]), r["radku"], decimal_cs(r["mnozstvi"]), r["zaklad"], r["dph"], r["obrat"]]
                     for r in pokladna_podle_plu
                 ],
-                "Report podle PLU",
+                "Přehled podle PLU",
             )
         if report_type == "dotace":
             return (
-                ["Stravovací skupina", "Objednávek", "Porcí", "Ceníková hodnota", "Zaplaceno", "Dotace/sleva"],
+                ["Stravovací skupina", "Objednávek", "Porcí", "Ceníková hodnota", "Zaplaceno", "Dotace a sleva"],
                 [
                     [r["nazev"], r["objednavek"], r["porci"], r["cenik"], r["zaplaceno"], r["dotace"]]
                     for r in dotace_podle_skupin
                 ],
-                "Report dotací a slev",
+                "Přehled dotací a slev",
             )
         if report_type == "konta":
             return (
-                ["Strávník", "Login", "Skupina", "Počáteční zůstatek", "Vklady", "Dotace", "Čerpání objednávky", "Čerpání pokladna", "Nulování", "Konečný zůstatek"],
+                ["Strávník", "Přihlašovací jméno", "Skupina", "Počáteční zůstatek", "Vklady", "Dotace", "Čerpání objednávkami", "Čerpání v pokladně", "Nulování", "Konečný zůstatek"],
                 [
                     [
                         r["uzivatel"],
@@ -431,12 +503,12 @@ class FinancniDashboardAdmin(admin.ModelAdmin):
                     ]
                     for r in konta_report["rows"]
                 ],
-                "Report kont strávníků",
+                "Přehled kont strávníků",
             )
         return (
             ["Ukazatel", "Hodnota"],
             [],
-            "Souhrnný finanční report",
+            "Souhrnný finanční přehled",
         )
 
     def _export_xls(self, context):

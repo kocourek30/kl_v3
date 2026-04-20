@@ -1,197 +1,98 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="row">
-  <!-- Levý sloupec 3: Menu + DETAIL KONTA -->
-  <div class="col-md-3 mb-4">
-    <h4><i class="fas fa-user me-2"></i>{{ user.first_name }} {{ user.last_name }}</h4>
-    
-    <!-- ✅ ODSTRANĚN BOX "STAV KONTA" -->
-    
-    <!-- ✅ NOVÝ Detailní rozpis konta -->
-    <!-- ✅ NOVÝ Detailní rozpis konta -->
-<div class="card shadow-sm mb-3">
-  <div class="card-header bg-light">
-    <strong class="text-muted"><i class="fa-solid fa-wallet me-2"></i>Detail konta</strong>
-  </div>
-  <div class="card-body p-3 small">
-    <!-- ✅ PODMÍNĚNÉ ZOBRAZENÍ: Vklady jen pokud NENÍ čerpání debetu -->
-    {% if not user_settings.cerpani_debit %}
-    <!-- Vklady celkem -->
-    <div class="d-flex justify-content-between mb-2">
-      <span><i class="fa-solid fa-arrow-down text-success me-1"></i>Vklady celkem:</span>
-      <span class="text-success fw-semibold">{{ balance_breakdown.vklady|floatformat:2 }} Kč</span>
-    </div>
-    
-    <hr class="my-2">
-    {% endif %}
-    
-    <!-- Vydané objednávky -->
-    <div class="d-flex justify-content-between mb-2">
-      <span><i class="fa-solid fa-utensils text-danger me-1"></i>Vydané objednávky:</span>
-      <span class="text-danger fw-semibold">-{{ balance_breakdown.vydane|floatformat:2 }} Kč</span>
-    </div>
-    
-    <!-- Zálohy za objednávky -->
-    <div class="d-flex justify-content-between mb-2">
-      <span><i class="fa-solid fa-clock text-warning me-1"></i>Zálohy za objednávky:</span>
-      <span class="text-warning fw-semibold">-{{ balance_breakdown.zalohy|floatformat:2 }} Kč</span>
-    </div>
-    
-    <hr class="my-2 border-2">
-    
-    <!-- CELKEM -->
-    <div class="d-flex justify-content-between">
-      <span class="fw-bold fs-6">
-        <i class="fa-solid fa-equals me-1"></i>
-        {% if user_settings.cerpani_debit %}
-          Aktuální spotřeba:
-        {% else %}
-          Aktuální zůstatek:
-        {% endif %}
-      </span>
-      <span class="fw-bold fs-5 {% if balance_breakdown.celkem >= 0 %}text-success{% else %}text-danger{% endif %}">
-        {{ balance_breakdown.celkem|floatformat:2 }} Kč
-      </span>
-    </div>
-    
-    <!-- ✅ ZOBRAZENÍ DEBETNÍHO LIMITU pro uživatele s čerpáním debetu -->
-    {% if user_settings.cerpani_debit %}
-    <div class="mt-2 pt-2 border-top">
-      <div class="d-flex justify-content-between text-muted">
-        <span><i class="fa-solid fa-gauge-high me-1"></i>Debetní limit:</span>
-        <span class="fw-semibold">{{ user_settings.debit_limit|floatformat:2 }} Kč</span>
-      </div>
-    </div>
-    {% endif %}
-  </div>
-</div>
+{% include "users/_account_styles.html" %}
 
-    
-
-<nav class="nav flex-column nav-pills mt-3" aria-orientation="vertical">
-  <a class="nav-link {% if request.resolver_match.url_name == 'user-profile' %}active{% endif %}" href="{% url 'users:user-profile' %}">
-    <i class="fas fa-id-card me-1"></i>Můj profil
-  </a>
-  <a class="nav-link {% if request.resolver_match.url_name == 'consumption-history' %}active{% endif %}" href="{% url 'users:consumption-history' %}">
-    <i class="fas fa-history me-1"></i>Historie konzumace
-  </a>
-  <a class="nav-link {% if request.resolver_match.url_name == 'account-history' %}active{% endif %}" href="{% url 'users:account-history' %}">
-    <i class="fas fa-file-invoice-dollar me-1"></i>Historie konta
-  </a>
-</nav>
-
-
+<div class="row customer-layout">
+  <div class="col-lg-3 col-md-4 mb-4">
+    {% include "users/_account_sidebar.html" %}
   </div>
 
-  <!-- Pravý sloupec 9: Formulář -->
-  <div class="col-md-9">
-    <h2><i class="fas fa-user-circle me-2"></i>Můj profil</h2>
-    
-    <form method="post" novalidate>
+  <div class="col-lg-9 col-md-8">
+    <form method="post" novalidate class="customer-panel">
       {% csrf_token %}
-      <div class="row mt-4">
-        <!-- Informace -->
-        <div class="col-12">
-          <div class="card shadow-sm mb-4">
-            <div class="card-header oranzova-barva text-white">
-              <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>Informace o uživateli</h5>
-            </div>
-            <div class="card-body">
-              <table class="table table-striped mb-0">
-                <tbody>
-                  <tr>
-                    <th scope="row">Uživatelské jméno:</th>
-                    <td>{{ user.username }}</td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Jméno a příjmení:</th>
-                    <td>{{ user.first_name }} {{ user.last_name }}</td>
-                  </tr>
-                  <tr>
-                    <th scope="row"><label for="email">Email:</label></th>
-                    <td>
-                      <input type="email" id="email" name="email" value="{{ user.email }}" class="form-control" required>
-                    </td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Osobní číslo:</th>
-                    <td>{{ user.osobni_cislo }}</td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Identifikační médium:</th>
-                    <td>{{ user.identifikacni_medium }}</td>
-                  </tr>
-                  <tr class="table-warning">
-                    <th scope="row">Aktuální zůstatek:</th>
-                    <td>
-                      <strong class="{% if user_balance >= 0 %}text-success{% else %}text-danger fw-bold{% endif %}">
-                        {{ user_balance|floatformat:2 }} Kč
-                      </strong>
-                    </td>
-                  </tr>
-                  <tr>
-                    <th scope="row">Alergeny:</th>
-                    <td>
-                      {% for alergen in all_alergeny %}
-                        <div class="form-check form-check-inline">
-                          <input class="form-check-input" type="checkbox" id="alergen_{{ alergen.id }}"
-                                 name="alergeny" value="{{ alergen.id }}"
-                                 {% if alergen in user.alergeny.all %}checked{% endif %}>
-                          <label class="form-check-label" for="alergen_{{ alergen.id }}">{{ alergen }}</label>
-                        </div>
-                      {% empty %}
-                        Žádné alergeny k dispozici.
-                      {% endfor %}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
 
-        <!-- Změna hesla -->
-        <div class="col-12">
-          <div class="card shadow-sm mb-4">
-            <div class="card-header zelena-barva text-white">
-              <h5 class="mb-0"><i class="fas fa-key me-2"></i>Změna hesla</h5>
-            </div>
-            <div class="card-body">
-              <div class="mb-3">
-                <label for="current_password" class="form-label"><i class="fas fa-lock me-1"></i>Aktuální heslo:</label>
-                <input type="password" name="current_password" id="current_password" class="form-control">
-              </div>
-              <div class="mb-3">
-                <label for="new_password1" class="form-label"><i class="fas fa-lock-open me-1"></i>Nové heslo:</label>
-                <input type="password" name="new_password1" id="new_password1" class="form-control">
-              </div>
-              <div class="mb-3">
-                <label for="new_password2" class="form-label"><i class="fas fa-lock-open me-1"></i>Zopakujte nové heslo:</label>
-                <input type="password" name="new_password2" id="new_password2" class="form-control">
-              </div>
-            </div>
+      <div class="customer-panel-header">
+        <div>
+          <h2 class="customer-panel-title"><i class="fas fa-user-circle me-2"></i>Můj profil</h2>
+          <div class="customer-panel-subtitle">Kontaktní údaje, alergeny a bezpečnost účtu.</div>
+        </div>
+        <div class="text-end">
+          <span class="customer-panel-subtitle">Aktuální zůstatek</span>
+          <div class="fs-4 fw-bold {% if user_balance >= 0 %}text-success{% else %}text-danger{% endif %}">
+            {{ user_balance|floatformat:2 }} Kč
           </div>
         </div>
       </div>
 
-      <!-- Tlačítko uložit -->
-      <div class="d-flex justify-content-center mb-4">
-        <button type="submit" class="btn btn-primary btn-lg">
-          <i class="fas fa-save me-2"></i>Uložit změny profilu
-        </button>
-      </div>
+      <div class="customer-panel-body">
+        {% if messages %}
+          {% for message in messages %}
+            <div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-{{ message.tags|default:'info' }}{% endif %} mb-3" role="alert">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
 
-      <!-- Messages -->
-      {% if messages %}
-        <div class="alert alert-info">
-          <ul class="mb-0">
-            {% for message in messages %}
-              <li class="text-{{ message.tags }}">{{ message }}</li>
-            {% endfor %}
-          </ul>
+        <h5 class="customer-section-title">Údaje zákazníka</h5>
+        <div class="customer-info-grid">
+          <div class="customer-info-item">
+            <span class="customer-info-label">Uživatelské jméno</span>
+            <strong>{{ user.username }}</strong>
+          </div>
+          <div class="customer-info-item">
+            <span class="customer-info-label">Jméno a příjmení</span>
+            <strong>{{ user.get_full_name|default:"Nevyplněno" }}</strong>
+          </div>
+          <div class="customer-info-item">
+            <span class="customer-info-label">Osobní číslo</span>
+            <strong>{{ user.osobni_cislo|default:"Nevyplněno" }}</strong>
+          </div>
+          <div class="customer-info-item">
+            <span class="customer-info-label">Identifikační médium</span>
+            <strong>{{ user.identifikacni_medium|default:"Nevyplněno" }}</strong>
+          </div>
         </div>
-      {% endif %}
+
+        <h5 class="customer-section-title">Kontakt</h5>
+        <label for="email" class="form-label">Email</label>
+        <input type="email" id="email" name="email" value="{{ user.email }}" class="form-control" autocomplete="email" required>
+
+        <h5 class="customer-section-title">Alergeny</h5>
+        <div class="d-flex flex-wrap gap-2">
+          {% for alergen in all_alergeny %}
+            <div class="form-check border rounded px-3 py-2 bg-light">
+              <input class="form-check-input ms-0 me-2" type="checkbox" id="alergen_{{ alergen.id }}"
+                     name="alergeny" value="{{ alergen.id }}"
+                     {% if alergen.id in selected_alergen_ids %}checked{% endif %}>
+              <label class="form-check-label fw-semibold" for="alergen_{{ alergen.id }}">{{ alergen }}</label>
+            </div>
+          {% empty %}
+            <div class="text-muted">Žádné alergeny nejsou k dispozici.</div>
+          {% endfor %}
+        </div>
+
+        <h5 class="customer-section-title">Změna hesla</h5>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label for="current_password" class="form-label">Aktuální heslo</label>
+            <input type="password" name="current_password" id="current_password" class="form-control" autocomplete="current-password">
+          </div>
+          <div class="col-md-4">
+            <label for="new_password1" class="form-label">Nové heslo</label>
+            <input type="password" name="new_password1" id="new_password1" class="form-control" autocomplete="new-password">
+          </div>
+          <div class="col-md-4">
+            <label for="new_password2" class="form-label">Zopakujte nové heslo</label>
+            <input type="password" name="new_password2" id="new_password2" class="form-control" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="form-text mt-2">Heslo měňte jen v případě potřeby. Prázdná pole znamenají, že heslo zůstane stejné.</div>
+
+        <div class="customer-actions">
+          <button type="submit" class="customer-btn-primary">
+            <i class="fas fa-save me-2"></i>Uložit změny
+          </button>
+        </div>
+      </div>
     </form>
   </div>
 </div>

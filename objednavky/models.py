@@ -1,7 +1,7 @@
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
-from django.db.models import Sum
+from django.db.models import Sum, F
 from datetime import timedelta
 from jidelnicek.models import PolozkaJidelnicku
 from django.contrib.auth.models import Group
@@ -43,10 +43,14 @@ class Order(models.Model):
         return f"Objednávka {self.user} na {self.datum_vydeje}"
 
     def total_quantity(self):
-        return sum(item.quantity for item in self.items.all())
+        if hasattr(self, '_prefetched_objects_cache') and 'items' in self._prefetched_objects_cache:
+            return sum(item.quantity for item in self.items.all())
+        return self.items.aggregate(total=Sum('quantity'))['total'] or 0
 
     def total_price(self):
-        return sum(item.quantity * item.cena for item in self.items.all())
+        if hasattr(self, '_prefetched_objects_cache') and 'items' in self._prefetched_objects_cache:
+            return sum(item.quantity * item.cena for item in self.items.all())
+        return self.items.aggregate(total=Sum(F('quantity') * F('cena')))['total'] or Decimal('0')
 
 
 class OrderItem(models.Model):
@@ -57,12 +61,6 @@ class OrderItem(models.Model):
     vydano = models.BooleanField(default=False)  # NOVÉ POLE
     datum_vydani = models.DateTimeField(null=True, blank=True) 
 
-    class Meta:
-        indexes = [models.Index(fields=['vydano', 'datum_vydani'])]
-
-    class Meta:
-        unique_together = ('order', 'menu_item')
-
     def __str__(self):
         return f"{self.menu_item.jidlo.nazev} x {self.quantity}"
 
@@ -70,6 +68,11 @@ class OrderItem(models.Model):
         return self.quantity * self.cena
     
     class Meta:
+        unique_together = ('order', 'menu_item')
+        indexes = [
+            models.Index(fields=['vydano', 'datum_vydani']),
+            models.Index(fields=['order', 'menu_item']),
+        ]
         verbose_name = "Objednaná jídla"
         verbose_name_plural = "Objednaná jídla"    
 

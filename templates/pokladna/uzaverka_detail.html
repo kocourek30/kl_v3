@@ -1,6 +1,6 @@
 {% extends "pokladna/base_pokladna.html" %}
 
-{% block title %}Report uzávěrky - {{ pokladna.nazev }}{% endblock %}
+{% block title %}Přehled uzávěrky - {{ pokladna.nazev }}{% endblock %}
 
 {% block content %}
 <style>
@@ -28,7 +28,7 @@
 <div class="rep-page">
   <div class="rep-head">
     <div>
-      <h1 class="rep-title">Report denní uzávěrky</h1>
+      <h1 class="rep-title">Přehled denní uzávěrky</h1>
       <div class="rep-meta">{{ pokladna.nazev }} · {{ uzaverka.datum|date:"d.m.Y" }} · uzavřel {{ uzaverka.uzavrel.get_full_name|default:uzaverka.uzavrel.username }}</div>
     </div>
     <a class="rep-link" href="{% url 'pokladna:pokladna_uzaverka' pokladna.id %}?datum={{ uzaverka.datum|date:'Y-m-d' }}">Zpět na uzávěrku</a>

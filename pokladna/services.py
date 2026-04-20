@@ -162,7 +162,8 @@ def smaz_polozku(doklad, polozka_id, user=None, duvod="Smazání položky z úč
 
 def _cislo_dokladu(doklad):
     local_date = timezone.localtime(doklad.datum).date()
-    return f"PKD-{local_date:%Y%m%d}-{doklad.id:06d}"
+    prefix = "VKL" if doklad.typ_dokladu == PokladniDoklad.TYP_VKLAD_KONTA else "PKD"
+    return f"{prefix}-{local_date:%Y%m%d}-{doklad.id:06d}"
 
 
 def _qr_vs(doklad):
@@ -249,9 +250,47 @@ def _vytvor_konto_pohyb(doklad):
 
     return Vklad.objects.create(
         uzivatel=doklad.zakaznik,
+        pokladna=doklad.pokladna,
         castka=-_q2(doklad.celkem_s_dph),
         poznamka=f"Čerpání konta pokladním dokladem {_cislo_dokladu(doklad)}",
     )
+
+
+@transaction.atomic
+def vytvor_vklad_konta(pokladna, zakaznik, castka, zpusob_uhrady, obsluha, poznamka=""):
+    if castka <= 0:
+        raise ValidationError("Částka vkladu musí být větší než nula.")
+    if zpusob_uhrady not in dict(Vklad.ZPUSOBY_UHRADY):
+        raise ValidationError("Vyber platný způsob úhrady vkladu.")
+
+    vklad = Vklad.objects.create(
+        uzivatel=zakaznik,
+        pokladna=pokladna,
+        castka=_q2(castka),
+        zpusob_uhrady=zpusob_uhrady,
+        poznamka=poznamka,
+    )
+    zpusob_platby = {
+        Vklad.ZPUSOB_HOTOVOST: PokladniDoklad.PLATBA_HOTOVOST,
+        Vklad.ZPUSOB_KARTA: PokladniDoklad.PLATBA_KARTA,
+        Vklad.ZPUSOB_QR: PokladniDoklad.PLATBA_QR,
+    }[zpusob_uhrady]
+
+    doklad = PokladniDoklad.objects.create(
+        pokladna=pokladna,
+        typ_dokladu=PokladniDoklad.TYP_VKLAD_KONTA,
+        obsluha=obsluha,
+        zakaznik=zakaznik,
+        zpusob_platby=zpusob_platby,
+        konto_pohyb=vklad,
+        celkem_bez_dph=_q2(castka),
+        celkem_dph=Decimal("0.00"),
+        celkem_s_dph=_q2(castka),
+    )
+    doklad.cislo_dokladu = _cislo_dokladu(doklad)
+    doklad.save(update_fields=["cislo_dokladu"])
+    _uzavri_zaplaceny_doklad(doklad, user=obsluha)
+    return vklad, doklad
 
 
 def _odepis_skladovou_polozku(polozka):
@@ -466,6 +505,7 @@ def stornuj_doklad(doklad, user=None, duvod=""):
     if doklad.konto_pohyb_id and doklad.zakaznik_id:
         Vklad.objects.create(
             uzivatel=doklad.zakaznik,
+            pokladna=doklad.pokladna,
             castka=_q2(doklad.celkem_s_dph),
             poznamka=f"Storno čerpání konta dokladem {doklad.cislo_dokladu or doklad.id}",
         )

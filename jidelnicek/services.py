@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, date, time
 from calendar import Calendar
+import logging
 from urllib.parse import urlencode
 
 from django.utils import timezone
@@ -16,6 +17,8 @@ from canteen_settings.utils import is_ordering_allowed, get_order_closing_dateti
 
 from sklad.utils import odeber_ze_skladu_pro_jidlo
 
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -72,17 +75,10 @@ def mark_order_as_not_picked(order: Order):
 # ✅ NAHRAĎ FUNKCI can_order_for_date
 def can_order_for_date(user=None, target_date=None):
     """Kontroluje, zda lze objednávat na dané datum podle nastavení uzavírací doby"""
-    print(
-        f"\n🔥 can_order_for_date: user={user.username if user else 'None'}, "
-        f"target_date={target_date}, is_staff={user.is_staff if user else False}"
-    )
-
     if user and getattr(user, "is_staff", False):
-        print("   👑 Admin → POVOLENO")
         return True, ""
 
     if not target_date:
-        print("   ⚠️ Žádné target_date → POVOLENO")
         return True, ""
 
     try:
@@ -97,17 +93,12 @@ def can_order_for_date(user=None, target_date=None):
                 msg = (
                     f"Objednávky na {target_date.strftime('%d.%m.%Y')} nejsou povoleny"
                 )
-            print(f"   ❌ ZAKÁZÁNO: {msg}")
             return False, msg
 
-        print("   ✅ POVOLENO")
         return True, ""
 
-    except Exception as e:
-        print(f"   ❌ CHYBA: {e}")
-        import traceback
-
-        traceback.print_exc()
+    except Exception:
+        logger.exception("Chyba při kontrole možnosti objednání.")
         return True, ""
 
 

@@ -95,7 +95,7 @@ class FakturacniPolozka(models.Model):
         related_name="fakturacni_polozky",
         verbose_name="Uživatel",
     )
-    username_snapshot = models.CharField(max_length=150, blank=True, default="", verbose_name="Login")
+    username_snapshot = models.CharField(max_length=150, blank=True, default="", verbose_name="Přihlašovací jméno")
     jmeno_snapshot = models.CharField(max_length=255, blank=True, default="", verbose_name="Jméno")
     osobni_cislo_snapshot = models.CharField(max_length=100, blank=True, default="", verbose_name="Osobní číslo")
     skupina_snapshot = models.CharField(max_length=150, blank=True, default="", verbose_name="Skupina")

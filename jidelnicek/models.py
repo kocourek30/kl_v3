@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 from django.db import models
 from django.core.exceptions import ValidationError
@@ -5,6 +6,9 @@ from django.contrib.auth.models import Group
 from PIL import Image
 from django.core.files.base import ContentFile
 from io import BytesIO
+
+
+logger = logging.getLogger(__name__)
 
 
 class Alergen(models.Model):
@@ -117,8 +121,8 @@ class Jidlo(models.Model):
                 # znovu ulož zmenšenou verzi
                 self.foto.save(self.foto.name, img_content, save=False)
                 super().save(update_fields=["foto"])
-            except Exception as e:
-                print("⚠️ Nelze zpracovat fotku jídla:", e)
+            except Exception:
+                logger.exception("Nelze zpracovat fotku jídla.")
 
     # v modelu Jidlo
     def spolecne_alergeny(self, user):

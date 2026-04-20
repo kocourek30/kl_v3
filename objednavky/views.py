@@ -1,23 +1,22 @@
+import logging
 from datetime import datetime, timedelta
+from decimal import Decimal
+
 from django.shortcuts import redirect
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
-from django.db.models import Sum
+from django.db import transaction
+from django.db.models import F, Sum
 from django.http import JsonResponse
-from requests import request
-from jidelnicek.services import build_dashboard_redirect_from_post  # ✅ PŘIDÁNO
 
 from .models import Order, OrderItem, OrderValidator
-from jidelnicek.models import PolozkaJidelnicku
+from jidelnicek.models import DruhJidla, PolozkaJidelnicku
 from canteen_settings.models import OrderClosingTime, GroupOrderLimit
 
-from django.db.models import Sum, F
-from decimal import Decimal
-from jidelnicek.models import PolozkaJidelnicku, DruhJidla
-from canteen_settings.models import OrderClosingTime, GroupOrderLimit
-from datetime import datetime, timedelta
-from django.utils import timezone
+
+logger = logging.getLogger(__name__)
+
 
 def get_closing_setting_for_mealtype(druh_jidla: DruhJidla):
     """
@@ -71,18 +70,13 @@ def can_cancel_order_for_menuitem_date(user, menu_item: PolozkaJidelnicku, targe
     Kontroluje, zda lze zrušit objednávku pro konkrétní druh jídla na dané datum.
     Používá cancel_days + cancel_until_time (nezávisle na advance_days).
     """
-    print("DEBUG: can_cancel_order_for_menuitem_date CALLED")
-
     if user.is_staff:
-        print("DEBUG: user is staff -> True")
         return True, ""
 
     try:
         setting = get_closing_setting_for_mealtype(menu_item.druh_jidla)
-        print("DEBUG: setting =", setting)
 
         if not setting:
-            print("DEBUG: no setting found -> True")
             return True, ""
 
         tz = timezone.get_current_timezone()
@@ -93,32 +87,16 @@ def can_cancel_order_for_menuitem_date(user, menu_item: PolozkaJidelnicku, targe
             tz
         )
 
-        now = timezone.now()
-
-        print(
-            "DEBUG CANCEL:",
-            "user=", user.id,
-            "menu_item=", menu_item.id,
-            "druh_jidla=", menu_item.druh_jidla.nazev,
-            "target_date=", target_date,
-            "cancel_days=", setting.cancel_days,
-            "cancel_until_time=", setting.cancel_until_time,
-            "deadline=", cancel_deadline_dt,
-            "now=", now,
-        )
-
-        if now <= cancel_deadline_dt:
-            print("DEBUG RESULT: can_cancel = True")
+        if timezone.now() <= cancel_deadline_dt:
             return True, ""
-        else:
-            msg = (
-                f"Objednávku na {target_date.strftime('%d.%m.%Y')} "
-                f"pro {menu_item.druh_jidla.nazev} již nelze zrušit."
-            )
-            print("DEBUG RESULT: can_cancel = False ->", msg)
-            return False, msg
-    except Exception as e:
-        print("DEBUG ERROR in can_cancel_order_for_menuitem_date:", e)
+
+        msg = (
+            f"Objednávku na {target_date.strftime('%d.%m.%Y')} "
+            f"pro {menu_item.druh_jidla.nazev} již nelze zrušit."
+        )
+        return False, msg
+    except Exception:
+        logger.exception("Chyba při kontrole storna objednávky.")
         return True, ""
 
     
@@ -139,12 +117,10 @@ def get_user_balance(user):
         )['total'] or Decimal('0')
         
         zustatek = zakladni_zustatek - celkem_objednavek
-        print(f"💰 DEBUG BALANCE: zakladní={zakladni_zustatek}, objednávky={celkem_objednavek}, ZŮSTATEK={zustatek}")
-        
         return zustatek
         
-    except Exception as e:
-        print(f"⚠️ get_user_balance CHYBA: {e}")
+    except Exception:
+        logger.exception("Chyba při výpočtu zůstatku uživatele.")
         return Decimal('0')
 
 
@@ -222,7 +198,10 @@ def order_create_view(request):  # ✅ BEZ @require_POST
         return redirect('jidelnicek:dashboard')  # ✅ NAMESPACE!
 
     try:
-        menu_item = PolozkaJidelnicku.objects.get(id=menu_item_id)
+        menu_item = PolozkaJidelnicku.objects.select_related(
+            'jidlo',
+            'druh_jidla',
+        ).get(id=menu_item_id)
         target_date = datetime.strptime(menu_date_str, '%Y-%m-%d').date()
 
         # ✅ KOMPLETNÍ VALIDACE (používá tvé lokální funkce)
@@ -250,19 +229,22 @@ def order_create_view(request):  # ✅ BEZ @require_POST
                 return ajax_response('error', msg)
             return redirect('jidelnicek:dashboard')
 
-        # VŠE OK - vytvoř objednávku
-        order, created = Order.objects.get_or_create(
-            user=request.user, datum_vydeje=target_date, defaults={'status': 'objednano'}
-        )
+        with transaction.atomic():
+            order, created = Order.objects.get_or_create(
+                user=request.user,
+                datum_vydeje=target_date,
+                defaults={'status': 'objednano'},
+            )
 
-        order_item, item_created = OrderItem.objects.get_or_create(
-            order=order, menu_item=menu_item,
-            defaults={'quantity': quantity, 'cena': cena}
-        )
-        if not item_created:
-            order_item.quantity += quantity
-            order_item.cena = cena
-            order_item.save()
+            order_item, item_created = OrderItem.objects.select_for_update().get_or_create(
+                order=order,
+                menu_item=menu_item,
+                defaults={'quantity': quantity, 'cena': cena},
+            )
+            if not item_created:
+                order_item.quantity += quantity
+                order_item.cena = cena
+                order_item.save(update_fields=['quantity', 'cena'])
 
         msg_ok = f"Přidáno {order_item.quantity}x {menu_item.jidlo.nazev}"
         messages.success(request, msg_ok)
@@ -280,8 +262,9 @@ def order_create_view(request):  # ✅ BEZ @require_POST
         messages.error(request, msg)
         if is_ajax:
             return ajax_response('error', msg)
-    except Exception as e:
-        msg = f"Chyba: {str(e)}"
+    except Exception:
+        msg = "Objednávku se nepodařilo vytvořit."
+        logger.exception("Chyba při vytvoření objednávky.")
         messages.error(request, msg)
         if is_ajax:
             return ajax_response('error', msg)
@@ -303,11 +286,6 @@ def order_delete_view(request):  # ✅ BEZ @require_POST
 
     is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
 
-    # DEBUG vstupů z requestu
-    print("DEBUG DELETE VIEW: menu_item_id =", menu_item_id,
-          "menu_date_str =", menu_date_str,
-          "user_id =", request.user.id)
-
     def ajax_response(status, message, extra=None):
         data = {'status': status, 'message': message}
         if extra:
@@ -322,19 +300,14 @@ def order_delete_view(request):  # ✅ BEZ @require_POST
         return redirect('jidelnicek:dashboard')  # ✅ NAMESPACE!
 
     try:
-        menu_item = PolozkaJidelnicku.objects.get(id=menu_item_id)
+        menu_item = PolozkaJidelnicku.objects.select_related(
+            'jidlo',
+            'druh_jidla',
+        ).get(id=menu_item_id)
         target_date = datetime.strptime(menu_date_str, '%Y-%m-%d').date()
-
-        print(
-            "DEBUG DELETE VIEW:",
-            "target_date =", target_date,
-            "menu_item_id =", menu_item.id,
-            "druh_jidla =", menu_item.druh_jidla.nazev,
-        )
 
         # Kontrola času (pro zrušení)
         ok, msg = can_cancel_order_for_menuitem_date(request.user, menu_item, target_date)
-        print("DEBUG DELETE VIEW: can_cancel =", ok, "msg =", msg)
 
         if not ok:
             messages.error(request, msg)
@@ -342,53 +315,51 @@ def order_delete_view(request):  # ✅ BEZ @require_POST
                 return ajax_response('error', msg)
             return redirect('jidelnicek:dashboard')
 
-        order = Order.objects.filter(user=request.user, datum_vydeje=target_date).first()
-        print("DEBUG DELETE VIEW: order_found =", bool(order))
-
-        if order:
-            order_item = OrderItem.objects.filter(order=order, menu_item=menu_item).first()
-            print("DEBUG DELETE VIEW: order_item_found =", bool(order_item))
+        with transaction.atomic():
+            order_item = (
+                OrderItem.objects
+                .select_related('order')
+                .select_for_update()
+                .filter(
+                    order__user=request.user,
+                    order__datum_vydeje=target_date,
+                    menu_item=menu_item,
+                )
+                .first()
+            )
 
             if order_item:
+                order = order_item.order
                 deleted_id = order_item.id
                 order_item.delete()
                 msg = f"Zrušeno {menu_item.jidlo.nazev} na {target_date.strftime('%d.%m.%Y')}"
                 messages.success(request, msg)
-                print("DEBUG DELETE VIEW: deleted_order_item_id =", deleted_id)
 
                 if not order.items.exists():
-                    print("DEBUG DELETE VIEW: no more items in order -> deleting order")
                     order.delete()
 
                 if is_ajax:
                     return ajax_response('success', msg, {'deleted_order_item_id': deleted_id})
-            else:
-                msg = "Tato položka nebyla objednána."
-                messages.warning(request, msg)
-                if is_ajax:
-                    return ajax_response('warning', msg)
-        else:
-            msg = "Objednávka neexistuje."
-            messages.warning(request, msg)
-            if is_ajax:
-                return ajax_response('warning', msg)
+
+        msg = "Tato položka nebyla objednána."
+        messages.warning(request, msg)
+        if is_ajax:
+            return ajax_response('warning', msg)
 
     except PolozkaJidelnicku.DoesNotExist:
         msg = "Položka neexistuje."
         messages.error(request, msg)
-        print("DEBUG DELETE VIEW ERROR: PolozkaJidelnicku.DoesNotExist")
         if is_ajax:
             return ajax_response('error', msg)
     except ValueError:
         msg = "Neplatné datum."
         messages.error(request, msg)
-        print("DEBUG DELETE VIEW ERROR: ValueError (bad date)")
         if is_ajax:
             return ajax_response('error', msg)
-    except Exception as e:
+    except Exception:
         msg = "Chyba při rušení objednávky."
         messages.error(request, msg)
-        print("DEBUG DELETE VIEW ERROR:", e)
+        logger.exception("Chyba při rušení objednávky.")
         if is_ajax:
             return ajax_response('error', msg)
 

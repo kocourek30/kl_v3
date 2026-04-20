@@ -1,0 +1,66 @@
+<aside class="customer-sidebar">
+  <div class="customer-card customer-card-identity">
+    <div class="customer-avatar">
+      <i class="fas fa-user"></i>
+    </div>
+    <div>
+      <div class="customer-name">{{ user.get_full_name|default:user.username }}</div>
+      {% if user.osobni_cislo %}
+        <div class="customer-meta">Osobní číslo {{ user.osobni_cislo }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="customer-card">
+    <div class="customer-card-title">
+      <i class="fa-solid fa-wallet"></i>
+      Konto
+    </div>
+
+    {% if not user_settings.cerpani_debit %}
+      <div class="customer-balance-row">
+        <span>Vklady celkem</span>
+        <strong class="text-success">{{ balance_breakdown.vklady|floatformat:2 }} Kč</strong>
+      </div>
+    {% endif %}
+
+    <div class="customer-balance-row">
+      <span>Vydané objednávky</span>
+      <strong class="text-danger">-{{ balance_breakdown.vydane|floatformat:2 }} Kč</strong>
+    </div>
+
+    <div class="customer-balance-row">
+      <span>Zálohy objednávek</span>
+      <strong class="text-warning">-{{ balance_breakdown.zalohy|floatformat:2 }} Kč</strong>
+    </div>
+
+    <div class="customer-balance-total">
+      <span>{% if user_settings.cerpani_debit %}Aktuální spotřeba{% else %}Aktuální zůstatek{% endif %}</span>
+      <strong class="{% if balance_breakdown.celkem >= 0 %}text-success{% else %}text-danger{% endif %}">
+        {{ balance_breakdown.celkem|floatformat:2 }} Kč
+      </strong>
+    </div>
+
+    {% if user_settings.cerpani_debit %}
+      <div class="customer-limit">
+        <span>Debetní limit</span>
+        <strong>{{ user_settings.debit_limit|floatformat:2 }} Kč</strong>
+      </div>
+    {% endif %}
+  </div>
+
+  <nav class="customer-nav" aria-label="Zákaznický účet">
+    <a class="customer-nav-link {% if request.resolver_match.url_name == 'user-profile' %}active{% endif %}" href="{% url 'users:user-profile' %}">
+      <i class="fas fa-id-card"></i>
+      Můj profil
+    </a>
+    <a class="customer-nav-link {% if request.resolver_match.url_name == 'consumption-history' %}active{% endif %}" href="{% url 'users:consumption-history' %}">
+      <i class="fas fa-history"></i>
+      Historie konzumace
+    </a>
+    <a class="customer-nav-link {% if request.resolver_match.url_name == 'account-history' %}active{% endif %}" href="{% url 'users:account-history' %}">
+      <i class="fas fa-file-invoice-dollar"></i>
+      Historie konta
+    </a>
+  </nav>
+</aside>

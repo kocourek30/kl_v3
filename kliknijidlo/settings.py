@@ -6,9 +6,25 @@ from dotenv import load_dotenv
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+TESTING = "test" in sys.argv
+LOCAL_RUNSERVER = "runserver" in sys.argv
 
 
 load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+
+def env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def env_list(name, default):
+    value = os.getenv(name)
+    if not value:
+        return default
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 # --- SECURITY ---
@@ -17,10 +33,24 @@ if not SECRET_KEY:
     SECRET_KEY = 'django-insecure-dev-key-temporary'
 
 
-DEBUG = 'True'
+DEBUG = env_bool('DJANGO_DEBUG', default=True)
 
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = env_list(
+    'DJANGO_ALLOWED_HOSTS',
+    [
+        '127.0.0.1',
+        'localhost',
+        '10.0.0.108',
+        'jidelna.kliknijidlo.cz',
+        'www.jidelna.kliknijidlo.cz',
+    ],
+)
+
+if LOCAL_RUNSERVER:
+    for host in ['127.0.0.1', 'localhost', '0.0.0.0', '10.0.0.108', 'testserver']:
+        if host not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(host)
 
 
 # --- CLOUDFLARE & HTTPS FIX ---
@@ -34,7 +64,10 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 
-if not DEBUG:
+if not DEBUG and not LOCAL_RUNSERVER:
+    if SECRET_KEY == 'django-insecure-dev-key-temporary':
+        raise ValueError("DJANGO_SECRET_KEY must be set in production.")
+
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_SSL_REDIRECT = True
@@ -46,14 +79,23 @@ else:
     CSRF_COOKIE_SECURE = False
     SECURE_SSL_REDIRECT = False
 
+if TESTING:
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    SECURE_SSL_REDIRECT = False
+
 
 # --- SESSION SETTINGS ---
-SESSION_COOKIE_HTTPONLY = False
+SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = 'Lax'
 SESSION_SAVE_EVERY_REQUEST = False
 SESSION_COOKIE_AGE = 86400  # 24 hodin
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = 'same-origin'
+X_FRAME_OPTIONS = 'DENY'
+KIOSK_AUTO_LOGIN_ENABLED = env_bool('KIOSK_AUTO_LOGIN_ENABLED', default=False)
 
 
 # --- APPS ---
@@ -109,7 +151,11 @@ DATABASES = {
 }
 
 
-if not DEBUG and not DATABASES['default'].get('PASSWORD'):
+if (
+    not DEBUG
+    and DATABASES['default']['ENGINE'] != 'django.db.backends.sqlite3'
+    and not DATABASES['default'].get('PASSWORD')
+):
     raise ValueError("DB_PASSWORD must be set in production!")
 
 
@@ -514,6 +560,13 @@ JAZZMIN_SETTINGS = {
     "custom_css": "css/custom-admin.css",
 
     "custom_links": {
+        "users": [
+            {
+                "name": "Nulování kont",
+                "url": "admin:users_vklad_nulovani_konta",
+                "icon": "fas fa-rotate-left",
+            },
+        ],
         "prepocty": [
             {
                 "name": "Spustit přepočet cen",

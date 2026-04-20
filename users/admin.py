@@ -13,10 +13,11 @@ from import_export import resources
 from import_export.formats.base_formats import CSV
 
 from django.contrib.auth.models import Group
-from dotace.models import DotacniPolitika
+from dotace.models import DotacniPolitika, SkupinoveNastaveni
 from django.utils.html import format_html
 
 from .models import CustomUser, Vklad, StravovaciSkupina
+from .forms import VkladForm
 from objednavky.models import OrderItem, Order
 from sklad.models import ToleranceSpotrebnihoKose
 
@@ -192,7 +193,7 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
         if code:
             return JsonResponse({'success': True, 'code': code})
         else:
-            return JsonResponse({'success': False, 'error': 'Error reading RFID'})
+            return JsonResponse({'success': False, 'error': 'Nepodařilo se přečíst RFID čip.'})
 
     def render_change_form(self, request, context, *args, **kwargs):
         context['read_rfid_url'] = reverse('admin:read-rfid')
@@ -201,9 +202,10 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
 
 @admin.register(Vklad)
 class VkladAdmin(admin.ModelAdmin):
-    list_display = ('uzivatel', 'castka', 'datum', 'status', 'poznamka')
+    form = VkladForm
+    list_display = ('uzivatel', 'castka', 'zpusob_uhrady', 'pokladna', 'datum', 'status', 'poznamka')
     search_fields = ('uzivatel__username', 'uzivatel__osobni_cislo')
-    list_filter = ('datum', 'status', 'uzivatel')
+    list_filter = ('datum', 'status', 'zpusob_uhrady', 'pokladna', 'uzivatel')
 
     actions = ['nulovat_konta']
 

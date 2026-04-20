@@ -1,6 +1,6 @@
 {% extends "pokladna/base_pokladna.html" %}
 
-{% block title %}Finanční report - {{ pokladna.nazev }}{% endblock %}
+{% block title %}Finanční přehled - {{ pokladna.nazev }}{% endblock %}
 
 {% block content %}
 <style>
@@ -34,7 +34,7 @@
 <div class="fin-page">
   <div class="fin-head">
     <div>
-      <h1 class="fin-title">Finanční report pokladny</h1>
+      <h1 class="fin-title">Finanční přehled pokladny</h1>
       <div class="fin-meta">{{ pokladna.nazev }} · {{ datum_od|date:"d.m.Y" }} až {{ datum_do|date:"d.m.Y" }}</div>
     </div>
     <form class="fin-filter" method="get">
@@ -46,8 +46,16 @@
 
   <div class="fin-grid">
     <div class="fin-card">
-      <div class="fin-label">Tržba celkem</div>
+      <div class="fin-label">Pokladní příjem celkem</div>
       <div class="fin-value">{{ celkem|floatformat:-2 }} Kč</div>
+    </div>
+    <div class="fin-card">
+      <div class="fin-label">Tržba z prodeje</div>
+      <div class="fin-value">{{ prodej_celkem|floatformat:-2 }} Kč</div>
+    </div>
+    <div class="fin-card">
+      <div class="fin-label">Vklady na konta</div>
+      <div class="fin-value">{{ vklady_celkem|floatformat:-2 }} Kč</div>
     </div>
     <div class="fin-card">
       <div class="fin-label">Počet dokladů</div>
@@ -64,7 +72,7 @@
   </div>
 
   <section class="fin-panel">
-    <h2>Tržby podle způsobu platby</h2>
+    <h2>Pokladní příjem podle způsobu platby</h2>
     <table class="fin-table">
       <thead>
         <tr>
@@ -81,6 +89,33 @@
             <td class="fin-num">{{ p.castka|floatformat:-2 }} Kč</td>
           </tr>
         {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="fin-panel">
+    <h2>Vklady na konta podle způsobu úhrady</h2>
+    <table class="fin-table">
+      <thead>
+        <tr>
+          <th>Způsob úhrady</th>
+          <th class="text-end">Vkladů</th>
+          <th class="text-end">Částka</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in vklady_kont.polozky %}
+          <tr>
+            <td>{{ p.nazev }}</td>
+            <td class="fin-num">{{ p.pocet }}</td>
+            <td class="fin-num">{{ p.castka|floatformat:-2 }} Kč</td>
+          </tr>
+        {% endfor %}
+        <tr>
+          <td><strong>Vklady celkem</strong></td>
+          <td></td>
+          <td class="fin-num">{{ vklady_kont.celkem|floatformat:-2 }} Kč</td>
+        </tr>
       </tbody>
     </table>
   </section>

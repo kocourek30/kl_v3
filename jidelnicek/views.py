@@ -1,4 +1,5 @@
 from datetime import datetime, date, timedelta
+import logging
 from django.shortcuts import redirect, render
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -40,6 +41,9 @@ from dotace.models import SkupinoveNastaveni
 from ankety.services import anketni_prehled_uzivatele
 
 
+logger = logging.getLogger(__name__)
+
+
 def get_item_name(item):
     for field_name in ['nazev', 'name', 'title', 'nazev_jidla']:
         if hasattr(item, field_name):
@@ -60,8 +64,8 @@ def get_user_balance_settings(user):
                 'nutnost_dobit': nastaveni.nutnost_dobit,
                 'debit_limit': nastaveni.debit_limit,
             }
-    except Exception as e:
-        print(f"⚠️ Chyba načítání nastavení: {e}")
+    except Exception:
+        logger.exception("Chyba při načítání nastavení zůstatku.")
     return {
         'cerpani_debit': False,
         'nutnost_dobit': True,
@@ -83,24 +87,12 @@ def get_user_balance(user):
         return Decimal('0') - Decimal(str(total_orders or 0))
 
 def update_user_balance(user, amount_change):
-    """✅ SPRÁVNĚ aktualizuje zůstatek v DB"""
-    try:
-        with transaction.atomic():
-            current_balance = get_user_balance(user)
-            new_balance = current_balance + amount_change
-            
-            print(f"💳 UPDATE: {current_balance} → {new_balance} ({amount_change:+.2f})")
-            
-            # Uložení do User modelu
-            user.aktualni_zustatek = new_balance
-            user.save(update_fields=['aktualni_zustatek'])
-            
-            user.refresh_from_db()
-            print(f"✅ SAVED: {user.aktualni_zustatek}")
-            return True
-    except Exception as e:
-        print(f"❌ Balance ERROR: {e}")
-        return False
+    """
+    Zůstatek uživatele je počítaná hodnota z vkladů a objednávek.
+    Položka objednávky se ukládá v téže transakci, takže není potřeba
+    samostatně zapisovat zůstatek do uživatelského modelu.
+    """
+    return True
 
 
 from objednavky.views import (
@@ -259,9 +251,7 @@ def dashboard(request):
         if not items_by_druh:
             return {}
         
-        # Zkontroluj typ prvního klíče
         first_key = next(iter(items_by_druh.keys()))
-        print(f"🔍 Typ klíče: {type(first_key)}, hodnota: {first_key}")
         
         # Pokud je klíč string
         if isinstance(first_key, str):
@@ -390,7 +380,6 @@ def order_create_view(request):
         # 2. ✅ KONTROLA GROUP LIMITU
         can_order_group, group_msg = check_group_limit(request.user, menu_item, target_date, quantity)
         if not can_order_group:
-            print(f"🚫 GROUP LIMIT: {group_msg}")
             return JsonResponse({'status': 'error', 'message': group_msg})
 
         price_per_item = get_user_price_for_item(request.user, menu_item)
@@ -496,10 +485,8 @@ def order_create_view(request):
             'balance': float(final_balance),
         })
 
-    except Exception as e:
-        print(f"💥 order_create: {e}")
-        import traceback
-        traceback.print_exc()
+    except Exception:
+        logger.exception("Chyba při vytvoření objednávky z jídelníčku.")
         return JsonResponse({'status': 'error', 'message': 'Chyba objednávky'})
 @login_required
 @require_POST
@@ -630,10 +617,8 @@ def order_delete_view(request):
             'balance': float(final_balance),
         })
 
-    except Exception as e:
-        print(f"💥 order_delete: {e}")
-        import traceback
-        traceback.print_exc()
+    except Exception:
+        logger.exception("Chyba při rušení objednávky z jídelníčku.")
         return JsonResponse({'status': 'error', 'message': 'Chyba rušení'})
 
 

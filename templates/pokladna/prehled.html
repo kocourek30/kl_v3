@@ -54,7 +54,7 @@
     </div>
     <div class="dash-actions">
       <a class="dash-btn dash-btn-primary" href="{% url 'pokladna:pokladna_ucet' pokladna.id %}"><i class="fas fa-plus"></i> Nový účet</a>
-      <a class="dash-btn dash-btn-light" href="{% url 'pokladna:pokladna_uzavrene_ucty' pokladna.id %}"><i class="fas fa-receipt"></i> Uzavřené účty</a>
+      <a class="dash-btn dash-btn-light" href="{% url 'pokladna:pokladna_uzavrene_ucty' pokladna.id %}"><i class="fas fa-receipt"></i> Uzavřené doklady</a>
     </div>
   </div>
 
@@ -62,7 +62,7 @@
     <main class="dash-card">
       <div class="dash-card-head">
         <span>Dnešní tržba podle způsobu platby</span>
-        <span>{{ pocet_uctu }} účtů</span>
+        <span>{{ pocet_uctu }} dokladů</span>
       </div>
       <div class="dash-card-body">
         <div class="dash-total">
@@ -127,7 +127,7 @@
   </div>
 
   <section class="dash-card">
-    <div class="dash-card-head">Poslední uzavřené účty dnes</div>
+    <div class="dash-card-head">Poslední uzavřené doklady dnes</div>
     <div class="dash-list">
       {% for d in uzavrene %}
         <div class="dash-row">
