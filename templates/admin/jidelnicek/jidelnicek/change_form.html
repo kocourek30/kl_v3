@@ -1,0 +1,21 @@
+{% extends "admin/change_form.html" %}
+
+{% block content %}
+<div class="menu-builder-page" data-menu-builder-root data-jidlo-meta-url-template="{{ jidlo_meta_url_template }}">
+  <div class="menu-builder-hero">
+    <span class="menu-builder-kicker">Jídelníček • editor dne</span>
+    <h1>{{ title }}</h1>
+    <p>
+      Druh jídla se v jídelníčku nově přebírá přímo z katalogu jídel. Díky tomu zůstávají ceny,
+      dotace, limity i viditelnost v jednom konzistentním místě.
+    </p>
+    <div class="menu-builder-hero-pills">
+      <span class="menu-builder-pill accent">1. Vyber datum nebo krátké období</span>
+      <span class="menu-builder-pill accent">2. Přidej jídla do dne</span>
+      <span class="menu-builder-pill accent">3. Zařazení se doplní automaticky</span>
+    </div>
+  </div>
+
+  {{ block.super }}
+</div>
+{% endblock %}

@@ -3,11 +3,12 @@ from django.db import transaction
 from django.core.exceptions import ValidationError
 from collections import defaultdict
 
-from .models import OrderItem, PriceRecalculationLog, PriceRecalculationDetail
+from .models import Order, OrderItem, PriceRecalculationLog, PriceRecalculationDetail, OrderValidator
 from dotace.services import vypocet_dotovane_ceny
 
 
 MAX_ORDER_QUANTITY = 10
+EDITABLE_BULK_ORDER_STATUSES = {"zalozena-obsluhou", "objednano"}
 
 
 def validate_order_quantity(value, *, max_quantity=MAX_ORDER_QUANTITY):
@@ -186,3 +187,135 @@ def get_recalculation_summary_by_user(changes):
         by_user[user]['items_count'] += 1
     
     return dict(by_user)
+
+
+def build_bulk_order_plan(datum_vydeje, menu_items, users):
+    """
+    Připraví náhled hromadného založení objednávek bez zápisu do DB.
+
+    Admin nástroj záměrně neřeší uzávěrku objednávek, ale nesmí tiše přepsat
+    už vydané/uzavřené objednávky a má respektovat konto uživatele.
+    """
+    menu_items = list(menu_items)
+    users = list(users)
+    existing_orders = {
+        order.user_id: order
+        for order in (
+            Order.objects
+            .filter(user__in=users, datum_vydeje=datum_vydeje)
+            .prefetch_related("items")
+        )
+    }
+
+    plan = []
+    summary = {
+        "create": 0,
+        "replace": 0,
+        "skip_status": 0,
+        "skip_balance": 0,
+        "skipped": 0,
+    }
+
+    for user in users:
+        existing_order = existing_orders.get(user.pk)
+        existing_items = existing_order.items.count() if existing_order else 0
+        total_price = sum(
+            (
+                OrderValidator.get_price_for_user(
+                    user,
+                    menu_item,
+                    target_date=datum_vydeje,
+                    quantity=1,
+                ) or Decimal("0")
+            )
+            for menu_item in menu_items
+        )
+
+        entry = {
+            "user": user,
+            "existing_order": existing_order,
+            "existing_items": existing_items,
+            "menu_items_count": len(menu_items),
+            "total_price": total_price,
+            "action": "create",
+            "reason": "",
+        }
+
+        if existing_order:
+            if existing_order.status not in EDITABLE_BULK_ORDER_STATUSES:
+                entry["action"] = "skip_status"
+                entry["reason"] = f"Existující objednávka má stav „{existing_order.get_status_display()}“."
+            else:
+                entry["action"] = "replace"
+                entry["reason"] = "Existující rozpracovaná objednávka bude nahrazena novým obsahem."
+
+        if entry["action"] in {"create", "replace"}:
+            ok_balance, balance_reason = OrderValidator.check_user_balance(user, total_price)
+            if not ok_balance:
+                entry["action"] = "skip_balance"
+                if balance_reason == "insufficient_balance":
+                    entry["reason"] = "Nedostatečný zůstatek."
+                elif balance_reason == "debit_limit_exceeded":
+                    entry["reason"] = "Překročen debetní limit."
+                else:
+                    entry["reason"] = "Objednávku nelze vytvořit kvůli nastavení konta."
+
+        if entry["action"].startswith("skip"):
+            summary["skipped"] += 1
+        summary[entry["action"]] += 1
+        plan.append(entry)
+
+    return {"entries": plan, "summary": summary}
+
+
+def apply_bulk_order_plan(datum_vydeje, menu_items, plan_entries):
+    """
+    Provede pouze položky, které v náhledu vyšly jako create/replace.
+    """
+    menu_items = list(menu_items)
+    created = 0
+    replaced = 0
+
+    with transaction.atomic():
+        for entry in plan_entries:
+            if entry["action"] not in {"create", "replace"}:
+                continue
+
+            user = entry["user"]
+            order, order_created = Order.objects.select_for_update().get_or_create(
+                user=user,
+                datum_vydeje=datum_vydeje,
+                defaults={"status": "zalozena-obsluhou"},
+            )
+
+            if not order_created and order.status not in EDITABLE_BULK_ORDER_STATUSES:
+                # Ochrana proti změně stavu mezi preview a potvrzením.
+                continue
+
+            order.status = "zalozena-obsluhou"
+            order.save(update_fields=["status"])
+            order.items.all().delete()
+
+            OrderItem.objects.bulk_create(
+                [
+                    OrderItem(
+                        order=order,
+                        menu_item=menu_item,
+                        quantity=1,
+                        cena=OrderValidator.get_price_for_user(
+                            user,
+                            menu_item,
+                            target_date=datum_vydeje,
+                            quantity=1,
+                        ),
+                    )
+                    for menu_item in menu_items
+                ]
+            )
+
+            if order_created:
+                created += 1
+            else:
+                replaced += 1
+
+    return {"created": created, "replaced": replaced}

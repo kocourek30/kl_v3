@@ -16,15 +16,21 @@ from .models import (
     Order, OrderItem, UserRFID, 
     PriceRecalculationLog, PriceRecalculationDetail
 )
-from .services import recalculate_order_prices, get_recalculation_summary_by_user
+from .services import (
+    apply_bulk_order_plan,
+    build_bulk_order_plan,
+    recalculate_order_prices,
+    get_recalculation_summary_by_user,
+)
 from jidelnicek.models import Jidelnicek, PolozkaJidelnicku
 from dotace.models import DotaceProJidelniskouSkupinu
+from users.group_utils import get_first_group_setting, get_primary_effective_group
 
 User = get_user_model()
 
 
 def get_cena_for_user_and_item(user, menu_item):
-    skupina = user.groups.first()
+    skupina = get_primary_effective_group(user)
     if not skupina:
         return menu_item.jidlo.cena
     politika = getattr(skupina, 'dotacni_politika', None)
@@ -198,68 +204,43 @@ class OrderAdmin(admin.ModelAdmin):
 
     def bulk_create_view(self, request):
         form = BulkOrderForm(request.POST or None)
-        error_users = []
         if request.method == "POST" and form.is_valid():
+            action = request.POST.get("action", "preview")
             datum_vydeje = form.cleaned_data['datum_vydeje']
             menu_items = form.cleaned_data['menu_items']
             uzivatele = form.cleaned_data['uzivatele']
+            plan = build_bulk_order_plan(datum_vydeje, menu_items, uzivatele)
 
-            with transaction.atomic():
-                for uzivatel in uzivatele:
-                    skupina = uzivatel.groups.first()
-                    nastaveni = getattr(skupina, 'nastaveni', None)
-                    cena_objednavky = sum(
-                        get_cena_for_user_and_item(uzivatel, item) for item in menu_items
-                    )
-                    zustatek = uzivatel.aktualni_zustatek
-                    povoleno = True
+            if action != "confirm":
+                context = {
+                    **self.admin_site.each_context(request),
+                    "title": "Náhled hromadného založení objednávek",
+                    "form": form,
+                    "datum_vydeje": datum_vydeje,
+                    "menu_items": menu_items,
+                    "plan": plan,
+                }
+                return render(request, "admin/objednavky/bulk_create_preview.html", context)
 
-                    if nastaveni:
-                        if nastaveni.nutnost_dobit and (zustatek - cena_objednavky < 0):
-                            povoleno = False
-                        if nastaveni.cerpani_debit and (
-                            zustatek - cena_objednavky < float(nastaveni.debit_limit)
-                        ):
-                            povoleno = False
-
-                    if not povoleno:
-                        error_users.append(
-                            f"{uzivatel.osobni_cislo or uzivatel.username} "
-                            f"({uzivatel.first_name} {uzivatel.last_name})"
-                        )
-                        continue
-
-                    order, created = Order.objects.get_or_create(
-                        user=uzivatel,
-                        datum_vydeje=datum_vydeje,
-                        defaults={'status': 'zalozena-obsluhou'}
-                    )
-                    if not created:
-                        order.status = 'zalozena-obsluhou'
-                        order.save()
-                    order.items.all().delete()
-                    items_to_create = [
-                        OrderItem(
-                            order=order,
-                            menu_item=item,
-                            quantity=1,
-                            cena=get_cena_for_user_and_item(uzivatel, item)
-                        )
-                        for item in menu_items
-                    ]
-                    OrderItem.objects.bulk_create(items_to_create)
-
-            if error_users:
+            result = apply_bulk_order_plan(datum_vydeje, menu_items, plan["entries"])
+            skipped = plan["summary"]["skipped"]
+            if skipped:
                 self.message_user(
                     request,
-                    "Některé objednávky nebyly vytvořeny kvůli nedostatku zůstatku nebo limitu: "
-                    + ", ".join(error_users),
-                    level='error'
+                    (
+                        f"Vytvořeno {result['created']} nových objednávek, "
+                        f"nahrazeno {result['replaced']} rozpracovaných a "
+                        f"přeskočeno {skipped} uživatelů."
+                    ),
+                    level='warning'
                 )
             else:
                 self.message_user(
                     request,
-                    f"Vytvořeno {len(uzivatele) - len(error_users)} objednávek na datum {datum_vydeje}."
+                    (
+                        f"Vytvořeno {result['created']} nových objednávek a "
+                        f"nahrazeno {result['replaced']} rozpracovaných na datum {datum_vydeje}."
+                    )
                 )
             return redirect('..')
 
@@ -272,6 +253,8 @@ class OrderAdmin(admin.ModelAdmin):
     def users_api(self, request):
         query = request.GET.get('q', '').strip()
         skupina = request.GET.get('skupina', '').strip()
+        datum = request.GET.get('datum', '').strip()
+        menu_item_ids = request.GET.getlist('menu_items')
         users = User.objects.filter(is_active=True)
         if skupina:
             try:
@@ -286,14 +269,34 @@ class OrderAdmin(admin.ModelAdmin):
                 models.Q(last_name__icontains=query) |
                 models.Q(osobni_cislo__icontains=query)
             )
+        users = users.order_by('last_name', 'first_name')
+
+        plan_by_user_id = {}
+        if datum and menu_item_ids:
+            try:
+                datum_vydeje = date.fromisoformat(datum)
+                menu_items = list(PolozkaJidelnicku.objects.filter(pk__in=menu_item_ids))
+                if menu_items:
+                    plan = build_bulk_order_plan(datum_vydeje, menu_items, list(users))
+                    plan_by_user_id = {
+                        entry["user"].pk: entry
+                        for entry in plan["entries"]
+                    }
+            except (ValueError, TypeError):
+                plan_by_user_id = {}
+
         data = [
             {
                 "id": u.id,
                 "osobni_cislo": getattr(u, 'osobni_cislo', ''),
                 "name": f"{u.first_name} {u.last_name}",
                 "username": u.username,
+                "action": plan_by_user_id.get(u.id, {}).get("action", ""),
+                "reason": plan_by_user_id.get(u.id, {}).get("reason", ""),
+                "total_price": float(plan_by_user_id.get(u.id, {}).get("total_price", Decimal("0"))),
+                "existing_items": plan_by_user_id.get(u.id, {}).get("existing_items", 0),
             }
-            for u in users.order_by('last_name', 'first_name')
+            for u in users
         ]
         return JsonResponse(data, safe=False)
 
@@ -309,8 +312,15 @@ class OrderAdmin(admin.ModelAdmin):
         items = PolozkaJidelnicku.objects.filter(
             jidelnicek__platnost_od__lte=datum_obj,
             jidelnicek__platnost_do__gte=datum_obj
-        ).values('id', 'jidlo__nazev')
-        data = [{'id': item['id'], 'nazev': item['jidlo__nazev']} for item in items]
+        ).values('id', 'jidlo__nazev', 'druh_jidla__nazev')
+        data = [
+            {
+                'id': item['id'],
+                'nazev': item['jidlo__nazev'],
+                'druh_jidla': item['druh_jidla__nazev'],
+            }
+            for item in items
+        ]
         return JsonResponse(data, safe=False)
 
     def jidelnicek_days_api(self, request):

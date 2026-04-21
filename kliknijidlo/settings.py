@@ -1,6 +1,5 @@
 import os
 import sys
-import secrets
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -57,11 +56,16 @@ if LOCAL_RUNSERVER:
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 
-CSRF_TRUSTED_ORIGINS = [
-    'https://jidelna.kliknijidlo.cz',
-    'http://jidelna.kliknijidlo.cz',
-    'http://10.0.0.108:8000',
-]
+CSRF_TRUSTED_ORIGINS = env_list(
+    'CSRF_TRUSTED_ORIGINS',
+    [
+        'http://127.0.0.1:8000',
+        'http://localhost:8000',
+        'https://jidelna.kliknijidlo.cz',
+        'http://jidelna.kliknijidlo.cz',
+        'http://10.0.0.108:8000',
+    ],
+)
 
 
 if not DEBUG and not LOCAL_RUNSERVER:
@@ -143,13 +147,31 @@ MIDDLEWARE = [
 ]
 
 
-# --- DATABASE: lokálně jen SQLite, bez ohledu na DEBUG/ENV ---
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+LOGS_DIR = BASE_DIR / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
+
+db_engine = os.getenv('DB_ENGINE', 'django.db.backends.sqlite3')
+if db_engine == 'django.db.backends.sqlite3':
+    DATABASES = {
+        "default": {
+            "ENGINE": db_engine,
+            "NAME": os.getenv('DB_NAME', str(BASE_DIR / 'db.sqlite3')),
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": db_engine,
+            "NAME": os.getenv('DB_NAME', 'kliknijidlo_dev'),
+            "USER": os.getenv('DB_USER', 'kliknijidlo_user'),
+            "PASSWORD": os.getenv('DB_PASSWORD', ''),
+            "HOST": os.getenv('DB_HOST', '127.0.0.1'),
+            "PORT": os.getenv('DB_PORT', '5432'),
+            "OPTIONS": {
+                "sslmode": os.getenv('DB_SSLMODE') or 'prefer',
+            },
+        }
+    }
 
 
 if (
@@ -247,7 +269,7 @@ LOGGING = {
         'file': {
             'level': 'WARNING',
             'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs', 'django.log'),
+            'filename': os.path.join(LOGS_DIR, 'django.log'),
             'maxBytes': 1024 * 1024 * 10,
             'backupCount': 5,
             'formatter': 'verbose',
@@ -255,7 +277,7 @@ LOGGING = {
         'security_file': {
             'level': 'WARNING',
             'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs', 'security.log'),
+            'filename': os.path.join(LOGS_DIR, 'security.log'),
             'maxBytes': 1024 * 1024 * 10,
             'backupCount': 5,
             'formatter': 'verbose',
@@ -657,19 +679,6 @@ JAZZMIN_UI_TWEAKS = {
     },
     "actions_sticky_top": False,
 }
-
-
-# DEBUG: lokální SQLite místo Postgresu
-if DEBUG:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-            "OPTIONS": {
-                "timeout": 30,
-            },
-        }
-    }
 
 
 if DATABASES["default"]["ENGINE"] == "django.db.backends.sqlite3" and "test" not in sys.argv:

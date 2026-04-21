@@ -167,6 +167,18 @@ class Jidlo(models.Model):
     def __str__(self):
         return self.nazev
 
+    def clean(self):
+        super().clean()
+        if self.pk and not self.druh_id and self.polozkajidelnicku_set.exists():
+            raise ValidationError(
+                {
+                    "druh": (
+                        "Jídlo použité v jídelníčku musí mít vyplněný druh jídla. "
+                        "Ten určuje zařazení, ceny po dotacích, limity i viditelnost."
+                    )
+                }
+            )
+
     @property
     def vychozi_ikona(self):
         druh_nazev = self.druh.nazev if self.druh_id and self.druh else ""
@@ -177,6 +189,12 @@ class Jidlo(models.Model):
         return bool(self.foto)
     
     def save(self, *args, **kwargs):
+        puvodni_druh_id = None
+        if self.pk:
+            puvodni_druh_id = (
+                Jidlo.objects.filter(pk=self.pk).values_list("druh_id", flat=True).first()
+            )
+
         super().save(*args, **kwargs)
 
         if self.foto:
@@ -194,6 +212,11 @@ class Jidlo(models.Model):
                 super().save(update_fields=["foto"])
             except Exception:
                 logger.exception("Nelze zpracovat fotku jídla.")
+
+        if self.druh_id and puvodni_druh_id != self.druh_id:
+            self.polozkajidelnicku_set.exclude(druh_jidla_id=self.druh_id).update(
+                druh_jidla_id=self.druh_id
+            )
 
     # v modelu Jidlo
     def spolecne_alergeny(self, user):
@@ -292,6 +315,40 @@ class PolozkaJidelnicku(models.Model):
         verbose_name = "Položka jídelníčku"
         verbose_name_plural = "Položky jídelníčku"
         ordering = ("druh_jidla__poradi", "druh_jidla__nazev", "jidlo__nazev")
+
+    def clean(self):
+        super().clean()
+        if not self.jidlo_id:
+            return
+
+        jidlo_druh_id = self.jidlo.druh_id
+        if not jidlo_druh_id:
+            raise ValidationError(
+                {
+                    "jidlo": (
+                        "Vybrané jídlo nemá nastavený druh jídla. "
+                        "Nejdřív ho doplň v katalogu jídel."
+                    )
+                }
+            )
+
+        if self.druh_jidla_id and self.druh_jidla_id != jidlo_druh_id:
+            raise ValidationError(
+                {
+                    "jidlo": (
+                        f"Vybrané jídlo patří do druhu „{self.jidlo.druh}“, "
+                        f"ale tento řádek jídelníčku je určený pro „{self.druh_jidla}“."
+                    )
+                }
+            )
+
+        if not self.druh_jidla_id:
+            self.druh_jidla_id = jidlo_druh_id
+
+    def save(self, *args, **kwargs):
+        if self.jidlo_id and self.jidlo.druh_id and not self.druh_jidla_id:
+            self.druh_jidla_id = self.jidlo.druh_id
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.druh_jidla} - {self.jidlo} v {self.jidelnicek}"

@@ -5,6 +5,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.db.models import F, Sum
 
 from .models import DotaceProJidelniskouSkupinu, DotacniPolitika
+from users.group_utils import get_effective_user_groups
 
 
 AKTIVNI_STAVY_OBJEDNAVEK = [
@@ -21,7 +22,7 @@ def _money(value):
 
 
 def _first_group_policy(user):
-    for group in user.groups.all():
+    for group in get_effective_user_groups(user):
         try:
             return group.dotacni_politika
         except DotacniPolitika.DoesNotExist:

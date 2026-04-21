@@ -12,6 +12,7 @@ from django.utils import timezone
 from sklad.models import PohybSkladu, StavSkladu
 from users.models import Vklad
 from dotace.models import SkupinoveNastaveni
+from users.group_utils import get_primary_effective_group
 
 from .models import PLUPolozka, PokladniDoklad, PokladniPolozka, PokladniSmazanaPolozka, PokladniUzaverka
 
@@ -41,7 +42,7 @@ def konto_nastaveni_uzivatele(uzivatel):
     - bez debetu je limit 0.00
     - s debetem je limit záporný (např. -1500.00)
     """
-    skupina = uzivatel.groups.first()
+    skupina = get_primary_effective_group(uzivatel)
     if not skupina:
         return {
             "cerpani_debit": False,

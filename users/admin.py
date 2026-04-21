@@ -20,6 +20,7 @@ from .models import CustomUser, Vklad, StravovaciSkupina
 from .forms import VkladForm
 from objednavky.models import OrderItem, Order
 from sklad.models import ToleranceSpotrebnihoKose
+from .group_utils import get_effective_user_groups, get_first_group_setting, get_primary_effective_group
 
 
 
@@ -52,7 +53,7 @@ class CustomUserResource(resources.ModelResource):
         try:
             user = CustomUser.objects.get(username=username)
             admin_group = Group.objects.get(name='admin')
-            if admin_group in user.groups.all():
+            if any(group.pk == admin_group.pk for group in get_effective_user_groups(user)):
                 raise Exception("skip")
         except CustomUser.DoesNotExist:
             pass
@@ -144,7 +145,7 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
         return formatted
 
     def get_user_group(self, obj):
-        return obj.groups.first()
+        return get_primary_effective_group(obj)
 
     @admin.display(description="Debet limit")
     def debit_limit(self, obj):
@@ -229,8 +230,7 @@ class VkladAdmin(admin.ModelAdmin):
             users = CustomUser.objects.filter(id__in=user_ids, is_active=True).prefetch_related('groups__nastaveni')
             nulovano = 0
             for user in users:
-                skupina = user.groups.first()
-                nastaveni = getattr(skupina, 'nastaveni', None)
+                nastaveni = get_first_group_setting(user)
                 if not nastaveni or not nastaveni.cerpani_debit:
                     continue
                 zustatek = user.aktualni_zustatek
@@ -247,7 +247,10 @@ class VkladAdmin(admin.ModelAdmin):
             return redirect('admin:users_vklad_changelist')
         else:
             users = CustomUser.objects.filter(is_active=True).prefetch_related('groups__nastaveni')
-            users = [u for u in users if u.groups.first() and getattr(u.groups.first(), 'nastaveni', None) and u.groups.first().nastaveni.cerpani_debit]
+            users = [
+                u for u in users
+                if (get_first_group_setting(u) and get_first_group_setting(u).cerpani_debit)
+            ]
             context = dict(
                 self.admin_site.each_context(request),
                 users=users,
@@ -260,8 +263,7 @@ class VkladAdmin(admin.ModelAdmin):
 
         nulovano = 0
         for user in CustomUser.objects.filter(is_active=True):
-            skupina = user.groups.first()
-            nastaveni = getattr(skupina, 'nastaveni', None)
+            nastaveni = get_first_group_setting(user)
             if not nastaveni or not nastaveni.cerpani_debit:
                 continue
             zustatek = user.aktualni_zustatek

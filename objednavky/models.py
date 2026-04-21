@@ -8,6 +8,7 @@ from django.contrib.auth.models import Group
 from canteen_settings.models import OrderClosingTime, GroupOrderLimit  # ✅ Správný import
 from dotace.models import SkupinoveNastaveni, DotacniPolitika, DotaceProJidelniskouSkupinu
 from decimal import Decimal
+from users.group_utils import get_effective_user_groups, get_primary_effective_group
 
 
 
@@ -104,7 +105,7 @@ class OrderValidator:
         if user.is_staff:
             return True, ""
         
-        user_group = user.groups.first()
+        user_group = get_primary_effective_group(user)
         if not user_group:
             return True, ""
         
@@ -144,7 +145,7 @@ class OrderValidator:
     def check_user_balance(user, total_price):
         """Kontrola zůstatku a nastavení skupiny"""
         nastaveni = SkupinoveNastaveni.objects.filter(
-            skupina__in=user.groups.all()
+            skupina__in=get_effective_user_groups(user)
         ).first()
         
         if not nastaveni:

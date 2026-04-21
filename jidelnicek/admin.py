@@ -2,11 +2,15 @@ from django.utils.html import format_html
 from django.contrib import admin
 from decimal import Decimal
 from django.db.models import Sum
+from django.core.exceptions import ValidationError
+from django.http import JsonResponse
+from django.urls import reverse
 
 from django import forms
 from django.urls import path
 from django.shortcuts import render, redirect
 from django.contrib import messages
+from django.forms.models import BaseInlineFormSet
 
 import re
 from datetime import datetime, date
@@ -223,12 +227,125 @@ class TxtImportForm(forms.Form):
     soubor = forms.FileField(label="TXT jídelníček")
 
 
+class JidloAdminForm(forms.ModelForm):
+    class Meta:
+        model = Jidlo
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["druh"].help_text = (
+            "Katalogový druh jídla. Použije se jako zdroj pravdy při zařazení do jídelníčku "
+            "a ovlivňuje ceny po dotacích, limity i viditelnost."
+        )
+
+    def clean_druh(self):
+        druh = self.cleaned_data.get("druh")
+        if druh is None and self.instance.pk and self.instance.polozkajidelnicku_set.exists():
+            raise ValidationError(
+                "Jídlo už je použité v jídelníčku, proto mu nelze odebrat druh jídla."
+            )
+        return druh
+
+
+class PolozkaJidelnickuAdminForm(forms.ModelForm):
+    class Meta:
+        model = PolozkaJidelnicku
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["jidlo"].widget = forms.Select(attrs={"class": "menu-builder-food-select"})
+        druh_jidla = self._resolve_slot_kind()
+        jidlo_qs = Jidlo.objects.none()
+        if druh_jidla:
+            jidlo_qs = Jidlo.objects.filter(druh_id=druh_jidla).order_by("nazev")
+
+        selected_jidlo_id = self._resolve_selected_jidlo_id()
+        if selected_jidlo_id:
+            selected_qs = Jidlo.objects.filter(pk=selected_jidlo_id)
+            jidlo_qs = (jidlo_qs | selected_qs).distinct().order_by("nazev")
+
+        self.fields["jidlo"].queryset = jidlo_qs
+        self.fields["jidlo"].widget.choices = self.fields["jidlo"].choices
+        self.fields["jidlo"].help_text = (
+            "Vyber jídlo z katalogu. Nabídka je omezená jen na jídla odpovídající tomuto druhu."
+        )
+        self.fields["druh_jidla"].help_text = (
+            "Slot jídelníčku. Po prvním uložení se pro jednotlivé druhy předpřipraví řádky automaticky."
+        )
+        if self.instance.pk and self.instance.jidlo_id and self.instance.jidlo.druh_id:
+            self.fields["druh_jidla"].initial = self.instance.jidlo.druh_id
+        if self.instance.pk or self.initial.get("druh_jidla"):
+            self.fields["druh_jidla"].disabled = True
+
+    def _resolve_slot_kind(self):
+        bound_value = self.data.get(self.add_prefix("druh_jidla"))
+        if bound_value:
+            try:
+                return int(bound_value)
+            except (TypeError, ValueError):
+                return None
+        initial_value = self.initial.get("druh_jidla")
+        if hasattr(initial_value, "pk"):
+            return initial_value.pk
+        if initial_value:
+            try:
+                return int(initial_value)
+            except (TypeError, ValueError):
+                return None
+        if self.instance.pk and self.instance.druh_jidla_id:
+            return self.instance.druh_jidla_id
+        return None
+
+    def _resolve_selected_jidlo_id(self):
+        bound_value = self.data.get(self.add_prefix("jidlo"))
+        if bound_value:
+            try:
+                return int(bound_value)
+            except (TypeError, ValueError):
+                return None
+        if self.instance.pk and self.instance.jidlo_id:
+            return self.instance.jidlo_id
+        return None
+
+    def clean(self):
+        cleaned_data = super().clean()
+        jidlo = cleaned_data.get("jidlo")
+        druh_jidla = cleaned_data.get("druh_jidla")
+        if jidlo and not jidlo.druh_id:
+            self.add_error("jidlo", "Vybrané jídlo nemá v katalogu nastavený druh jídla.")
+        elif jidlo and druh_jidla and jidlo.druh_id != druh_jidla.id:
+            self.add_error(
+                "jidlo",
+                (
+                    f"Vybrané jídlo patří do druhu „{jidlo.druh}“, "
+                    f"ale tento slot je určený pro „{druh_jidla}“."
+                ),
+            )
+        return cleaned_data
+
+
+class PolozkaJidelnickuInlineFormSet(BaseInlineFormSet):
+    def __init__(self, *args, **kwargs):
+        instance = kwargs.get("instance")
+        if instance and instance.pk and not kwargs.get("initial"):
+            existing_ids = set(
+                instance.polozky.values_list("druh_jidla_id", flat=True)
+            )
+            kwargs["initial"] = [
+                {"druh_jidla": druh.pk}
+                for druh in DruhJidla.objects.exclude(pk__in=existing_ids).order_by("poradi", "nazev")
+            ]
+        super().__init__(*args, **kwargs)
+
+
 # ====== PŮVODNÍ ADMIN + AUTO‑PLU ======
 
 
 @admin.register(DruhJidla)
 class DruhJidlaAdmin(admin.ModelAdmin):
-    list_display = ('nazev', 'poradi', 'icon_preview')
+    list_display = ('nazev', 'poradi', 'visible_for_groups', 'icon_preview')
     list_editable = ('poradi',)
     search_fields = ('nazev',)
     ordering = ('poradi', 'nazev')
@@ -242,6 +359,13 @@ class DruhJidlaAdmin(admin.ModelAdmin):
         return ""
     icon_preview.short_description = 'Ikona'
     icon_preview.admin_order_field = 'ikona'
+
+    @admin.display(description="Uvidí")
+    def visible_for_groups(self, obj):
+        groups = list(obj.viditelne_pro_skupiny.values_list("name", flat=True))
+        if not groups:
+            return "Všichni"
+        return ", ".join(groups)
 
     def save_model(self, request, obj, form, change):
         if not obj.ikona:
@@ -262,6 +386,7 @@ class DruhJidlaAdmin(admin.ModelAdmin):
 
 @admin.register(Jidlo)
 class JidloAdmin(admin.ModelAdmin):
+    form = JidloAdminForm
     list_display = ('nahled', 'nazev', 'druh', 'cena', 'alergeny_list', 'ceny_po_dotacich', 'ma_komponenty')
     search_fields = ('nazev',)
     list_filter = (
@@ -325,6 +450,16 @@ class JidloAdmin(admin.ModelAdmin):
         return obj.komponenty_jidla.exists()
     ma_komponenty.boolean = True
     ma_komponenty.short_description = "Komponenty?"
+
+    def get_search_results(self, request, queryset, search_term):
+        queryset, use_distinct = super().get_search_results(request, queryset, search_term)
+        druh_jidla = request.GET.get("druh_jidla")
+        if druh_jidla:
+            try:
+                queryset = queryset.filter(druh_id=int(druh_jidla))
+            except (TypeError, ValueError):
+                queryset = queryset.none()
+        return queryset, use_distinct
 
     def alergeny_list(self, obj):
         return ", ".join([a.nazev for a in obj.alergeny.all()])
@@ -438,15 +573,62 @@ class JidloAdmin(admin.ModelAdmin):
             self._ensure_plu_for_jidlo(jidlo)
 
 
-class PolozkaJidelnickuInline(admin.TabularInline):
+class PolozkaJidelnickuInline(admin.StackedInline):
     model = PolozkaJidelnicku
-    extra = 1
+    form = PolozkaJidelnickuAdminForm
+    formset = PolozkaJidelnickuInlineFormSet
+    extra = 0
+    fields = ("druh_jidla", "jidlo", "menu_item_summary")
+    readonly_fields = ("menu_item_summary",)
+    classes = ("menu-builder-inline",)
+
+    def get_extra(self, request, obj=None, **kwargs):
+        if not obj or not obj.pk:
+            return 0
+        existing_ids = set(obj.polozky.values_list("druh_jidla_id", flat=True))
+        return DruhJidla.objects.exclude(pk__in=existing_ids).count()
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "druh_jidla":
+            kwargs["queryset"] = DruhJidla.objects.order_by("poradi", "nazev")
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    @admin.display(description="Souhrn vybraného jídla")
+    def menu_item_summary(self, obj):
+        if not obj or not getattr(obj, "jidlo_id", None):
+            return format_html(
+                '<div class="menu-builder-empty">Vyber jídlo a souhrn ceny, alergenů a viditelnosti se doplní automaticky.</div>'
+            )
+
+        jidlo = obj.jidlo
+        druh = jidlo.druh.nazev if jidlo.druh_id else "Bez druhu"
+        alergeny = ", ".join(jidlo.alergeny.values_list("nazev", flat=True)) or "Bez alergenů"
+        visible_groups = ", ".join(
+            jidlo.druh.viditelne_pro_skupiny.values_list("name", flat=True)
+        ) if jidlo.druh_id and jidlo.druh.viditelne_pro_skupiny.exists() else "Všichni"
+        return format_html(
+            '<div class="menu-builder-summary" data-menu-builder-summary>'
+            '<span class="menu-builder-pill kind">Druh: {}</span>'
+            '<span class="menu-builder-pill price">Cena: {} Kč</span>'
+            '<span class="menu-builder-pill allergens">Alergeny: {}</span>'
+            '<span class="menu-builder-pill groups">Uvidí: {}</span>'
+            '</div>',
+            druh,
+            f"{jidlo.cena:.2f}",
+            alergeny,
+            visible_groups,
+        )
 
 
 @admin.register(Jidelnicek)
 class JidelnicekAdmin(admin.ModelAdmin):
+    change_form_template = "admin/jidelnicek/jidelnicek/change_form.html"
     list_display = ('platnost_od', 'platnost_do', 'obsah_jidelnicku')
     inlines = [PolozkaJidelnickuInline]
+
+    class Media:
+        css = {"all": ("jidelnicek/css/menu_builder_admin.css",)}
+        js = ("jidelnicek/js/menu_builder_admin.js",)
 
     @admin.display(description='Obsah jídelníčku')
     def obsah_jidelnicku(self, obj):
@@ -479,12 +661,54 @@ class JidelnicekAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         my_urls = [
             path(
+                "jidlo-meta/<int:jidlo_id>/",
+                self.admin_site.admin_view(self.jidlo_meta_api),
+                name="jidelnicek_jidlo_meta",
+            ),
+            path(
                 "import-txt/",
                 self.admin_site.admin_view(self.import_txt_view),
                 name="jidelnicek_import_txt",
             ),
         ]
         return my_urls + urls
+
+    def render_change_form(self, request, context, *args, **kwargs):
+        context["jidlo_meta_url_template"] = reverse(
+            "admin:jidelnicek_jidlo_meta", args=[0]
+        )
+        return super().render_change_form(request, context, *args, **kwargs)
+
+    def jidlo_meta_api(self, request, jidlo_id):
+        try:
+            jidlo = Jidlo.objects.select_related("druh").prefetch_related("alergeny", "druh__viditelne_pro_skupiny").get(pk=jidlo_id)
+        except Jidlo.DoesNotExist:
+            return JsonResponse({"error": "not_found"}, status=404)
+
+        if not jidlo.druh_id:
+            return JsonResponse(
+                {
+                    "id": jidlo.pk,
+                    "nazev": jidlo.nazev,
+                    "druh_id": None,
+                    "druh": "",
+                    "cena": f"{jidlo.cena:.2f}",
+                    "alergeny": list(jidlo.alergeny.values_list("nazev", flat=True)),
+                    "visible_groups": [],
+                }
+            )
+
+        return JsonResponse(
+            {
+                "id": jidlo.pk,
+                "nazev": jidlo.nazev,
+                "druh_id": jidlo.druh_id,
+                "druh": jidlo.druh.nazev,
+                "cena": f"{jidlo.cena:.2f}",
+                "alergeny": list(jidlo.alergeny.values_list("nazev", flat=True)),
+                "visible_groups": list(jidlo.druh.viditelne_pro_skupiny.values_list("name", flat=True)),
+            }
+        )
 
     def import_txt_view(self, request):
         if request.method == "POST":
@@ -513,6 +737,7 @@ class JidelnicekAdmin(admin.ModelAdmin):
 
 @admin.register(PolozkaJidelnicku)
 class PolozkaJidelnickuAdmin(admin.ModelAdmin):
+    form = PolozkaJidelnickuAdminForm
     list_display = ("jidelnicek", "druh_jidla", "jidlo")
     list_filter = ("jidelnicek", "druh_jidla")
     search_fields = ("jidlo__nazev",)

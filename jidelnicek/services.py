@@ -14,9 +14,31 @@ from dotace.models import DotaceProJidelniskouSkupinu, DotacniPolitika, Skupinov
 from objednavky.models import Order, OrderItem
 from jidelnicek.models import Jidelnicek, PolozkaJidelnicku
 from canteen_settings.utils import is_ordering_allowed, get_order_closing_datetime
+from users.group_utils import (
+    get_effective_user_groups,
+    get_first_group_setting,
+    get_primary_effective_group,
+)
 
 logger = logging.getLogger(__name__)
 
+
+def can_user_access_menu_item(user, menu_item):
+    """
+    Rozhodne, zda uživatel smí daný druh jídla vidět a objednat.
+    """
+    # Úplné obcházení pravidel patří jen superuserům.
+    # Běžný staff účet (např. testovací zaměstnanec, kiosk) se má řídit
+    # stejnými pravidly viditelnosti jako ostatní uživatelé.
+    if getattr(user, "is_superuser", False):
+        return True
+
+    allowed_groups = list(menu_item.druh_jidla.viditelne_pro_skupiny.all())
+    if not allowed_groups:
+        return True
+
+    direct_group_ids = set(user.groups.values_list("pk", flat=True))
+    return any(group.pk in direct_group_ids for group in allowed_groups)
 
 
 @transaction.atomic
@@ -99,7 +121,7 @@ def check_group_limit(user, menu_item, target_date, quantity):
     if user.is_staff:
         return True, ""
 
-    user_group = user.groups.first()
+    user_group = get_primary_effective_group(user)
     if not user_group:
         return True, ""
 
@@ -219,12 +241,7 @@ def check_user_balance_for_item(user, item_price):
 
         if predikce_zustatek < 0:
             nastaveni = None
-            for group in user.groups.all():
-                try:
-                    nastaveni = group.nastaveni
-                    break
-                except SkupinoveNastaveni.DoesNotExist:
-                    continue
+            nastaveni = get_first_group_setting(user)
 
             if nastaveni and nastaveni.nutnost_dobit and zustatek < item_price:
                 error_info = {
@@ -290,7 +307,7 @@ def validate_item_for_display(user, item, target_date):
     item.hide_quantity = False
 
     # ✅ SKRYTÍ MNOŽSTVÍ PODLE GROUP LIMITU
-    user_group = user.groups.first()
+    user_group = get_primary_effective_group(user)
     if user_group:
         limit_setting = GroupOrderLimit.objects.filter(
             group=user_group,
@@ -381,7 +398,7 @@ def validate_item_for_display(user, item, target_date):
 def get_group_order_limit(user, druh_jidla):
     """Vrátí maximální počet objednávek pro skupinu a druh jídla"""
     try:
-        user_group = user.groups.first()
+        user_group = get_primary_effective_group(user)
         if not user_group:
             return 0
 
@@ -396,15 +413,18 @@ def get_group_order_limit(user, druh_jidla):
 
 # ✅ Pomocná funkce: filtrování položek podle skupiny uživatele
 def _filter_items_for_user_group(user, items_qs):
-    group = user.groups.first()
-    if not group:
+    if getattr(user, "is_superuser", False):
+        return items_qs.distinct()
+
+    groups = list(user.groups.all())
+    if not groups:
         # uživatel bez skupiny → vidí jen druhy bez omezení
         return items_qs.filter(
             models.Q(druh_jidla__viditelne_pro_skupiny__isnull=True)
         ).distinct()
 
     return items_qs.filter(
-        models.Q(druh_jidla__viditelne_pro_skupiny=group)
+        models.Q(druh_jidla__viditelne_pro_skupiny__in=groups)
         | models.Q(druh_jidla__viditelne_pro_skupiny__isnull=True)
     ).distinct()
 

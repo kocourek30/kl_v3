@@ -1,9 +1,9 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:16-alpine
     container_name: kliknijidlo_db
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_DB: kliknijidlo_dev
       POSTGRES_USER: kliknijidlo_user
@@ -19,18 +19,21 @@ services:
   web:
     build: .
     container_name: kliknijidlo_web
-    command: python manage.py runserver 0.0.0.0:8000
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
     ports:
       - "8000:8000"
     environment:
-      # TADY DEFINUJEME PROMĚNNOU, KTEROU VOLÁME V SETTINGS
-      - dev_password_123=dev_password_123
+      - DB_ENGINE=django.db.backends.postgresql
       - DB_PASSWORD=dev_password_123
       - DB_NAME=kliknijidlo_dev
       - DB_USER=kliknijidlo_user
       - DB_HOST=db
+      - DB_PORT=5432
+      - DB_SSLMODE=disable
       - DJANGO_SECRET_KEY=dpsjrvluhk3c5l5ciq7uw44ex2g4z8jc1
       - DJANGO_DEBUG=True
+      - DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
+      - CSRF_TRUSTED_ORIGINS=http://127.0.0.1:8000,http://localhost:8000
     depends_on:
       db:
         condition: service_healthy

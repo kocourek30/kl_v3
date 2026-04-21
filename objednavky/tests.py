@@ -9,7 +9,12 @@ from jidelnicek.models import DruhJidla, Jidelnicek, Jidlo, PolozkaJidelnicku
 
 from .forms import ObjednavkaForm
 from .models import Order, OrderItem
-from .services import recalculate_order_prices, validate_order_quantity
+from .services import (
+    apply_bulk_order_plan,
+    build_bulk_order_plan,
+    recalculate_order_prices,
+    validate_order_quantity,
+)
 
 
 class OrderQuantityValidationTests(TestCase):
@@ -104,3 +109,70 @@ class ObjednavkyCleanupTests(TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["items_changed"], 1)
         self.assertEqual(result["total_price_diff"], Decimal("2.50"))
+
+
+class BulkOrderPlanTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="bulk-user",
+            password="test",
+            first_name="Bulk",
+            last_name="User",
+        )
+        self.druh = DruhJidla.objects.create(nazev="Oběd")
+        self.jidlo = Jidlo.objects.create(
+            nazev="Těstoviny",
+            cena=Decimal("75.00"),
+            druh=self.druh,
+        )
+        self.jidelnicek = Jidelnicek.objects.create(
+            platnost_od=date(2026, 4, 22),
+            platnost_do=date(2026, 4, 22),
+        )
+        self.menu_item = PolozkaJidelnicku.objects.create(
+            jidelnicek=self.jidelnicek,
+            druh_jidla=self.druh,
+            jidlo=self.jidlo,
+        )
+
+    def test_bulk_plan_marks_new_order_as_create(self):
+        plan = build_bulk_order_plan(date(2026, 4, 22), [self.menu_item], [self.user])
+
+        self.assertEqual(plan["summary"]["create"], 1)
+        self.assertEqual(plan["entries"][0]["action"], "create")
+
+    def test_bulk_plan_skips_non_editable_existing_order(self):
+        order = Order.objects.create(
+            user=self.user,
+            datum_vydeje=date(2026, 4, 22),
+            status="vydano",
+        )
+        OrderItem.objects.create(order=order, menu_item=self.menu_item, quantity=1, cena=Decimal("75.00"))
+
+        plan = build_bulk_order_plan(date(2026, 4, 22), [self.menu_item], [self.user])
+
+        self.assertEqual(plan["summary"]["skip_status"], 1)
+        self.assertEqual(plan["entries"][0]["action"], "skip_status")
+
+    def test_bulk_apply_replaces_existing_draft_order(self):
+        order = Order.objects.create(
+            user=self.user,
+            datum_vydeje=date(2026, 4, 22),
+            status="objednano",
+        )
+        old_jidlo = Jidlo.objects.create(nazev="Staré jídlo", cena=Decimal("10.00"), druh=self.druh)
+        old_item = PolozkaJidelnicku.objects.create(
+            jidelnicek=self.jidelnicek,
+            druh_jidla=self.druh,
+            jidlo=old_jidlo,
+        )
+        OrderItem.objects.create(order=order, menu_item=old_item, quantity=1, cena=Decimal("10.00"))
+
+        plan = build_bulk_order_plan(date(2026, 4, 22), [self.menu_item], [self.user])
+        result = apply_bulk_order_plan(date(2026, 4, 22), [self.menu_item], plan["entries"])
+
+        order.refresh_from_db()
+        self.assertEqual(result["created"], 0)
+        self.assertEqual(result["replaced"], 1)
+        self.assertEqual(order.items.count(), 1)
+        self.assertEqual(order.items.get().menu_item, self.menu_item)

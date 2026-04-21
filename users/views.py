@@ -19,6 +19,7 @@ from django.utils import timezone
 from objednavky.models import OrderItem, Order
 from jidelnicek.models import Alergen
 from dotace.models import SkupinoveNastaveni
+from .group_utils import get_first_group_setting
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +43,7 @@ ORDER_TOTAL_EXPR = ExpressionWrapper(
 def get_user_settings(user):
     """Nastavení konta podle první skupiny s nastavením."""
     try:
-        nastaveni = SkupinoveNastaveni.objects.filter(
-            skupina__in=user.groups.all()
-        ).first()
-
+        nastaveni = get_first_group_setting(user)
         if nastaveni:
             return {
                 'cerpani_debit': nastaveni.cerpani_debit,

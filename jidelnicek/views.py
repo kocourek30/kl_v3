@@ -21,6 +21,7 @@ from .services import (
     check_user_balance_for_item,
     get_user_order_items,
     validate_item_for_display,
+    can_user_access_menu_item,
     build_calendar_context,
     build_day_menu_context,
     build_week_menu_context,
@@ -40,6 +41,7 @@ from objednavky.services import validate_order_quantity
 from jidelnicek.models import PolozkaJidelnicku, Jidelnicek
 from dotace.models import SkupinoveNastaveni
 from ankety.services import anketni_prehled_uzivatele
+from users.group_utils import get_first_group_setting
 
 
 logger = logging.getLogger(__name__)
@@ -57,9 +59,8 @@ def get_item_name(item):
 
 def get_user_balance_settings(user):
     try:
-        group = user.groups.first()
-        if group and hasattr(group, 'nastaveni'):
-            nastaveni = group.nastaveni
+        nastaveni = get_first_group_setting(user)
+        if nastaveni:
             return {
                 'cerpani_debit': nastaveni.cerpani_debit,
                 'nutnost_dobit': nastaveni.nutnost_dobit,
@@ -118,6 +119,9 @@ def menu_item_partial(request):
         return JsonResponse({'error': 'not_found'}, status=404)
     except ValueError:
         return JsonResponse({'error': 'bad_date'}, status=400)
+
+    if not can_user_access_menu_item(request.user, menu_item):
+        return JsonResponse({'error': 'not_found'}, status=404)
 
     validate_item_for_display(request.user, menu_item, target_date)
 
@@ -354,6 +358,12 @@ def order_create_view(request):
         menu_item = PolozkaJidelnicku.objects.select_related('jidlo', 'druh_jidla').get(id=menu_item_id)
         target_date = datetime.strptime(menu_date_str, '%Y-%m-%d').date()
         item_name = get_item_name(menu_item)
+
+        if not can_user_access_menu_item(request.user, menu_item):
+            return JsonResponse(
+                {'status': 'error', 'message': 'Tento druh jídla pro vás není dostupný.'},
+                status=403,
+            )
 
         # 1. Validace časová – per položka (druh jídla)
         can_order_time, time_msg = can_order_for_menuitem_date(request.user, menu_item, target_date)

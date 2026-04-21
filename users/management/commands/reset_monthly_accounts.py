@@ -2,6 +2,7 @@ from django.core.management.base import BaseCommand
 from users.models import CustomUser, Vklad
 from dotace.models import SkupinoveNastaveni
 from decimal import Decimal
+from users.group_utils import get_first_group_setting
 
 
 class Command(BaseCommand):
@@ -11,8 +12,7 @@ class Command(BaseCommand):
         nulovano = 0
         
         for user in CustomUser.objects.filter(is_active=True):
-            skupina = user.groups.first()
-            nastaveni = getattr(skupina, 'nastaveni', None)
+            nastaveni = get_first_group_setting(user)
             
             # Pouze uživatelé s povoleným debetem
             if not nastaveni or not nastaveni.cerpani_debit:

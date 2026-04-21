@@ -7,6 +7,7 @@ from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum
 
 from dotace.models import Dotace
 from objednavky.models import OrderItem
+from users.group_utils import get_primary_effective_group
 
 from .models import FakturacniDavka, FakturacniNastaveni, FakturacniPolozka
 
@@ -33,7 +34,7 @@ def _full_name(user):
 def _group_name(user):
     if getattr(user, "stravovaci_skupina_id", None):
         return str(user.stravovaci_skupina)
-    group = user.groups.first()
+    group = get_primary_effective_group(user)
     return group.name if group else "Bez skupiny"
 
 

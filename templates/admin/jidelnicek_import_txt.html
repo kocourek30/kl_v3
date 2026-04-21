@@ -1,61 +1,109 @@
 {% extends "admin/base_site.html" %}
 {% load static %}
 
-{% block extrastyle %}
-  {{ block.super }}
-  <link rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+{% block extrahead %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'jidelnicek/css/menu_import_admin.css' %}">
+<script defer src="{% static 'jidelnicek/js/menu_import_admin.js' %}"></script>
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid mt-4" style="max-width: 700px;">
-  <div class="card shadow-sm">
-    <div class="card-header bg-primary text-white">
-      <h5 class="mb-0">
-        <i class="fas fa-file-import me-2"></i>{{ title }}
-      </h5>
+<div class="menu-import-page" data-menu-import-root>
+  <section class="menu-import-hero">
+    <span class="menu-import-kicker">Jídelníček • import</span>
+    <h1>{{ title }}</h1>
+    <p>
+      Nahraj TXT export a nech systém připravit jídla i denní jídelníčky. Import teď slouží hlavně
+      jako pohodlný vstupní bod, takže s logikou uvnitř můžeme dál bezpečně hýbat bez toho, aby
+      rozhraní působilo provizorně.
+    </p>
+    <div class="menu-import-pill-row">
+      <span class="menu-import-pill accent">1. Vyber soubor</span>
+      <span class="menu-import-pill accent">2. Zkontroluj název nahrávky</span>
+      <span class="menu-import-pill accent">3. Spusť import</span>
     </div>
-    <div class="card-body">
-      <p class="text-muted small mb-3">
-        Vyber TXT soubor s jídelníčkem v předepsaném formátu a spusť import.
-      </p>
+  </section>
 
-      <form method="post" enctype="multipart/form-data" novalidate>
+  <div class="menu-import-layout">
+    <section class="menu-import-card menu-import-main">
+      <form method="post" enctype="multipart/form-data" novalidate class="menu-import-form">
         {% csrf_token %}
 
         {% if form.non_field_errors %}
-          <div class="alert alert-danger">
+          <div class="menu-import-alert error">
             {{ form.non_field_errors }}
           </div>
         {% endif %}
 
-        <div class="mb-3">
-          <label for="{{ form.soubor.id_for_label }}" class="form-label">
-            {{ form.soubor.label }}
+        <div class="menu-import-section">
+          <div class="menu-import-section-head">
+            <h2>TXT soubor jídelníčku</h2>
+            <span class="menu-import-section-hint">Nahraj zdrojový soubor z provozu nebo testovací export</span>
+          </div>
+
+          <label class="menu-import-dropzone" for="{{ form.soubor.id_for_label }}">
+            <span class="menu-import-drop-icon">TXT</span>
+            <span class="menu-import-drop-copy">
+              <strong>Vyber nebo přetáhni soubor s jídelníčkem</strong>
+              <span>Podporovaný je běžný textový export, se kterým budeme dál iterovat.</span>
+            </span>
           </label>
-          {{ form.soubor }}
+
+          <div class="menu-import-native-input">
+            {{ form.soubor }}
+          </div>
+
+          <div class="menu-import-file-preview" data-menu-import-file-preview>
+            <span class="menu-import-pill">Zatím není vybraný žádný soubor.</span>
+          </div>
+
           {% if form.soubor.errors %}
-            <div class="text-danger small mt-1">
+            <div class="menu-import-alert error compact">
               {{ form.soubor.errors|striptags }}
             </div>
           {% endif %}
+
           {% if form.soubor.help_text %}
-            <div class="form-text">
+            <div class="menu-import-note">
               {{ form.soubor.help_text }}
             </div>
           {% endif %}
         </div>
 
-        <div class="d-flex justify-content-between align-items-center mt-4">
-          <a href="{% url 'admin:jidelnicek_jidelnicek_changelist' %}" class="btn btn-outline-secondary">
-            Zpět na jídelníčky
-          </a>
-          <button type="submit" class="btn btn-success">
-            <i class="fas fa-upload me-1"></i> Importovat jídelníček
-          </button>
+        <div class="menu-import-actions">
+          <a href="{% url 'admin:jidelnicek_jidelnicek_changelist' %}" class="button">Zpět na jídelníčky</a>
+          <button type="submit" class="button default menu-import-submit">Importovat jídelníček</button>
         </div>
       </form>
-    </div>
+    </section>
+
+    <aside class="menu-import-card menu-import-side">
+      <div class="menu-import-side-block">
+        <h2>Co se při importu děje</h2>
+        <ul class="menu-import-list">
+          <li>načte se období a rozpadne se obsah po dnech</li>
+          <li>spárují se druhy jídel podle importní logiky</li>
+          <li>založí se jídla a denní položky jídelníčku</li>
+        </ul>
+      </div>
+
+      <div class="menu-import-side-block">
+        <h2>Na co myslet</h2>
+        <ul class="menu-import-list">
+          <li>druh jídla se řídí katalogem jídel, ne ručním přepisem v jídelníčku</li>
+          <li>cena, dotace, limity a viditelnost se odvíjejí od správného druhu</li>
+          <li>když import něco nespáruje ideálně, můžeme upravit mapování bez změny vzhledu nástroje</li>
+        </ul>
+      </div>
+
+      <div class="menu-import-side-block soft">
+        <h2>Doporučení</h2>
+        <p>
+          Pro první průchod používej raději kratší testovací exporty. Jakmile budeme mít definitivní
+          formát, navážeme na to náhledem změn ještě před samotným zápisem.
+        </p>
+      </div>
+    </aside>
   </div>
 </div>
 {% endblock %}

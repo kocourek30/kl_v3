@@ -14,6 +14,7 @@ from .models import Order, OrderItem, OrderValidator
 from .services import validate_order_quantity
 from jidelnicek.models import DruhJidla, PolozkaJidelnicku
 from canteen_settings.models import OrderClosingTime, GroupOrderLimit
+from users.group_utils import get_primary_effective_group
 
 
 logger = logging.getLogger(__name__)
@@ -149,7 +150,7 @@ def check_group_limit(user, menu_item, target_date, quantity):
         return True, ""
 
     # Najdi uživatelovu skupinu (první skupina)
-    user_group = user.groups.first()
+    user_group = get_primary_effective_group(user)
     if not user_group:
         return True, ""  # bez skupiny = bez limitu
 

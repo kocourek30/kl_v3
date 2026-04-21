@@ -1,0 +1,123 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'objednavky/css/bulk_admin.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="bulk-admin-page bulk-preview-page">
+    <div class="bulk-admin-card bulk-preview-hero">
+        <span class="bulk-admin-kicker">Objednávky • Náhled změn</span>
+        <h1>Náhled hromadného založení objednávek</h1>
+        <p>
+            Tady přesně vidíš, komu se založí nová objednávka, komu se nahradí rozpracovaná a koho systém raději přeskočí.
+            Potvrzení až v dalším kroku.
+        </p>
+    </div>
+
+    <div class="bulk-admin-card bulk-admin-body">
+        <div class="bulk-pill-row">
+            <span class="bulk-pill"><strong>Datum:</strong> {{ datum_vydeje|date:"d.m.Y" }}</span>
+            <span class="bulk-pill"><strong>Jídla:</strong> {{ menu_items|length }}</span>
+            <span class="bulk-pill"><strong>Uživatelé:</strong> {{ plan.entries|length }}</span>
+        </div>
+        <div class="bulk-stats">
+            <div class="bulk-stat">
+                <span class="bulk-stat-label">Nové objednávky</span>
+                <span class="bulk-stat-value">{{ plan.summary.create }}</span>
+            </div>
+            <div class="bulk-stat">
+                <span class="bulk-stat-label">Nahrazené rozpracované</span>
+                <span class="bulk-stat-value">{{ plan.summary.replace }}</span>
+            </div>
+            <div class="bulk-stat">
+                <span class="bulk-stat-label">Přeskočené</span>
+                <span class="bulk-stat-value">{{ plan.summary.skipped }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="bulk-admin-card bulk-admin-body">
+        <div class="bulk-filter-row">
+            <button type="button" class="bulk-filter-btn is-active" data-preview-filter="all">Vše</button>
+            <button type="button" class="bulk-filter-btn" data-preview-filter="create">Jen nové</button>
+            <button type="button" class="bulk-filter-btn" data-preview-filter="replace">Jen nahrazené</button>
+            <button type="button" class="bulk-filter-btn" data-preview-filter="skip">Jen přeskočené</button>
+        </div>
+        <table class="bulk-preview-table">
+            <thead>
+                <tr>
+                    <th>Uživatel</th>
+                    <th>Akce</th>
+                    <th style="text-align:right;">Stávající položky</th>
+                    <th style="text-align:right;">Nové položky</th>
+                    <th style="text-align:right;">Cena nové objednávky</th>
+                    <th>Poznámka</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in plan.entries %}
+                <tr data-preview-row data-action="{% if entry.action == 'create' %}create{% elif entry.action == 'replace' %}replace{% else %}skip{% endif %}">
+                    <td>
+                        {{ entry.user.get_full_name|default:entry.user.username }}
+                        <br>
+                        <span class="bulk-note">{{ entry.user.username }}</span>
+                    </td>
+                    <td>
+                        {% if entry.action == "create" %}
+                            <span class="bulk-badge create">Vytvořit</span>
+                        {% elif entry.action == "replace" %}
+                            <span class="bulk-badge replace">Nahradit</span>
+                        {% else %}
+                            <span class="bulk-badge skip">Přeskočit</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align:right;">{{ entry.existing_items }}</td>
+                    <td style="text-align:right;">{{ entry.menu_items_count }}</td>
+                    <td style="text-align:right;">{{ entry.total_price|floatformat:2 }} Kč</td>
+                    <td>{{ entry.reason|default:"-" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="bulk-actions">
+        <form method="post" style="display: inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="confirm">
+            <input type="hidden" name="datum_vydeje" value="{{ datum_vydeje|date:'Y-m-d' }}">
+            {% for menu_item in menu_items %}
+            <input type="hidden" name="menu_items" value="{{ menu_item.pk }}">
+            {% endfor %}
+            {% for entry in plan.entries %}
+            <input type="hidden" name="uzivatele" value="{{ entry.user.pk }}">
+            {% endfor %}
+            <button type="submit" class="button default" style="padding: 10px 20px;">
+                Potvrdit hromadné založení
+            </button>
+        </form>
+
+        <a href="{% url 'admin:bulk_create_orders' %}" class="button">
+            Zpět
+        </a>
+    </div>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const buttons = document.querySelectorAll("[data-preview-filter]");
+    const rows = document.querySelectorAll("[data-preview-row]");
+    buttons.forEach((button) => {
+        button.addEventListener("click", () => {
+            const filter = button.dataset.previewFilter;
+            buttons.forEach((btn) => btn.classList.toggle("is-active", btn === button));
+            rows.forEach((row) => {
+                row.style.display = filter === "all" || row.dataset.action === filter ? "" : "none";
+            });
+        });
+    });
+});
+</script>
+{% endblock %}

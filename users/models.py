@@ -10,6 +10,7 @@ from django.db.models import Sum, F
 from decimal import Decimal
 from objednavky.models import OrderItem
 from django.contrib.auth.models import Group
+from .group_utils import get_effective_user_groups
 
 
 logger = logging.getLogger(__name__)
@@ -111,7 +112,7 @@ class Vklad(models.Model):
     def _uzivatel_ma_povoleny_debet(self):
         if not self.uzivatel_id:
             return False
-        for skupina in self.uzivatel.groups.all():
+        for skupina in get_effective_user_groups(self.uzivatel):
             nastaveni = getattr(skupina, "nastaveni", None)
             if nastaveni and nastaveni.cerpani_debit:
                 return True
