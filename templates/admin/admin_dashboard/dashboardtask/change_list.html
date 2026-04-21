@@ -1,0 +1,308 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'admin_dashboard/css/dashboard.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="ops-page">
+  <section class="ops-hero">
+    <span class="ops-kicker">Admin dashboard</span>
+    <h1>Provozní přehled a ruční spuštění úloh</h1>
+    <p>
+      Jedno místo pro pravidelné management commandy, audit jejich běhů, základní provozní health-checky
+      a rychlé odkazy na důležité administrativní operace.
+    </p>
+  </section>
+
+  <section class="ops-card">
+    <div class="ops-card-head">
+      <h2>Health-check</h2>
+      <span class="ops-muted">Rychlý přehled stavu systému</span>
+    </div>
+    <div class="ops-health-grid">
+      {% for card in health.cards %}
+      <div class="ops-health-card {{ card.tone }}">
+        <span class="ops-health-label">{{ card.label }}</span>
+        <strong class="ops-health-value">{{ card.value }}</strong>
+        <span class="ops-health-hint">{{ card.hint }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="ops-two-col">
+    <section class="ops-card">
+      <div class="ops-card-head">
+        <h2>Ruční úlohy</h2>
+        <span class="ops-muted">Bezpečné spuštění a audit</span>
+      </div>
+      <div class="ops-table-wrap">
+        <table class="ops-table">
+          <thead>
+            <tr>
+              <th>Úloha</th>
+              <th>Kategorie</th>
+              <th>Poslední stav</th>
+              <th>Poslední běh</th>
+              <th>Interval</th>
+              <th>Akce</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for task in tasks %}
+            <tr>
+              <td>
+                <strong>{{ task.name }}</strong>
+                <div class="ops-muted">{{ task.description }}</div>
+              </td>
+              <td>{{ task.get_category_display }}</td>
+              <td>
+                {% with run=task.latest_run %}
+                  {% if run %}
+                    <span class="dash-badge {% if run.status == 'success' %}good{% elif run.status == 'failed' %}danger{% elif run.status == 'running' %}warning{% else %}neutral{% endif %}">
+                      {{ run.get_status_display }}
+                    </span>
+                  {% else %}
+                    <span class="dash-badge neutral">Ještě neběželo</span>
+                  {% endif %}
+                {% endwith %}
+              </td>
+              <td>
+                {% with run=task.latest_run %}
+                  {% if run %}
+                    {{ run.started_at|date:"d.m.Y H:i" }}<br>
+                    <span class="ops-muted">{{ run.summary }}</span>
+                  {% else %}
+                    <span class="ops-muted">Nikdy</span>
+                  {% endif %}
+                {% endwith %}
+              </td>
+              <td>
+                {% if task.expected_interval_hours %}
+                  {{ task.expected_interval_hours }} h
+                {% else %}
+                  <span class="ops-muted">bez hlídání</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if task.allow_manual_run and task.is_enabled %}
+                  <a class="button default" href="{% url 'admin:admin_dashboard_run_task' task.pk %}">Spustit</a>
+                {% else %}
+                  <span class="ops-muted">Zakázáno</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="ops-stack">
+      <section class="ops-card">
+        <div class="ops-card-head">
+          <h2>Moduly aplikace</h2>
+          <span class="ops-muted">Zapnutí a vypnutí větších částí systému</span>
+        </div>
+        <div class="ops-module-list">
+          {% for module in modules %}
+          <div class="ops-module-card {% if module.enabled %}enabled{% else %}disabled{% endif %}">
+            <div>
+              <strong>{{ module.name }}</strong>
+              <div class="ops-muted">{{ module.description }}</div>
+            </div>
+            <div class="ops-module-actions">
+              <span class="dash-badge {% if module.enabled %}good{% else %}danger{% endif %}">
+                {% if module.enabled %}Povoleno{% else %}Zakázáno{% endif %}
+              </span>
+              <a class="button" href="{% url 'admin:admin_dashboard_toggle_module' module.pk %}">
+                {% if module.enabled %}Zakázat{% else %}Povolit{% endif %}
+              </a>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="ops-card">
+        <div class="ops-card-head">
+          <div>
+            <h2>Provozní role</h2>
+            <span class="ops-muted">Hotové balíčky pro běžné nasazení bez skládání jednotlivých oblastí ručně</span>
+          </div>
+          <span class="dash-badge good">Doporučený způsob přiřazování práv</span>
+        </div>
+        <div class="ops-access-list">
+          {% for role in operational_roles %}
+          <div class="ops-access-card">
+            <div class="ops-access-main">
+              <strong>{{ role.name }}</strong>
+              <div class="ops-muted">{{ role.description }}</div>
+              {% if role.best_for %}
+              <div class="ops-role-note">
+                <span class="ops-role-note-label">Komu ji dát</span>
+                <p>{{ role.best_for }}</p>
+              </div>
+              {% endif %}
+              {% if role.scope_note %}
+              <div class="ops-role-note alt">
+                <span class="ops-role-note-label">Jak ji chápat</span>
+                <p>{{ role.scope_note }}</p>
+              </div>
+              {% endif %}
+              <div class="ops-access-meta">
+                <span class="dash-badge neutral">{{ role.group_name }}</span>
+              </div>
+              <div class="ops-access-meta">
+                {% for assignment in role.assignments %}
+                  <span class="dash-badge {{ assignment.tone }}">{{ assignment.area_name }} • {{ assignment.level }}</span>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="ops-module-actions">
+              {% if role.group %}
+                <a class="button" href="{% url 'admin:auth_group_change' role.group.pk %}">Otevřít skupinu</a>
+              {% else %}
+                <span class="ops-muted">Skupina se doplní při synchronizaci</span>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="ops-card">
+        <div class="ops-card-head">
+          <div>
+            <h2>Role a přístupy</h2>
+            <span class="ops-muted">Detailní technická vrstva. Pro běžné použití doporučujeme výše uvedené provozní role.</span>
+          </div>
+          <span class="dash-badge neutral">Stravovací skupiny se zde nepoužívají</span>
+        </div>
+        <div class="ops-access-list">
+          {% for access in admin_accesses %}
+          <div class="ops-access-card">
+            <div class="ops-access-main">
+              <strong>{{ access.name }}</strong>
+              <div class="ops-muted">{{ access.description }}</div>
+              <div class="ops-access-rows">
+                <div class="ops-access-row">
+                  <span class="ops-access-label">Náhled</span>
+                  <div class="ops-access-meta">
+                    {% for group in access.view_groups.all %}
+                      <span class="dash-badge neutral">{{ group.name }}</span>
+                    {% empty %}
+                      <span class="ops-muted">Nikdo explicitně</span>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="ops-access-row">
+                  <span class="ops-access-label">Správa</span>
+                  <div class="ops-access-meta">
+                    {% for group in access.write_groups.all %}
+                      <span class="dash-badge warning">{{ group.name }}</span>
+                    {% empty %}
+                      <span class="ops-muted">Nikdo explicitně</span>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="ops-access-row">
+                  <span class="ops-access-label">Plná kontrola</span>
+                  <div class="ops-access-meta">
+                    {% for group in access.control_groups.all %}
+                      <span class="dash-badge good">{{ group.name }}</span>
+                    {% empty %}
+                      <span class="ops-muted">Nikdo explicitně</span>
+                    {% endfor %}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="ops-module-actions">
+              <a class="button" href="{% url 'admin:admin_dashboard_edit_access' access.pk %}">Upravit role</a>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="ops-card">
+        <div class="ops-card-head">
+          <h2>Rychlé odkazy</h2>
+          <span class="ops-muted">Operace mimo commandy</span>
+        </div>
+        <div class="ops-link-grid">
+          {% for task in quick_links %}
+            {% url task.target_url_name as quick_url %}
+            <a class="ops-link-card" href="{% if task.target_url %}{{ task.target_url }}{% else %}{{ quick_url }}{% endif %}">
+              <strong>{{ task.name }}</strong>
+              <span>{{ task.description }}</span>
+            </a>
+          {% endfor %}
+        </div>
+      </section>
+
+      {% for alert in health.alerts %}
+      <section class="ops-card">
+        <div class="ops-card-head">
+          <h2>{{ alert.title }}</h2>
+        </div>
+        {% if alert.items %}
+          <ul class="ops-list">
+            {% for item in alert.items %}
+            <li>{{ item }}</li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <div class="ops-muted">{{ alert.empty }}</div>
+        {% endif %}
+      </section>
+      {% endfor %}
+    </section>
+  </div>
+
+  <section class="ops-card">
+    <div class="ops-card-head">
+      <h2>Poslední běhy</h2>
+      <a class="button" href="{% url 'admin:admin_dashboard_taskrun_changelist' %}">Otevřít celý audit</a>
+    </div>
+    <div class="ops-table-wrap">
+      <table class="ops-table">
+        <thead>
+          <tr>
+            <th>Čas</th>
+            <th>Úloha</th>
+            <th>Stav</th>
+            <th>Spustil</th>
+            <th>Doba</th>
+            <th>Shrnutí</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for run in recent_runs %}
+          <tr>
+            <td>{{ run.started_at|date:"d.m.Y H:i" }}</td>
+            <td>{{ run.task.name|default:run.command_name }}</td>
+            <td>
+              <span class="dash-badge {% if run.status == 'success' %}good{% elif run.status == 'failed' %}danger{% elif run.status == 'running' %}warning{% else %}neutral{% endif %}">
+                {{ run.get_status_display }}
+              </span>
+            </td>
+            <td>{{ run.triggered_by|default:"Systém" }}</td>
+            <td>{% if run.duration_seconds %}{{ run.duration_seconds }} s{% else %}-{% endif %}</td>
+            <td>{{ run.summary|default:"-" }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="6" class="ops-muted">Zatím není zaznamenaný žádný běh.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

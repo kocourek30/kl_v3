@@ -113,6 +113,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     'django_extensions',
+    "admin_dashboard",
     "users",
     "jidelnicek",
     "objednavky",
@@ -143,6 +144,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    'admin_dashboard.middleware.ModuleAccessMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
@@ -368,6 +370,7 @@ JAZZMIN_SETTINGS = {
         # === APP IKONY ===
         "auth": "fas fa-shield-alt",
         "users": "fas fa-user-friends",
+        "admin_dashboard": "fas fa-screwdriver-wrench",
         "jidelnicek": "fas fa-utensils",
         "objednavky": "fas fa-shopping-cart",
         "vydej": "fas fa-dolly",
@@ -375,7 +378,7 @@ JAZZMIN_SETTINGS = {
         "dotace": "fas fa-file-contract",
         "canteen_settings": "fas fa-gear",
         "frontend": "fas fa-globe",
-        "reporty": "fas fa-chart-mixed",
+        "reporty": "fas fa-chart-line",
         "finance": "fas fa-coins",
         "fakturace": "fas fa-file-invoice-dollar",
         "prepocty": "fas fa-calculator",
@@ -390,6 +393,12 @@ JAZZMIN_SETTINGS = {
         "users.StravovaciSkupina": "fas fa-users",
         "users.Vklad": "fas fa-cash-register",
         "users.CustomUser": "fas fa-id-card-alt",
+
+        # === ADMIN DASHBOARD ===
+        "admin_dashboard.DashboardTask": "fas fa-gauge-high",
+        "admin_dashboard.TaskRun": "fas fa-clock-rotate-left",
+        "admin_dashboard.AppModuleToggle": "fas fa-toggle-on",
+        "admin_dashboard.AdminViewAccess": "fas fa-user-lock",
 
         # === JIDELNICEK ===
         "jidelnicek.Alergen": "fas fa-triangle-exclamation",
@@ -485,6 +494,7 @@ JAZZMIN_SETTINGS = {
 
     "order_with_respect_to": [
         "users",
+        "admin_dashboard",
         "jidelnicek",
         "objednavky",
         "vydej",
@@ -515,6 +525,11 @@ JAZZMIN_SETTINGS = {
             "name": "Uživatelé",
             "url": "admin:users_customuser_changelist",
             "icon": "fas fa-user-friends",
+        },
+        {
+            "name": "Admin dashboard",
+            "url": "admin:admin_dashboard_dashboardtask_changelist",
+            "icon": "fas fa-screwdriver-wrench",
         },
         {
             "name": "Jídelníček",
@@ -636,9 +651,17 @@ JAZZMIN_SETTINGS = {
                 "icon": "fas fa-chart-simple",
             },
         ],
+        "reporty": [
+            {
+                "name": "Dashboard reportů",
+                "url": "admin:reporty_reportdummy_changelist",
+                "icon": "fas fa-chart-line",
+            },
+        ],
     },
 
     "hide_models": [
+        "reporty.ReportDummy",
         "prepocty.PrepoctyDummy",
         "objednavky.PriceRecalculationLog",
         "objednavky.PriceRecalculationDetail",

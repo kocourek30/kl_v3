@@ -1,0 +1,37 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'admin_dashboard/css/dashboard.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="ops-page">
+  <section class="ops-card">
+    <div class="ops-card-head">
+      <h2>{% if blocked_by_groups %}Nemáte přístup do této admin oblasti{% else %}Modul je dočasně vypnutý{% endif %}</h2>
+    </div>
+    {% if blocked_by_groups %}
+      <p>
+        Oblast <strong>{{ module_name }}</strong> je dostupná jen pro vybrané Django skupiny.
+      </p>
+      <p class="ops-muted">
+        Pokud do ní potřebujete vstup, upravte přímé členství uživatele v Django skupinách v Admin dashboardu.
+      </p>
+    {% else %}
+      <p>
+        Modul <strong>{{ module_name }}</strong> je momentálně zakázaný v globálním nastavení aplikace.
+      </p>
+    {% endif %}
+    {% if module_description %}
+      <p class="ops-muted">{{ module_description }}</p>
+    {% endif %}
+    <div style="margin-top: 18px;">
+      <a class="button default" href="{% url 'admin:admin_dashboard_dashboardtask_changelist' %}">
+        Otevřít Admin dashboard
+      </a>
+    </div>
+  </section>
+</div>
+{% endblock %}

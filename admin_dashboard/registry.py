@@ -1,0 +1,36 @@
+REGISTERED_TASKS = (
+    {
+        "slug": "reset-monthly-accounts",
+        "name": "Nulování kont v debetu",
+        "category": "users",
+        "command_name": "reset_monthly_accounts",
+        "description": "Vynuluje záporné zůstatky u uživatelů s povoleným debetem.",
+        "expected_interval_hours": 24 * 31,
+    },
+    {
+        "slug": "mark-unpicked-orders",
+        "name": "Označit nevyzvednuté objednávky",
+        "category": "orders",
+        "command_name": "mark_unpicked_orders",
+        "description": "Domarkuje staré objednávky jako nevyzvednuté podle data výdeje.",
+        "expected_interval_hours": 24,
+    },
+    {
+        "slug": "menu-import-link",
+        "name": "Import jídelního lístku",
+        "category": "menu",
+        "description": "Otevře ruční import jídelníčku z TXT. Později sem může přibýt i audit importů.",
+        "is_quick_link": True,
+        "allow_manual_run": False,
+        "target_url_name": "admin:jidelnicek_import_txt",
+    },
+    {
+        "slug": "price-recalculation-link",
+        "name": "Přepočet cen objednávek",
+        "category": "orders",
+        "description": "Otevře admin nástroj na přepočet cen a audit změn.",
+        "is_quick_link": True,
+        "allow_manual_run": False,
+        "target_url_name": "admin:objednavky_order_price_recalculation",
+    },
+)
