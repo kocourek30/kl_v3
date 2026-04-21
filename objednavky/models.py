@@ -128,32 +128,17 @@ class OrderValidator:
         return True, ""
 
     @staticmethod
-    def get_price_for_user(user, menu_item):
+    def get_price_for_user(user, menu_item, target_date=None, quantity=1, exclude_order_item_id=None):
         """Výpočet ceny s dotací podle skupiny"""
-        skupina = user.groups.first()
-        if not skupina:
-            return menu_item.jidlo.cena
-        
-        politika = getattr(skupina, 'dotacni_politika', None)
-        if not politika:
-            return menu_item.jidlo.cena
-        
-        prepis = DotaceProJidelniskouSkupinu.objects.filter(
-            dotacni_politika=politika,
-            jidelniskova_skupina=menu_item.druh_jidla
-        ).first()
-        
-        procento = prepis.procento if prepis and prepis.procento is not None else politika.procento
-        castka = prepis.castka if prepis and prepis.castka is not None else politika.castka
-        base_price = menu_item.jidlo.cena
-        snizena_cena = base_price
-        
-        if procento and procento != Decimal('0'):
-            snizena_cena = base_price * (Decimal('1') - Decimal(procento) / Decimal('100'))
-        if castka and castka != Decimal('0'):
-            snizena_cena = max(Decimal('0'), snizena_cena - Decimal(castka))
-        
-        return snizena_cena.quantize(Decimal('0.01'))
+        from dotace.services import vypocet_dotovane_ceny
+
+        return vypocet_dotovane_ceny(
+            user,
+            menu_item,
+            target_date=target_date,
+            quantity=quantity,
+            exclude_order_item_id=exclude_order_item_id,
+        )
 
     @staticmethod
     def check_user_balance(user, total_price):

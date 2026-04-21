@@ -63,7 +63,10 @@ def get_user_settings(user):
 def get_balance_breakdown(user):
     """Rychlý souhrn konta používaný v profilu a historiích."""
     try:
-        vklady_celkem = user.vklady.aggregate(
+        vklady_celkem = user.vklady.filter(castka__gt=0).aggregate(
+            soucet=Sum('castka')
+        )['soucet'] or Decimal('0')
+        platby_uctu = user.vklady.filter(castka__lt=0).aggregate(
             soucet=Sum('castka')
         )['soucet'] or Decimal('0')
 
@@ -81,10 +84,11 @@ def get_balance_breakdown(user):
             total=Sum(ORDER_TOTAL_EXPR)
         )['total'] or Decimal('0')
 
-        celkem = vklady_celkem - vydane_objednavky - zalohy_objednavky
+        celkem = vklady_celkem + platby_uctu - vydane_objednavky - zalohy_objednavky
 
         return {
             'vklady': vklady_celkem,
+            'platby_uctu': platby_uctu,
             'vydane': vydane_objednavky,
             'zalohy': zalohy_objednavky,
             'celkem': celkem,
@@ -93,6 +97,7 @@ def get_balance_breakdown(user):
         logger.exception("Chyba při výpočtu rozpisu konta uživatele.")
         return {
             'vklady': Decimal('0'),
+            'platby_uctu': Decimal('0'),
             'vydane': Decimal('0'),
             'zalohy': Decimal('0'),
             'celkem': Decimal('0'),
@@ -110,10 +115,13 @@ def get_user_page_context(user):
 
 def get_period_from_request(request):
     """Vrátí filtrovací období pro zákaznické přehledy."""
-    filter_type = request.GET.get('filter', 'all')
+    filter_type = request.GET.get('filter') or 'current_month'
     date_from = request.GET.get('date_from', '')
     date_to = request.GET.get('date_to', '')
     now = timezone.now()
+
+    if filter_type == 'all':
+        return filter_type, date_from, date_to, None, None
 
     if filter_type == 'current_month':
         return filter_type, date_from, date_to, now.replace(day=1, hour=0, minute=0, second=0, microsecond=0), now
@@ -136,9 +144,9 @@ def get_period_from_request(request):
                 raise ValueError("Začátek období je po konci období.")
             return filter_type, date_from, date_to, start_date, end_date
         except Exception:
-            messages.warning(request, "Zadané vlastní období není platné, zobrazují se všechna data.")
+            messages.warning(request, "Zadané vlastní období není platné, zobrazuje se aktuální měsíc.")
 
-    return 'all', '', '', None, None
+    return 'current_month', '', '', now.replace(day=1, hour=0, minute=0, second=0, microsecond=0), now
 
 @login_required
 def user_profile_view(request):
@@ -491,7 +499,7 @@ def account_history_view(request):
     user = request.user
     filter_type, date_from, date_to, start_date, end_date = get_period_from_request(request)
 
-    vklady_query = user.vklady.all()
+    vklady_query = user.vklady.prefetch_related('pokladni_doklady')
     if start_date and end_date:
         vklady_query = vklady_query.filter(datum__gte=start_date, datum__lte=end_date)
     vklady = vklady_query.order_by('-datum')
@@ -515,16 +523,25 @@ def account_history_view(request):
     orders = orders_query.order_by('-datum_vydeje', '-created_at')
     transactions = []
     total_vklady = Decimal('0')
+    total_platby_uctu = Decimal('0')
     total_cerpani = Decimal('0')
 
     for vklad in vklady:
-        total_vklady += vklad.castka
+        pokladni_doklad = vklad.pokladni_doklady.filter(stav='UZAVRENO').first()
+        je_platba_uctu = vklad.castka < 0
+        if je_platba_uctu:
+            total_platby_uctu += abs(vklad.castka)
+        else:
+            total_vklady += vklad.castka
+
         transactions.append({
             'datum': vklad.datum,
-            'typ': 'vklad',
+            'typ': 'platba_uctu' if je_platba_uctu else 'vklad',
             'popis': vklad.poznamka or 'Vklad na konto',
             'castka': vklad.castka,
+            'delta': vklad.castka,
             'order': None,
+            'pokladni_doklad': pokladni_doklad,
         })
 
     for order in orders:
@@ -550,7 +567,9 @@ def account_history_view(request):
             'typ': 'cerpani',
             'popis': popis,
             'castka': total,
+            'delta': -total,
             'order': order,
+            'pokladni_doklad': None,
         })
 
     transactions.sort(key=lambda x: x['datum'], reverse=True)
@@ -559,12 +578,9 @@ def account_history_view(request):
     for transaction in transactions:
         transaction['zustatek_po'] = current_balance
 
-        if transaction['typ'] == 'vklad':
-            current_balance -= transaction['castka']
-        else:
-            current_balance += transaction['castka']
+        current_balance -= transaction['delta']
 
-    bilance = total_vklady - total_cerpani
+    bilance = total_vklady - total_platby_uctu - total_cerpani
 
     context = {
         'user': user,
@@ -573,6 +589,7 @@ def account_history_view(request):
         'date_from': date_from,
         'date_to': date_to,
         'total_vklady': total_vklady,
+        'total_platby_uctu': total_platby_uctu,
         'total_cerpani': total_cerpani,
         'bilance': bilance,
         **get_user_page_context(user),

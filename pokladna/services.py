@@ -90,6 +90,7 @@ def vypocitej_dph(cena_s_dph, mnozstvi, sazba):
 def vytvor_doklad(pokladna, obsluha, zakaznik=None):
     return PokladniDoklad.objects.create(
         pokladna=pokladna,
+        typ_dokladu=PokladniDoklad.TYP_PRODEJ,
         obsluha=obsluha,
         zakaznik=zakaznik,
     )
@@ -252,6 +253,7 @@ def _vytvor_konto_pohyb(doklad):
         uzivatel=doklad.zakaznik,
         pokladna=doklad.pokladna,
         castka=-_q2(doklad.celkem_s_dph),
+        status=Vklad.STATUS_PLATBA_UCTU,
         poznamka=f"Čerpání konta pokladním dokladem {_cislo_dokladu(doklad)}",
     )
 

@@ -16,7 +16,10 @@
             <img src="{{ item.jidlo.foto.url }}" alt="{{ item.jidlo.nazev }}" class="mi-photo-img">
           </a>
         {% else %}
-          <i class="{{ item.druh_jidla.ikona }} mi-plate-icon"></i>
+          <div class="mi-fallback-visual" title="{{ item.jidlo.nazev }}">
+            <i class="{{ item.jidlo.vychozi_ikona }} mi-plate-icon"></i>
+            <span>{{ item.druh_jidla.nazev }}</span>
+          </div>
         {% endif %}
       </div>
     </div>
@@ -195,6 +198,31 @@ function adjustQty(btn, delta) {
   width: 100%;
   height: 100%;
 }
+.mi-fallback-visual {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 25%, rgba(255,255,255,.95), rgba(255,243,230,.82) 42%, rgba(84,174,67,.16) 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  color: var(--primary-color);
+  overflow: hidden;
+}
+.mi-fallback-visual span {
+  max-width: 84%;
+  font-size: .62rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* KARTA */
 .menu-item-card {
@@ -263,8 +291,8 @@ function adjustQty(btn, delta) {
 }
 
 .mi-plate-icon {
-  font-size: 2.55rem;
-  color: #6b7280;
+  font-size: 2.35rem;
+  color: var(--primary-color);
 }
 
 /* 2) INFO - VLEVO */

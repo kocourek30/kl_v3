@@ -444,7 +444,7 @@ class OrderItemAdmin(admin.ModelAdmin):
     def prijmeni(self, obj):
         return obj.order.user.last_name or '-'
 
-    @admin.display(description="Druh jídla", ordering='menu_item__druh_jidla__nazev')
+    @admin.display(description="Druh jídla", ordering='menu_item__druh_jidla__poradi')
     def druh_jidla(self, obj):
         return getattr(obj.menu_item.druh_jidla, 'nazev', str(obj.menu_item.druh_jidla))
 

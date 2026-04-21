@@ -90,3 +90,19 @@ class UserProfileViewTests(TestCase):
         self.user.refresh_from_db()
         self.assertEqual(response.status_code, 302)
         self.assertEqual(self.user.email, "novy.student@example.com")
+
+    def test_account_history_defaults_to_current_month(self):
+        self.client.login(username="student", password="Str0ng-pass-2026")
+
+        response = self.client.get(reverse("users:account-history"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["filter_type"], "current_month")
+
+    def test_consumption_history_defaults_to_current_month(self):
+        self.client.login(username="student", password="Str0ng-pass-2026")
+
+        response = self.client.get(reverse("users:consumption-history"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["filter_type"], "current_month")

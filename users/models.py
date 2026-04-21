@@ -63,9 +63,14 @@ class StravovaciSkupina(models.Model):
 
 
 class Vklad(models.Model):
+    STATUS_STANDARD = 'standard'
+    STATUS_NULOVANI_KONTA = 'nulovani_konta'
+    STATUS_PLATBA_UCTU = 'platba_uctu'
+
     STATUS_CHOICES = [
-        ('standard', 'Standardní vklad'),
-        ('nulovani_konta', 'Nulování konta'),
+        (STATUS_STANDARD, 'Standardní vklad'),
+        (STATUS_NULOVANI_KONTA, 'Nulování konta'),
+        (STATUS_PLATBA_UCTU, 'Platba účtu z konta'),
     ]
     ZPUSOB_HOTOVOST = "HOTOVOST"
     ZPUSOB_KARTA = "KARTA"
@@ -97,7 +102,7 @@ class Vklad(models.Model):
         help_text="Vyplňuje se u běžných vkladů na konto. Systémové nulování a čerpání konta jej mít nemusí.",
     )
     poznamka = models.TextField(blank=True, null=True)
-    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default='standard', editable=False)
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_STANDARD, editable=False)
 
     class Meta:
         verbose_name = "Vklad na konto"
@@ -115,7 +120,7 @@ class Vklad(models.Model):
     def clean(self):
         super().clean()
         if (
-            self.status == "standard"
+            self.status == self.STATUS_STANDARD
             and self.castka is not None
             and self.castka > 0
             and self._uzivatel_ma_povoleny_debet()

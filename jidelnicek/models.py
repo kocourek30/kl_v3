@@ -1,4 +1,5 @@
 import logging
+import unicodedata
 from decimal import Decimal
 from django.db import models
 from django.core.exceptions import ValidationError
@@ -9,6 +10,56 @@ from io import BytesIO
 
 
 logger = logging.getLogger(__name__)
+
+
+DRUH_JIDLA_DEFAULT_ICONS = {
+    "polevka": "fa-solid fa-bowl-food",
+    "hlavni chod": "fa-solid fa-utensils",
+    "obed": "fa-solid fa-utensils",
+    "dezert": "fa-solid fa-ice-cream",
+    "snidane": "fa-solid fa-mug-saucer",
+    "snidane 1": "fa-solid fa-mug-saucer",
+    "snidane 2": "fa-solid fa-bread-slice",
+    "presnidavka": "fa-solid fa-apple-whole",
+    "svacina": "fa-solid fa-cheese",
+    "vecere": "fa-solid fa-drumstick-bite",
+    "pozdni vecere": "fa-solid fa-moon",
+    "napoj": "fa-solid fa-glass-water",
+}
+
+JIDLO_KEYWORD_ICONS = (
+    (("polevka", "vyvar", "krem"), "fa-solid fa-bowl-food"),
+    (("kure", "kruti", "kachna", "slepice"), "fa-solid fa-drumstick-bite"),
+    (("hovezi", "veprove", "maso", "gulas", "rizek", "karbanatek", "koule"), "fa-solid fa-drumstick-bite"),
+    (("ryba", "losos", "treska", "kapr", "tun", "file"), "fa-solid fa-fish"),
+    (("testoviny", "spagety", "kolinka", "nudle", "tagliatelle"), "fa-solid fa-bacon"),
+    (("knedlik", "brambor", "brambory", "kase", "ryze", "rizoto"), "fa-solid fa-bowl-rice"),
+    (("salat", "zelenina", "okurka", "rajce", "mrkev"), "fa-solid fa-carrot"),
+    (("jogurt", "mleko", "tvaroh", "syr"), "fa-solid fa-cheese"),
+    (("jablko", "ovoce", "banan", "hruska"), "fa-solid fa-apple-whole"),
+    (("dezert", "kolac", "buchta", "krem", "puding", "kase", "krupicova"), "fa-solid fa-ice-cream"),
+    (("napoj", "caj", "voda", "dzus", "stava", "kava"), "fa-solid fa-glass-water"),
+)
+
+
+def _normalizuj_text(value):
+    text = str(value or "").strip().lower()
+    return "".join(
+        char for char in unicodedata.normalize("NFKD", text)
+        if not unicodedata.combining(char)
+    )
+
+
+def vychozi_ikona_druhu_jidla(nazev):
+    return DRUH_JIDLA_DEFAULT_ICONS.get(_normalizuj_text(nazev), "fa-solid fa-utensils")
+
+
+def vychozi_ikona_jidla(nazev, druh_nazev=""):
+    normalized = _normalizuj_text(nazev)
+    for keywords, icon in JIDLO_KEYWORD_ICONS:
+        if any(keyword in normalized for keyword in keywords):
+            return icon
+    return vychozi_ikona_druhu_jidla(druh_nazev)
 
 
 class Alergen(models.Model):
@@ -37,6 +88,12 @@ class DruhJidla(models.Model):
         unique=True,
         verbose_name="Název druhu jídla"
     )
+    poradi = models.PositiveIntegerField(
+        default=100,
+        db_index=True,
+        verbose_name="Pořadí zobrazení",
+        help_text="Nižší číslo se zobrazí dříve. Například 10 = polévka, 20 = hlavní chod, 30 = dezert.",
+    )
     ikona = models.CharField(
         max_length=100,
         blank=True,
@@ -46,6 +103,7 @@ class DruhJidla(models.Model):
     class Meta:
         verbose_name = "Druh jídla"
         verbose_name_plural = "Druhy jídel"
+        ordering = ("poradi", "nazev")
 
     viditelne_pro_skupiny = models.ManyToManyField(
         Group,
@@ -56,6 +114,10 @@ class DruhJidla(models.Model):
 
     def __str__(self):
         return self.nazev
+
+    @property
+    def vychozi_ikona(self):
+        return self.ikona or vychozi_ikona_druhu_jidla(self.nazev)
 
 
 class Jidlo(models.Model):
@@ -104,6 +166,15 @@ class Jidlo(models.Model):
 
     def __str__(self):
         return self.nazev
+
+    @property
+    def vychozi_ikona(self):
+        druh_nazev = self.druh.nazev if self.druh_id and self.druh else ""
+        return self.ikona or vychozi_ikona_jidla(self.nazev, druh_nazev)
+
+    @property
+    def ma_fotku(self):
+        return bool(self.foto)
     
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
@@ -220,6 +291,7 @@ class PolozkaJidelnicku(models.Model):
     class Meta:
         verbose_name = "Položka jídelníčku"
         verbose_name_plural = "Položky jídelníčku"
+        ordering = ("druh_jidla__poradi", "druh_jidla__nazev", "jidlo__nazev")
 
     def __str__(self):
         return f"{self.druh_jidla} - {self.jidlo} v {self.jidelnicek}"

@@ -51,7 +51,7 @@ class MealPickupTimeAdmin(admin.ModelAdmin):
     list_display = ['druh_jidla', 'pickup_from', 'pickup_to']
     list_filter = ['druh_jidla']
     list_editable = ['pickup_from', 'pickup_to']
-    ordering = ['pickup_from']
+    ordering = ['druh_jidla__poradi', 'druh_jidla__nazev', 'pickup_from']
 
 
 @admin.register(OperatingDays)

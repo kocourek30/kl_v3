@@ -70,6 +70,158 @@ document.addEventListener('DOMContentLoaded', function() {
             box-shadow: 0 0.25rem 0.75rem rgba(0,0,0,0.18);
         }
 
+        .app-navbar {
+            min-height: 76px;
+            padding-block: 0.6rem;
+            border-bottom: 4px solid #f28f28;
+        }
+
+        .app-navbar .navbar-brand {
+            min-width: 136px;
+        }
+
+        .app-nav-shell {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .app-nav-left,
+        .app-nav-right {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            flex-wrap: wrap;
+        }
+
+        .app-nav-left {
+            justify-content: flex-start;
+        }
+
+        .app-nav-right {
+            justify-content: flex-end;
+        }
+
+        .app-nav-btn,
+        .app-nav-balance,
+        .app-nav-user {
+            height: 42px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.48rem 0.72rem;
+            font-weight: 800;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        .app-nav-btn {
+            color: #fff !important;
+            text-decoration: none;
+            border: 1px solid rgba(255,255,255,0.22);
+            background: rgba(255,255,255,0.12);
+            transition: transform .15s ease, background .15s ease, border-color .15s ease;
+        }
+
+        .app-nav-btn:hover,
+        .app-nav-btn:focus {
+            color: #fff;
+            background: rgba(255,255,255,0.2);
+            border-color: rgba(255,255,255,0.38);
+            transform: translateY(-1px);
+        }
+
+        .app-nav-btn.active {
+            background: #f28f28;
+            border-color: #f28f28;
+            box-shadow: 0 8px 18px rgba(0,0,0,0.14);
+        }
+
+        .app-nav-btn-rating {
+            background: #fff;
+            color: #176a32 !important;
+            border-color: #fff;
+        }
+
+        .app-nav-btn-rating:hover,
+        .app-nav-btn-rating:focus,
+        .app-nav-btn-rating.active {
+            background: #f28f28;
+            color: #fff !important;
+            border-color: #f28f28;
+        }
+
+        .app-nav-user {
+            color: #fff;
+            text-decoration: none;
+            background: rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.18);
+            transition: transform .15s ease, background .15s ease, border-color .15s ease;
+        }
+
+        .app-nav-user:hover,
+        .app-nav-user:focus,
+        .app-nav-user.active {
+            color: #fff;
+            text-decoration: none;
+            background: rgba(0,0,0,0.18);
+            border-color: rgba(255,255,255,0.34);
+            transform: translateY(-1px);
+        }
+
+        .app-nav-user.active {
+            box-shadow: inset 0 -3px 0 #f28f28;
+        }
+
+        .app-nav-balance {
+            color: #145f2f;
+            background: #fff;
+            border: 1px solid rgba(255,255,255,0.9);
+        }
+
+        .app-nav-balance-label {
+            color: #607080;
+            font-size: 0.78rem;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+
+        .app-nav-logout {
+            height: 42px;
+            border-radius: 8px;
+            font-weight: 800;
+            padding-inline: 0.8rem;
+        }
+
+        @media (max-width: 991.98px) {
+            .app-navbar .navbar-collapse {
+                padding-top: 0.75rem;
+            }
+
+            .app-nav-shell,
+            .app-nav-left,
+            .app-nav-right {
+                align-items: stretch;
+                justify-content: flex-start;
+                width: 100%;
+            }
+
+            .app-nav-shell {
+                flex-direction: column;
+            }
+
+            .app-nav-btn,
+            .app-nav-balance,
+            .app-nav-user,
+            .app-nav-logout {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
         /*
          * ORANŽOVÁ PATIČKA (#f28f28)
          */
@@ -117,7 +269,7 @@ document.addEventListener('DOMContentLoaded', function() {
 </head>
 <body>
     <!-- NAVBAR - ZELENÁ (#54ae43) -->
-    <nav class="navbar navbar-expand-lg navbar-dark header-green mb-4">
+    <nav class="navbar navbar-expand-lg navbar-dark header-green app-navbar mb-4">
         <div class="container-fluid">
             <a class="navbar-brand d-flex align-items-center" href="{% url 'jidelnicek:dashboard' %}">
               <img src="{% static 'images/logo-white.png' %}" alt="Logo jídelna"
@@ -131,34 +283,44 @@ document.addEventListener('DOMContentLoaded', function() {
             </button>
 
             <div class="collapse navbar-collapse justify-content-end" id="navbarMain">
-                <ul class="navbar-nav align-items-center">
-                    {% if user.is_authenticated %}
-                    <li class="nav-item me-3">
-                        <span class="navbar-text">
-                            <a href="{% url 'ankety:moje_ankety' %}" class="text-white text-decoration-underline me-3">
-                                <i class="fas fa-star me-1"></i> Hodnocení jídel
-                            </a>
-                            <i class="fas fa-user me-1"></i> Přihlášen:
-                            <a href="{% url 'users:user-profile' %}" class="text-white text-decoration-underline">
-                                {{ request.user.first_name }} {{ request.user.last_name }}
-                            </a>
-                            <span class="mx-2 text-white-50">|</span>
-                            <i class="fa-solid fa-coins me-1"></i>
-                            Stav konta:
-                            <span id="navbar-balance-container" class="fw-semibold">
-{% include "includes/_navbar_balance.html" with user_balance=user.aktualni_zustatek %}                            </span>
+                {% if user.is_authenticated %}
+                <div class="app-nav-shell">
+                    <div class="app-nav-left">
+                        <a href="{% url 'jidelnicek:dashboard' %}"
+                           class="app-nav-btn {% if request.resolver_match.app_name == 'jidelnicek' or request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+                            <i class="fas fa-utensils"></i>
+                            <span>Jídelníček</span>
+                        </a>
+                        <a href="{% url 'ankety:moje_ankety' %}"
+                           class="app-nav-btn app-nav-btn-rating {% if request.resolver_match.app_name == 'ankety' %}active{% endif %}">
+                            <i class="fas fa-star"></i>
+                            <span>Hodnocení jídel</span>
+                        </a>
+                    </div>
+
+                    <div class="app-nav-right">
+                        <a href="{% url 'users:user-profile' %}"
+                           class="app-nav-user {% if request.resolver_match.url_name == 'user-profile' %}active{% endif %}">
+                            <i class="fas fa-user"></i>
+                            <span>{{ request.user.get_full_name|default:request.user.username }}</span>
+                        </a>
+
+                        <span class="app-nav-balance">
+                            <i class="fa-solid fa-coins"></i>
+                            <span class="app-nav-balance-label">Zůstatek</span>
+                            <span id="navbar-balance-container" class="fw-black">
+{% include "includes/_navbar_balance.html" with user_balance=user.aktualni_zustatek %}                        </span>
                         </span>
-                    </li>
-                    <li class="nav-item">
-                        <form method="post" action="{% url 'logout' %}">
+
+                        <form method="post" action="{% url 'logout' %}" class="m-0">
                             {% csrf_token %}
-                            <button type="submit" class="btn btn-outline-light btn-sm">
-                                Odhlásit
+                            <button type="submit" class="btn btn-outline-light app-nav-logout">
+                                <i class="fas fa-right-from-bracket me-1"></i>Odhlásit
                             </button>
                         </form>
-                    </li>
-                    {% endif %}
-                </ul>
+                    </div>
+                </div>
+                {% endif %}
             </div>
         </div>
     </nav>

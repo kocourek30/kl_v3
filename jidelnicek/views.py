@@ -36,6 +36,7 @@ from canteen_settings.models import (
 
 
 from objednavky.models import Order, OrderItem
+from objednavky.services import validate_order_quantity
 from jidelnicek.models import PolozkaJidelnicku, Jidelnicek
 from dotace.models import SkupinoveNastaveni
 from ankety.services import anketni_prehled_uzivatele
@@ -233,43 +234,18 @@ def dashboard(request):
     month_first = max(first_day_month, today)
     month_ctx = build_month_menu_context(request.user, month_first, last_day_month)
 
-    # ✅ FIXED POŘADÍ JÍDEL: 1.Polévka 2.Hlavní 3.Dezert 4.Večeře
-# ✅ FIXED POŘADÍ JÍDEL: 1.Polévka 2.Hlavní 3.Dezert 4.Večeře
-# ✅ OPRAVENÉ POŘADÍ podle skutečných dat v DB
-    DRUH_ORDER = {
-        'Snídaně 1': 1,
-        'Snídaně 2': 2,
-        'Přesnídávka': 3,
-        'Oběd': 4,
-        'Svačina': 5,
-        'Večeře': 6,
-        'Pozdní večeře': 7,
-    }
-
-
     def sort_druhy_by_priority(items_by_druh):
         if not items_by_druh:
             return {}
-        
-        first_key = next(iter(items_by_druh.keys()))
-        
-        # Pokud je klíč string
-        if isinstance(first_key, str):
-            sorted_keys = sorted(
-                items_by_druh.keys(),
-                key=lambda nazev: DRUH_ORDER.get(nazev, 99)
-            )
-        # Pokud je klíč objekt
-        else:
-            sorted_keys = sorted(
-                items_by_druh.keys(),
-                key=lambda druh_obj: DRUH_ORDER.get(druh_obj.nazev, 99)
-            )
-        
+
+        sorted_keys = sorted(
+            items_by_druh.keys(),
+            key=lambda druh: (
+                getattr(druh, 'poradi', 100),
+                getattr(druh, 'nazev', str(druh)),
+            ),
+        )
         return {key: items_by_druh[key] for key in sorted_keys}
-
-
-
 
     # Seřaď TÝDEN
     if week_ctx.get('menu_items_by_day_grouped'):
@@ -330,7 +306,10 @@ def dashboard(request):
 
     context.update({
         'canteen_contact': CanteenContact.objects.first(),
-        'meal_pickup_times': MealPickupTime.objects.all(),
+        'meal_pickup_times': MealPickupTime.objects.select_related('druh_jidla').order_by(
+            'druh_jidla__poradi',
+            'druh_jidla__nazev',
+        ),
         'provozni_dny': OperatingDays.objects.filter(is_operating=True),
         'exceptions': OperatingExceptions.objects.filter(
             date__gte=timezone.now().date()
@@ -365,7 +344,11 @@ def order_create_view(request):
 
     menu_item_id = request.POST.get('menu_item_id') or request.POST.get('menuitemid')
     menu_date_str = request.POST.get('menudate') or request.POST.get('menu_date')
-    quantity = int(request.POST.get('quantity', 1))
+    try:
+        quantity = validate_order_quantity(request.POST.get('quantity', 1))
+    except Exception as exc:
+        msg = exc.messages[0] if hasattr(exc, "messages") else "Neplatné množství."
+        return JsonResponse({'status': 'error', 'message': msg}, status=400)
 
     try:
         menu_item = PolozkaJidelnicku.objects.select_related('jidlo', 'druh_jidla').get(id=menu_item_id)
@@ -382,8 +365,25 @@ def order_create_view(request):
         if not can_order_group:
             return JsonResponse({'status': 'error', 'message': group_msg})
 
-        price_per_item = get_user_price_for_item(request.user, menu_item)
-        total_price = price_per_item * quantity
+        existing_order_item_for_price = OrderItem.objects.filter(
+            order__user=request.user,
+            order__datum_vydeje=target_date,
+            menu_item=menu_item,
+        ).first()
+        existing_quantity_for_price = existing_order_item_for_price.quantity if existing_order_item_for_price else 0
+        priced_quantity = existing_quantity_for_price + quantity
+
+        price_per_item = get_user_price_for_item(
+            request.user,
+            menu_item,
+            target_date=target_date,
+            quantity=priced_quantity,
+            exclude_order_item_id=existing_order_item_for_price.pk if existing_order_item_for_price else None,
+        )
+        total_price = (price_per_item * priced_quantity) - (
+            existing_order_item_for_price.cena * existing_quantity_for_price
+            if existing_order_item_for_price else Decimal('0')
+        )
 
         # 3. Limit celkem na den
         existing_qty = OrderItem.objects.filter(
@@ -498,7 +498,11 @@ def order_delete_view(request):
     # nový formát z jidelnicek_item.html
     menu_item_id = request.POST.get('menu_item_id') or request.POST.get('menuitemid')
     menu_date_str = request.POST.get('menudate') or request.POST.get('menu_date')
-    quantity_to_remove = int(request.POST.get('quantity', 1))
+    try:
+        quantity_to_remove = validate_order_quantity(request.POST.get('quantity', 1))
+    except Exception as exc:
+        msg = exc.messages[0] if hasattr(exc, "messages") else "Neplatné množství."
+        return JsonResponse({'status': 'error', 'message': msg}, status=400)
 
     if not menu_item_id or not menu_date_str:
         return JsonResponse({'status': 'error', 'message': 'Chybí parametry'})

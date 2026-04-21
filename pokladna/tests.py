@@ -48,6 +48,11 @@ class PokladnaServiceTests(TestCase):
             surovina=self.surovina,
         )
 
+    def test_vytvor_doklad_nastavi_typ_prodej(self):
+        doklad = vytvor_doklad(self.pokladna, self.obsluha, zakaznik=self.zakaznik)
+
+        self.assertEqual(doklad.typ_dokladu, PokladniDoklad.TYP_PRODEJ)
+
     def test_uzavreni_kontem_vytvori_cerpani_a_skladovy_vydej(self):
         doklad = vytvor_doklad(self.pokladna, self.obsluha, zakaznik=self.zakaznik)
         pridej_polozku(doklad, self.plu, Decimal("2"))
@@ -57,6 +62,8 @@ class PokladnaServiceTests(TestCase):
         self.assertEqual(uzavreny.stav, PokladniDoklad.STAV_UZAVRENO)
         self.assertEqual(uzavreny.celkem_s_dph, Decimal("50.00"))
         self.assertIsNotNone(uzavreny.konto_pohyb_id)
+        self.assertEqual(uzavreny.konto_pohyb.castka, Decimal("-50.00"))
+        self.assertEqual(uzavreny.konto_pohyb.status, Vklad.STATUS_PLATBA_UCTU)
         self.assertEqual(self.zakaznik.aktualni_zustatek, Decimal("50.00"))
 
         stav = StavSkladu.objects.get(surovina=self.surovina)

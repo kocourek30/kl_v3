@@ -40,6 +40,7 @@ class ObjednavkaForm(forms.ModelForm):
                     jidelnicek__platnost_do__gte=datum,
                 )
                 .select_related('jidlo', 'druh_jidla')
+                .order_by('druh_jidla__poradi', 'druh_jidla__nazev', 'jidlo__nazev')
             )
 
         if self.instance.pk:

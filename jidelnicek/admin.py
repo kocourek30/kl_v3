@@ -11,7 +11,15 @@ from django.contrib import messages
 import re
 from datetime import datetime, date
 
-from .models import Alergen, Jidlo, DruhJidla, Jidelnicek, PolozkaJidelnicku
+from .models import (
+    Alergen,
+    DruhJidla,
+    Jidelnicek,
+    Jidlo,
+    PolozkaJidelnicku,
+    vychozi_ikona_druhu_jidla,
+    vychozi_ikona_jidla,
+)
 from dotace.models import DotacniPolitika, DotaceProJidelniskouSkupinu
 from sklad.admin import RecepturaPolozkaInline, JidloKomponentaInline
 from pokladna.models import PLUPolozka, DPHSkupina, PLUKategorie
@@ -220,8 +228,13 @@ class TxtImportForm(forms.Form):
 
 @admin.register(DruhJidla)
 class DruhJidlaAdmin(admin.ModelAdmin):
-    list_display = ('nazev', 'icon_preview')
+    list_display = ('nazev', 'poradi', 'icon_preview')
+    list_editable = ('poradi',)
     search_fields = ('nazev',)
+    ordering = ('poradi', 'nazev')
+    fields = ('nazev', 'poradi', 'ikona', 'viditelne_pro_skupiny')
+    filter_horizontal = ('viditelne_pro_skupiny',)
+    actions = ("doplnit_ikony_druhu_jidel",)
 
     def icon_preview(self, obj):
         if hasattr(obj, 'ikona') and obj.ikona:
@@ -232,13 +245,24 @@ class DruhJidlaAdmin(admin.ModelAdmin):
 
     def save_model(self, request, obj, form, change):
         if not obj.ikona:
-            obj.ikona = 'fas fa-basketball-ball'
+            obj.ikona = vychozi_ikona_druhu_jidla(obj.nazev)
         super().save_model(request, obj, form, change)
+
+    @admin.action(description="Doplnit výchozí ikony podle názvu druhu")
+    def doplnit_ikony_druhu_jidel(self, request, queryset):
+        aktualizovano = 0
+        for druh in queryset:
+            if druh.ikona:
+                continue
+            druh.ikona = vychozi_ikona_druhu_jidla(druh.nazev)
+            druh.save(update_fields=["ikona"])
+            aktualizovano += 1
+        self.message_user(request, f"Doplněno ikon u druhů jídel: {aktualizovano}.")
 
 
 @admin.register(Jidlo)
 class JidloAdmin(admin.ModelAdmin):
-    list_display = ('nazev', 'druh', 'cena', 'alergeny_list', 'ceny_po_dotacich', 'ma_komponenty')
+    list_display = ('nahled', 'nazev', 'druh', 'cena', 'alergeny_list', 'ceny_po_dotacich', 'ma_komponenty')
     search_fields = ('nazev',)
     list_filter = (
         'druh',
@@ -249,7 +273,7 @@ class JidloAdmin(admin.ModelAdmin):
     )
     filter_horizontal = ('alergeny',)
     inlines = [JidloKomponentaInline, RecepturaPolozkaInline]
-    actions = ["vygenerovat_plu_pro_jidla"]
+    actions = ["vygenerovat_plu_pro_jidla", "doplnit_ikony_jidel"]
     fieldsets = (
         (
             "Základní údaje",
@@ -287,6 +311,15 @@ class JidloAdmin(admin.ModelAdmin):
             },
         ),
     )
+
+    @admin.display(description="Náhled")
+    def nahled(self, obj):
+        if obj.foto:
+            return format_html(
+                '<img src="{}" style="width:36px;height:36px;object-fit:cover;border-radius:8px;" alt="">',
+                obj.foto.url,
+            )
+        return format_html('<i class="{}" style="font-size:22px;color:#54ae43;"></i>', obj.vychozi_ikona)
 
     def ma_komponenty(self, obj):
         return obj.komponenty_jidla.exists()
@@ -344,6 +377,20 @@ class JidloAdmin(admin.ModelAdmin):
         return format_html(table_html)
 
     ceny_po_dotacich.short_description = "Ceny po dotacích"
+
+    @admin.action(description="Doplnit výchozí ikony podle názvu a druhu jídla")
+    def doplnit_ikony_jidel(self, request, queryset):
+        aktualizovano = 0
+        for jidlo in queryset.select_related("druh"):
+            if jidlo.ikona:
+                continue
+            jidlo.ikona = vychozi_ikona_jidla(
+                jidlo.nazev,
+                jidlo.druh.nazev if jidlo.druh_id else "",
+            )
+            jidlo.save(update_fields=["ikona"])
+            aktualizovano += 1
+        self.message_user(request, f"Doplněno ikon u jídel: {aktualizovano}.")
 
     # ==== AUTO‑PLU ====
 

@@ -25,6 +25,11 @@
     {% endif %}
 
     <div class="customer-balance-row">
+      <span>Platby účtů z konta</span>
+      <strong class="text-danger">{{ balance_breakdown.platby_uctu|floatformat:2 }} Kč</strong>
+    </div>
+
+    <div class="customer-balance-row">
       <span>Vydané objednávky</span>
       <strong class="text-danger">-{{ balance_breakdown.vydane|floatformat:2 }} Kč</strong>
     </div>

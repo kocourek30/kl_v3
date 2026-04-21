@@ -2,13 +2,31 @@ from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from jidelnicek.models import DruhJidla, Jidelnicek, Jidlo, PolozkaJidelnicku
 
 from .forms import ObjednavkaForm
 from .models import Order, OrderItem
-from .services import recalculate_order_prices
+from .services import recalculate_order_prices, validate_order_quantity
+
+
+class OrderQuantityValidationTests(TestCase):
+    def test_valid_quantity_is_normalized_to_integer(self):
+        self.assertEqual(validate_order_quantity("3"), 3)
+
+    def test_quantity_musi_byt_kladna(self):
+        with self.assertRaises(ValidationError):
+            validate_order_quantity("0")
+
+    def test_quantity_ma_horni_limit(self):
+        with self.assertRaises(ValidationError):
+            validate_order_quantity("11")
+
+    def test_quantity_musi_byt_cislo(self):
+        with self.assertRaises(ValidationError):
+            validate_order_quantity("abc")
 
 
 class ObjednavkyCleanupTests(TestCase):

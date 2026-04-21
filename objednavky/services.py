@@ -1,54 +1,36 @@
 from decimal import Decimal
 from django.db import transaction
+from django.core.exceptions import ValidationError
 from collections import defaultdict
 
 from .models import OrderItem, PriceRecalculationLog, PriceRecalculationDetail
-from dotace.models import DotaceProJidelniskouSkupinu
+from dotace.services import vypocet_dotovane_ceny
 
 
-def _get_group_policy(user, policy_cache):
-    for group in user.groups.all():
-        if group.pk not in policy_cache:
-            try:
-                policy_cache[group.pk] = group.dotacni_politika
-            except Exception:
-                policy_cache[group.pk] = None
-        if policy_cache[group.pk]:
-            return policy_cache[group.pk]
-    return None
+MAX_ORDER_QUANTITY = 10
 
 
-def _get_recalculated_price(user, menu_item, policy_cache, override_cache):
-    base_price = Decimal(str(getattr(menu_item.jidlo, 'cena', 0) or 0))
-    if base_price == 0:
-        return Decimal('0.00')
+def validate_order_quantity(value, *, max_quantity=MAX_ORDER_QUANTITY):
+    try:
+        quantity = int(value or 1)
+    except (TypeError, ValueError):
+        raise ValidationError("Množství musí být celé číslo.")
 
-    policy = _get_group_policy(user, policy_cache)
-    if not policy:
-        return base_price.quantize(Decimal('0.01'))
+    if quantity < 1:
+        raise ValidationError("Množství musí být alespoň 1.")
+    if quantity > max_quantity:
+        raise ValidationError(f"Najednou lze objednat maximálně {max_quantity} kusů.")
+    return quantity
 
-    cache_key = (policy.pk, menu_item.druh_jidla_id)
-    if cache_key not in override_cache:
-        override_cache[cache_key] = (
-            DotaceProJidelniskouSkupinu.objects
-            .filter(
-                dotacni_politika=policy,
-                jidelniskova_skupina_id=menu_item.druh_jidla_id,
-            )
-            .first()
-        )
 
-    override = override_cache[cache_key]
-    procento = override.procento if override and override.procento is not None else policy.procento
-    castka = override.castka if override and override.castka is not None else policy.castka
-
-    final_price = base_price
-    if procento and procento != Decimal('0'):
-        final_price = base_price * (Decimal('1') - Decimal(procento) / Decimal('100'))
-    if castka and castka != Decimal('0'):
-        final_price = max(Decimal('0'), final_price - Decimal(castka))
-
-    return final_price.quantize(Decimal('0.01'))
+def _get_recalculated_price(user, menu_item, target_date, quantity, exclude_order_item_id=None):
+    return vypocet_dotovane_ceny(
+        user,
+        menu_item,
+        target_date=target_date,
+        quantity=quantity,
+        exclude_order_item_id=exclude_order_item_id,
+    )
 
 
 def recalculate_order_prices(date_from, date_to, user, dry_run=False):
@@ -98,17 +80,15 @@ def recalculate_order_prices(date_from, date_to, user, dry_run=False):
     total_price_diff = Decimal('0')
     items_changed = 0
     items_unchanged = 0
-    policy_cache = {}
-    override_cache = {}
-
     # Projdi všechny položky
     for item in order_items:
         old_price = item.cena
         new_price = _get_recalculated_price(
             item.order.user,
             item.menu_item,
-            policy_cache,
-            override_cache,
+            item.order.datum_vydeje,
+            item.quantity,
+            exclude_order_item_id=item.pk,
         )
         price_diff = new_price - old_price
         

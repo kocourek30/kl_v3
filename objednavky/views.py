@@ -11,6 +11,7 @@ from django.db.models import F, Sum
 from django.http import JsonResponse
 
 from .models import Order, OrderItem, OrderValidator
+from .services import validate_order_quantity
 from jidelnicek.models import DruhJidla, PolozkaJidelnicku
 from canteen_settings.models import OrderClosingTime, GroupOrderLimit
 
@@ -180,15 +181,22 @@ def order_create_view(request):  # ✅ BEZ @require_POST
     """Vytvoří/zvýší objednávku"""
     if request.method != 'POST':  # ✅ MANUÁLNÍ KONTROLA
         return JsonResponse({'error': 'POST only'}, status=405)
-    
-    menu_item_id = request.POST.get('menu_item_id')
-    quantity = int(request.POST.get('quantity', 1))
-    menu_date_str = request.POST.get('menu_date')
 
     is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
 
     def ajax_response(status, message):
         return JsonResponse({'status': status, 'message': message})
+
+    menu_item_id = request.POST.get('menu_item_id')
+    try:
+        quantity = validate_order_quantity(request.POST.get('quantity', 1))
+    except Exception as exc:
+        msg = exc.messages[0] if hasattr(exc, "messages") else "Neplatné množství."
+        messages.error(request, msg)
+        if is_ajax:
+            return ajax_response('error', msg)
+        return redirect('jidelnicek:dashboard')
+    menu_date_str = request.POST.get('menu_date')
 
     if not menu_date_str:
         msg = "Chybí datum objednávky."
@@ -219,8 +227,24 @@ def order_create_view(request):  # ✅ BEZ @require_POST
                 return ajax_response('error', msg)
             return redirect('jidelnicek:dashboard')
 
-        cena = OrderValidator.get_price_for_user(request.user, menu_item)
-        total_price = cena * quantity
+        existing_order_item = OrderItem.objects.filter(
+            order__user=request.user,
+            order__datum_vydeje=target_date,
+            menu_item=menu_item,
+        ).first()
+        existing_quantity = existing_order_item.quantity if existing_order_item else 0
+        priced_quantity = existing_quantity + quantity
+
+        cena = OrderValidator.get_price_for_user(
+            request.user,
+            menu_item,
+            target_date=target_date,
+            quantity=priced_quantity,
+            exclude_order_item_id=existing_order_item.pk if existing_order_item else None,
+        )
+        total_price = (cena * priced_quantity) - (
+            existing_order_item.cena * existing_quantity if existing_order_item else Decimal("0")
+        )
 
         ok, msg = OrderValidator.check_user_balance(request.user, total_price)
         if not ok:

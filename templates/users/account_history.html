@@ -23,9 +23,6 @@
           <div class="row g-3">
             <div class="col-md-12">
               <div class="btn-group w-100" role="group">
-                <input type="radio" class="btn-check" name="filter" id="filter_all" value="all" {% if filter_type == 'all' %}checked{% endif %} onchange="toggleCustomDates()">
-                <label class="btn btn-outline-success" for="filter_all">Vše</label>
-                
                 <input type="radio" class="btn-check" name="filter" id="filter_current_month" value="current_month" {% if filter_type == 'current_month' %}checked{% endif %} onchange="toggleCustomDates()">
                 <label class="btn btn-outline-success" for="filter_current_month">Aktuální měsíc</label>
                 
@@ -37,6 +34,9 @@
                 
                 <input type="radio" class="btn-check" name="filter" id="filter_custom" value="custom" {% if filter_type == 'custom' %}checked{% endif %} onchange="toggleCustomDates()">
                 <label class="btn btn-outline-success" for="filter_custom">Vlastní období</label>
+
+                <input type="radio" class="btn-check" name="filter" id="filter_all" value="all" {% if filter_type == 'all' %}checked{% endif %} onchange="toggleCustomDates()">
+                <label class="btn btn-outline-success" for="filter_all">Vše</label>
               </div>
             </div>
             
@@ -85,6 +85,10 @@
                 <span class="badge bg-success">
                   <i class="fas fa-plus-circle me-1"></i>Vklad
                 </span>
+              {% elif transaction.typ == 'platba_uctu' %}
+                <span class="badge bg-danger">
+                  <i class="fas fa-cash-register me-1"></i>Platba účtu
+                </span>
               {% else %}
                 <span class="badge bg-danger">
                   <i class="fas fa-utensils me-1"></i>Čerpání
@@ -97,6 +101,8 @@
             <td class="text-end">
               {% if transaction.typ == 'vklad' %}
                 <strong class="text-success">+{{ transaction.castka|floatformat:2 }} Kč</strong>
+              {% elif transaction.typ == 'platba_uctu' %}
+                <strong class="text-danger">{{ transaction.castka|floatformat:2 }} Kč</strong>
               {% else %}
                 <strong class="text-danger">-{{ transaction.castka|floatformat:2 }} Kč</strong>
               {% endif %}
@@ -107,7 +113,15 @@
               </strong>
             </td>
             <td class="text-center">
-              {% if transaction.typ == 'cerpani' and transaction.order %}
+              {% if transaction.typ == 'platba_uctu' and transaction.pokladni_doklad %}
+                <a href="{% url 'pokladna:pokladna_doklad_detail' transaction.pokladni_doklad.pokladna_id transaction.pokladni_doklad.id %}"
+                   class="btn btn-sm"
+                   style="background-color: #54ae43; color: white;"
+                   target="_blank"
+                   title="Zobrazit uzavřený účet">
+                  <i class="fas fa-receipt me-1"></i>Účet
+                </a>
+              {% elif transaction.typ == 'cerpani' and transaction.order %}
                 <a href="{% url 'users:receipt-pdf' transaction.order.id %}" 
                    class="btn btn-sm"
                    style="background-color: #54ae43; color: white;"
@@ -125,6 +139,11 @@
           <tr class="fw-bold">
             <td colspan="3" class="text-end">CELKEM - Vklady:</td>
             <td class="text-end text-success">+{{ total_vklady|floatformat:2 }} Kč</td>
+            <td colspan="2"></td>
+          </tr>
+          <tr class="fw-bold">
+            <td colspan="3" class="text-end">CELKEM - Platby účtů z konta:</td>
+            <td class="text-end text-danger">-{{ total_platby_uctu|floatformat:2 }} Kč</td>
             <td colspan="2"></td>
           </tr>
           <tr class="fw-bold">

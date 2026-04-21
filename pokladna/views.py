@@ -320,7 +320,7 @@ def pokladna_ucet(request, pokladna_id):
     tiles = (
         PokladnaTile.objects
         .filter(pokladna=pokladna, aktivni=True)
-        .select_related("plu", "plu__dph_skupina", "plu__kategorie")
+        .select_related("plu", "plu__dph_skupina", "plu__kategorie", "plu__jidlo", "plu__jidlo__druh")
         .order_by("poradi", "id")
     )
 
@@ -331,7 +331,7 @@ def pokladna_ucet(request, pokladna_id):
             platnost_od__lte=today,
             platnost_do__gte=today,
         )
-        .prefetch_related("polozky__jidlo")
+        .prefetch_related("polozky__jidlo", "polozky__jidlo__druh")
         .first()
     )
 

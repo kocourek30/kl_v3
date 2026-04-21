@@ -23,9 +23,6 @@
           <div class="row g-3">
             <div class="col-md-12">
               <div class="btn-group w-100" role="group">
-                <input type="radio" class="btn-check" name="filter" id="filter_all" value="all" {% if filter_type == 'all' %}checked{% endif %} onchange="toggleCustomDates()">
-                <label class="btn btn-outline-success" for="filter_all">Vše</label>
-                
                 <input type="radio" class="btn-check" name="filter" id="filter_current_month" value="current_month" {% if filter_type == 'current_month' %}checked{% endif %} onchange="toggleCustomDates()">
                 <label class="btn btn-outline-success" for="filter_current_month">Aktuální měsíc</label>
                 
@@ -37,6 +34,9 @@
                 
                 <input type="radio" class="btn-check" name="filter" id="filter_custom" value="custom" {% if filter_type == 'custom' %}checked{% endif %} onchange="toggleCustomDates()">
                 <label class="btn btn-outline-success" for="filter_custom">Vlastní období</label>
+
+                <input type="radio" class="btn-check" name="filter" id="filter_all" value="all" {% if filter_type == 'all' %}checked{% endif %} onchange="toggleCustomDates()">
+                <label class="btn btn-outline-success" for="filter_all">Vše</label>
               </div>
             </div>
             

@@ -15,9 +15,6 @@ from objednavky.models import Order, OrderItem
 from jidelnicek.models import Jidelnicek, PolozkaJidelnicku
 from canteen_settings.utils import is_ordering_allowed, get_order_closing_datetime
 
-from sklad.utils import odeber_ze_skladu_pro_jidlo
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -25,8 +22,10 @@ logger = logging.getLogger(__name__)
 @transaction.atomic
 def mark_order_as_issued(order: Order):
     """
-    Označí objednávku / položky jako vydané a odečte suroviny ze skladu.
-    Volat při skutečném výdeji (u vás ve vydej_frontend).
+    Označí objednávku a její položky jako vydané.
+
+    Důležité: tato služba nesmí odepisovat suroviny ze skladu. Skladový odpis
+    řeší pouze skladová výdejka, aby nemohlo dojít k dvojímu odečtu zásob.
     """
     if order.status in ("vydano", "nevyzvednuto"):
         return  # už kompletně řešená objednávka
@@ -36,13 +35,6 @@ def mark_order_as_issued(order: Order):
     for item in order.items.select_related("menu_item__jidlo").all():
         if item.vydano:
             continue
-
-        jidlo = item.menu_item.jidlo
-        pocet = item.quantity
-
-        ok, _ = odeber_ze_skladu_pro_jidlo(jidlo, pocet)
-        if not ok:
-            raise ValueError(f"Nedostatek surovin pro {jidlo.nazev}")
 
         item.vydano = True
         item.datum_vydani = now
@@ -176,7 +168,13 @@ def get_user_order_items(user):
             order__status__in=["zalozena-obsluhou", "objednano"],
         )
         .select_related("order", "menu_item__jidlo", "menu_item__druh_jidla")
-        .order_by("order__datum_vydeje", "menu_item__id")
+        .order_by(
+            "order__datum_vydeje",
+            "menu_item__druh_jidla__poradi",
+            "menu_item__druh_jidla__nazev",
+            "menu_item__jidlo__nazev",
+            "menu_item__id",
+        )
     )
 
     items_list = []
@@ -196,44 +194,17 @@ def get_user_order_items(user):
     return items_list
 
 
-def get_user_price_for_item(user, item):
+def get_user_price_for_item(user, item, target_date=None, quantity=1, exclude_order_item_id=None):
     try:
-        base_price = getattr(item.jidlo, "cena", 0)
-        if base_price == 0:
-            return 0
+        from dotace.services import vypocet_dotovane_ceny
 
-        dotacni_politika = None
-        for group in user.groups.all():
-            try:
-                dotacni_politika = group.dotacni_politika
-                break
-            except DotacniPolitika.DoesNotExist:
-                continue
-
-        if not dotacni_politika:
-            return base_price
-
-        specific_dotace = DotaceProJidelniskouSkupinu.objects.filter(
-            dotacni_politika=dotacni_politika,
-            jidelniskova_skupina=item.druh_jidla,
-        ).first()
-
-        if specific_dotace:
-            procento = specific_dotace.procento or dotacni_politika.procento
-            castka = specific_dotace.castka or dotacni_politika.castka
-        else:
-            procento = dotacni_politika.procento
-            castka = dotacni_politika.castka
-
-        if procento > 0:
-            sleva = base_price * (procento / 100)
-            final_price = max(0, base_price - sleva)
-        elif castka > 0:
-            final_price = max(0, base_price - castka)
-        else:
-            final_price = base_price
-
-        return round(final_price, 2)
+        return vypocet_dotovane_ceny(
+            user,
+            item,
+            target_date=target_date,
+            quantity=quantity,
+            exclude_order_item_id=exclude_order_item_id,
+        )
     except Exception:
         return getattr(item.jidlo, "cena", 0)
 
@@ -315,7 +286,7 @@ def validate_item_for_display(user, item, target_date):
     item.current_order_item_id = None
     item.max_order_quantity = 10
     item.closing_info = ""
-    item.display_price = get_user_price_for_item(user, item)
+    item.display_price = get_user_price_for_item(user, item, target_date)
     item.hide_quantity = False
 
     # ✅ SKRYTÍ MNOŽSTVÍ PODLE GROUP LIMITU
@@ -333,6 +304,15 @@ def validate_item_for_display(user, item, target_date):
             elif limit_setting.max_orders_per_day > 1:
                 item.hide_quantity = False
                 item.max_order_quantity = limit_setting.max_orders_per_day
+
+    try:
+        from dotace.services import ma_pocetni_limit_dotace
+
+        if ma_pocetni_limit_dotace(user, item):
+            item.hide_quantity = True
+            item.max_order_quantity = 1
+    except Exception:
+        logger.exception("Chyba při kontrole početního limitu dotace.")
 
     # ✅ ČASOVÉ PRAVIDLO PRO OBJEDNÁNÍ/ZMĚNU – PER POLOŽKA
     from objednavky.views import (
@@ -490,7 +470,7 @@ def build_day_menu_context(user, selected_date):
             PolozkaJidelnicku.objects.filter(jidelnicek__in=jidelnicky_den)
             .select_related("jidelnicek", "jidlo", "druh_jidla")
             .prefetch_related("jidlo__alergeny")
-            .order_by("druh_jidla__nazev", "jidlo__nazev")
+            .order_by("druh_jidla__poradi", "druh_jidla__nazev", "jidlo__nazev")
         )
 
         # ✅ filtrovat podle skupiny uživatele
@@ -532,7 +512,7 @@ def build_week_menu_context(user, selected_date):
                 PolozkaJidelnicku.objects.filter(jidelnicek__in=jidelnicky_den)
                 .select_related("jidelnicek", "jidlo", "druh_jidla")
                 .prefetch_related("jidlo__alergeny")
-                .order_by("druh_jidla__nazev", "jidlo__nazev")
+                .order_by("druh_jidla__poradi", "druh_jidla__nazev", "jidlo__nazev")
             )
 
             # ✅ filtrovat podle skupiny uživatele
@@ -585,7 +565,7 @@ def build_month_menu_context(user, first_day_month, last_day_month):
                 PolozkaJidelnicku.objects.filter(jidelnicek__in=jidelnicky_den)
                 .select_related("jidelnicek", "jidlo", "druh_jidla")
                 .prefetch_related("jidlo__alergeny")
-                .order_by("druh_jidla__nazev", "jidlo__nazev")
+                .order_by("druh_jidla__poradi", "druh_jidla__nazev", "jidlo__nazev")
             )
 
             # ✅ filtrovat podle skupiny uživatele
