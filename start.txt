@@ -1,0 +1,3 @@
+python manage.py seed_sou_users --wipe-demo-users --reset-passwords
+python manage.py seed_demo_data --reset-menu
+python manage.py seed_demo_orders --wipe-day

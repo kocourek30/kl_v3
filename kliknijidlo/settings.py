@@ -3,27 +3,35 @@ import secrets
 from pathlib import Path
 from dotenv import load_dotenv
 
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
 load_dotenv(os.path.join(BASE_DIR, '.env'))
+
 
 # --- SECURITY ---
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 if not SECRET_KEY:
     SECRET_KEY = 'django-insecure-dev-key-temporary'
 
-DEBUG = os.getenv('DJANGO_DEBUG', 'False') == 'True'
+
+DEBUG = 'True'
+
 
 ALLOWED_HOSTS = ['*']
 
+
 # --- CLOUDFLARE & HTTPS FIX ---
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 
 CSRF_TRUSTED_ORIGINS = [
     'https://jidelna.kliknijidlo.cz',
     'http://jidelna.kliknijidlo.cz',
     'http://10.0.0.108:8000',
 ]
+
 
 if not DEBUG:
     SESSION_COOKIE_SECURE = True
@@ -37,6 +45,7 @@ else:
     CSRF_COOKIE_SECURE = False
     SECURE_SSL_REDIRECT = False
 
+
 # --- SESSION SETTINGS ---
 SESSION_COOKIE_HTTPONLY = False
 SESSION_COOKIE_SAMESITE = 'Lax'
@@ -44,6 +53,7 @@ CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = 'Lax'
 SESSION_SAVE_EVERY_REQUEST = True
 SESSION_COOKIE_AGE = 86400  # 24 hodin
+
 
 # --- APPS ---
 INSTALLED_APPS = [
@@ -72,6 +82,7 @@ INSTALLED_APPS = [
     "pokladna",
 ]
 
+
 # --- MIDDLEWARE ---
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -84,23 +95,19 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# --- DATABASE (default: Postgres, v DEBUG dole přepnuto na SQLite) ---
+
+# --- DATABASE: lokálně jen SQLite, bez ohledu na DEBUG/ENV ---
 DATABASES = {
-    'default': {
-        'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.postgresql'),
-        'NAME': os.getenv('DB_NAME', 'kliknijidlo_dev'),
-        'USER': os.getenv('DB_USER', 'kliknijidlo_user'),
-        'PASSWORD': os.getenv('DB_PASSWORD', 'dev_password_123'),
-        'HOST': os.getenv('DB_HOST', 'db'),
-        'PORT': os.getenv('DB_PORT', '5432'),
-        'OPTIONS': {
-            'sslmode': os.getenv('DB_SSLMODE', 'prefer'),
-        },
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
 }
 
-if not DEBUG and not DATABASES['default']['PASSWORD']:
+
+if not DEBUG and not DATABASES['default'].get('PASSWORD'):
     raise ValueError("DB_PASSWORD must be set in production!")
+
 
 # --- STATIC & MEDIA ---
 STATIC_URL = '/static/'
@@ -108,8 +115,10 @@ STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
+
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
 
 # --- OSTATNÍ NASTAVENÍ ---
 AUTH_USER_MODEL = 'users.CustomUser'
@@ -120,6 +129,7 @@ TIME_ZONE = 'Europe/Prague'
 USE_I18N = True
 USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
 
 TEMPLATES = [
     {
@@ -139,6 +149,7 @@ TEMPLATES = [
     },
 ]
 
+
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -157,6 +168,7 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
+
 
 # Logging configuration
 LOGGING = {
@@ -228,6 +240,7 @@ LOGGING = {
     },
 }
 
+
 # Email configuration
 if os.getenv('EMAIL_HOST'):
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
@@ -246,15 +259,18 @@ if os.getenv('EMAIL_HOST'):
 else:
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
+
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880
 DATA_UPLOAD_MAX_MEMORY_SIZE = 5242880
 FILE_UPLOAD_PERMISSIONS = 0o644
 FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o755
 
+
 ALLOWED_UPLOAD_EXTENSIONS = [
     '.jpg', '.jpeg', '.png', '.gif', '.pdf',
     '.doc', '.docx', '.xls', '.xlsx',
 ]
+
 
 # Jazzmin Admin Configuration
 JAZZMIN_SETTINGS = {
@@ -274,7 +290,6 @@ JAZZMIN_SETTINGS = {
     },
     "brand_logo": None,
 
-   
 
     "icons": {
         # === APP IKONY ===
@@ -378,8 +393,6 @@ JAZZMIN_SETTINGS = {
         "auth.User": "fas fa-user-circle",
         "auth.Group": "fas fa-users-cog",
     },
-
-
 
     "order_with_respect_to": [
         "users",
@@ -501,6 +514,7 @@ JAZZMIN_SETTINGS = {
     ],
 }
 
+
 # UI customizace
 JAZZMIN_UI_TWEAKS = {
     "navbar_small_text": True,
@@ -535,14 +549,16 @@ JAZZMIN_UI_TWEAKS = {
     "actions_sticky_top": False,
 }
 
+
 # DEBUG: lokální SQLite místo Postgresu
-if os.getenv("DJANGO_DEBUG", "False") == "True":
+if DEBUG:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
+
 
 # =============================================================================
 # SECURITY NOTES FOR PRODUCTION:
