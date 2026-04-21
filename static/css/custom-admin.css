@@ -79,3 +79,67 @@
 .nav-sidebar .nav-link.active {
     border-left: 3px solid #ff8800 !important;
 }
+
+/* Lepší čitelnost vlastních dashboardů a reportů */
+.content-wrapper .content {
+    overflow-x: hidden;
+}
+
+.content-wrapper .card,
+.content-wrapper .small-box,
+.content-wrapper .results,
+.content-wrapper .module {
+    border-radius: 14px;
+}
+
+.content-wrapper .table th,
+.content-wrapper .table td,
+#result_list th,
+#result_list td {
+    vertical-align: middle;
+}
+
+.content-wrapper .table-responsive {
+    border-radius: 14px;
+}
+
+@media (max-width: 991.98px) {
+    .content-header h1 {
+        font-size: 1.8rem;
+    }
+
+    .content-header .breadcrumb {
+        margin-top: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .content-wrapper .content {
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .main-sidebar,
+    .brand-link {
+        width: 100%;
+    }
+
+    .content-wrapper .content {
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+    }
+
+    .content-wrapper .table th,
+    .content-wrapper .table td,
+    #result_list th,
+    #result_list td {
+        white-space: normal;
+        word-break: break-word;
+    }
+
+    .content-wrapper .btn,
+    .content-wrapper .button {
+        white-space: normal;
+    }
+}

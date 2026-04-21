@@ -219,6 +219,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'users.context_processors.user_balance',
                 'canteen_settings.context_processors.footer_info',
+                'admin_dashboard.context_processors.frontend_feature_flags',
             ],
         },
     },

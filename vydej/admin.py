@@ -1,20 +1,25 @@
 from django.contrib import admin
 from django.http import HttpResponse
-from django.db.models import Sum, Q
+from django.db.models import DecimalField, F, Q, Sum
 from django.utils.html import format_html
 from django.urls import reverse
 from django.shortcuts import redirect
 from django.contrib import messages
 from django.template.response import TemplateResponse
-from django.utils import timezone
 from datetime import date, timedelta
-from decimal import Decimal
 
 from objednavky.models import Order, OrderItem
-from dotace.models import DotacniPolitika, DotaceProJidelniskouSkupinu
 from .models import VydejOrder, VydejniUctenka, PolozkaUctenky, PrehledProKuchyni
 from .utils import generuj_pdf_uctenka
 from .models import StornovaneObjednavky
+from .services import (
+    CANCELLED_ORDER_STATUSES,
+    build_issue_board,
+    build_kitchen_overview,
+    cancel_receipt_and_order,
+    get_order_closing_info,
+    issue_order_from_admin,
+)
 
 # ==================== CUSTOM FILTRY ====================
 
@@ -26,7 +31,7 @@ class UserFilter(admin.SimpleListFilter):
     def lookups(self, request, model_admin):
         """Vrátí seznam uživatelů, kteří mají objednávky k výdeji"""
         users = Order.objects.filter(
-            Q(status='objednano') | Q(status='zalozena-obsluhou')
+            Q(status='objednano') | Q(status='zalozena-obsluhou') | Q(status='castecne-vydano')
         ).select_related('user').values_list(
             'user__id', 'user__first_name', 'user__last_name', 'user__username'
         ).distinct()
@@ -111,6 +116,7 @@ class DatumVydejeFilter(admin.SimpleListFilter):
 
 @admin.register(VydejOrder)
 class VydejOrderAdmin(admin.ModelAdmin):
+    change_list_template = 'admin/vydej/vydejorder_changelist.html'
     list_display = [
         'id', 'user_full_name', 'datum_vydeje', 'get_status_display',
         'zobraz_polozky', 'total_items', 'total_price_display', 'created_at', 'akce_vydat'
@@ -121,13 +127,24 @@ class VydejOrderAdmin(admin.ModelAdmin):
     ordering = ['datum_vydeje', '-created_at']
     actions = ['vydat_objednavky']
     list_per_page = 20
+    list_select_related = ['user']
+    show_full_result_count = False
     
     def get_queryset(self, request):
-        """Filtruj pouze objednávky ve stavu 'objednáno' a 'založena obsluhou'"""
+        """Filtruj pouze objednávky připravené k výdeji nebo rozpracovanému dovýdeji."""
         qs = super().get_queryset(request)
         return qs.filter(
-            Q(status='objednano') | Q(status='zalozena-obsluhou')
-        ).select_related('user').prefetch_related('items__menu_item__jidlo', 'items__menu_item__druh_jidla')
+            Q(status='objednano') | Q(status='zalozena-obsluhou') | Q(status='castecne-vydano')
+        ).select_related('user').prefetch_related(
+            'items__menu_item__jidlo',
+            'items__menu_item__druh_jidla'
+        ).annotate(
+            total_items_count=Sum('items__quantity'),
+            total_price_amount=Sum(
+                F('items__quantity') * F('items__cena'),
+                output_field=DecimalField(max_digits=10, decimal_places=2),
+            ),
+        )
     
     def user_full_name(self, obj):
         """Zobraz celé jméno uživatele"""
@@ -159,89 +176,42 @@ class VydejOrderAdmin(admin.ModelAdmin):
     
     def total_items(self, obj):
         """Celkový počet položek v objednávce"""
-        return obj.items.aggregate(total=Sum('quantity'))['total'] or 0
+        return obj.total_items_count or 0
     total_items.short_description = 'Celkem ks'
     
     def total_price_display(self, obj):
         """Celková cena objednávky"""
-        total = sum(item.quantity * item.cena for item in obj.items.all())
-        return format_html('<strong>{} Kč</strong>', total)
+        return format_html('<strong>{:.2f} Kč</strong>', obj.total_price_amount or 0)
     total_price_display.short_description = 'Celková cena'
     
     def akce_vydat(self, obj):
         """Tlačítko pro výdej objednávky"""
+        label = "Dokončit výdej" if obj.status == 'castecne-vydano' else "Vydat"
         return format_html(
             '<a class="button" href="{}?order_id={}" style="background: #32B8C6; color: white; '
-            'padding: 5px 10px; text-decoration: none; border-radius: 3px;">Vydat</a>',
+            'padding: 5px 10px; text-decoration: none; border-radius: 3px;">{}</a>',
             reverse('admin:vydat_objednavku'),
-            obj.id
+            obj.id,
+            label,
         )
     akce_vydat.short_description = 'Akce'
     
     def vydat_objednavky(self, request, queryset):
         """Hromadná akce pro výdej více objednávek"""
         vydano = 0
+        chyby = 0
         for order in queryset:
-            if self._vydat_objednavku(order, request.user):
+            try:
+                issue_order_from_admin(order.id, request.user)
                 vydano += 1
-        
-        self.message_user(request, f'Vydáno {vydano} objednávek.', messages.SUCCESS)
+            except Exception:
+                chyby += 1
+
+        if vydano:
+            self.message_user(request, f'Vydáno {vydano} objednávek.', messages.SUCCESS)
+        if chyby:
+            self.message_user(request, f'{chyby} objednávek se nepodařilo vydat.', messages.WARNING)
     vydat_objednavky.short_description = "Vydat vybrané objednávky"
-    
-    def _vydat_objednavku(self, order, vydal_user):
-        """Logika pro výdej objednávky a vytvoření účtenky"""
-        # ✅ ZKONTROLUJ, JESTLI UŽ ÚČTENKA NEEXISTUJE
-        if VydejniUctenka.objects.filter(order=order).exists():
-            return False
-        
-        # Zkontroluj, jestli už není vydáno
-        if order.status == 'vydano':
-            return False
-        
-        # Vypočítej ceny a dotace
-        celkova_cena = Decimal('0')
-        celkova_dotace = Decimal('0')
-        polozky_data = []
-        
-        for item in order.items.all():
-            cena_za_kus = item.cena
-            
-            # Vypočítej dotaci
-            puvodni_cena = item.menu_item.jidlo.cena
-            dotace_za_kus = puvodni_cena - cena_za_kus
-            
-            celkova_cena += cena_za_kus * item.quantity
-            celkova_dotace += dotace_za_kus * item.quantity
-            
-            polozky_data.append({
-                'nazev_jidla': item.menu_item.jidlo.nazev,
-                'druh_jidla': item.menu_item.druh_jidla.nazev,
-                'mnozstvi': item.quantity,
-                'cena_za_kus': cena_za_kus,
-                'dotace_za_kus': dotace_za_kus,
-            })
-        
-        # Vytvoř účtenku
-        uctenka = VydejniUctenka.objects.create(
-            order=order,
-            datum_vydeje=timezone.now(),
-            vydal=vydal_user,
-            celkova_cena=celkova_cena,
-            celkova_dotace=celkova_dotace
-        )
-        
-        # Vytvoř položky účtenky
-        for polozka_data in polozky_data:
-            PolozkaUctenky.objects.create(
-                uctenka=uctenka,
-                **polozka_data
-            )
-        
-        # Změň stav objednávky
-        order.status = 'vydano-obsluhou'
-        order.save()
-        
-        return True
 
     
     def get_urls(self):
@@ -257,16 +227,13 @@ class VydejOrderAdmin(admin.ModelAdmin):
         order_id = request.GET.get('order_id')
         if order_id:
             try:
-                order = Order.objects.get(id=order_id)
-                if self._vydat_objednavku(order, request.user):
-                    messages.success(request, f'Objednávka #{order_id} byla vydána.')
-                    # Přesměruj na detail účtenky
-                    uctenka = VydejniUctenka.objects.get(order=order)
-                    return redirect('admin:vydej_vydejniuctenka_change', uctenka.id)
-                else:
-                    messages.error(request, 'Objednávka už byla vydána.')
+                result = issue_order_from_admin(order_id, request.user)
+                messages.success(request, f'Objednávka #{order_id} byla vydána.')
+                return redirect('admin:vydej_vydejniuctenka_change', result["receipt"].id)
             except Order.DoesNotExist:
                 messages.error(request, 'Objednávka nenalezena.')
+            except Exception as exc:
+                messages.error(request, str(exc))
         
         return redirect('admin:vydej_vydejorder_changelist')
     
@@ -277,6 +244,17 @@ class VydejOrderAdmin(admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         """Zakáže mazání objednávek z adminu"""
         return False
+
+    def changelist_view(self, request, extra_context=None):
+        board = build_issue_board(days_ahead=7)
+        extra = {
+            'stats_vsechny_dny': board['stats_vsechny_dny'],
+            'total_dni_s_vydejem': board['total_dni_s_vydejem'],
+            'board_total_objednavek': board['total_objednavek'],
+            'board_total_kusu': board['total_kusu'],
+        }
+        extra.update(extra_context or {})
+        return super().changelist_view(request, extra_context=extra)
 
 
 @admin.register(VydejniUctenka)
@@ -325,20 +303,8 @@ class VydejniUctenkaAdmin(admin.ModelAdmin):
     
     # ✅ HMADNÁ AKCE - Stornovat účtenky + označit objednávky jako STORNOVANÉ
     def _stornovat_ucetnku_se_objednavkou(self, uctenka, storno_user):
-        """Interní metoda - smaže účtenku a označí objednávku jako STORNOVANÁ"""
-        order = uctenka.order
-        
-        # ✅ ULOŽ STORNO INFO
-        order.storno_user = storno_user
-        order.storno_datum = timezone.now()
-        
-        # Změň stav
-        order.status = 'stornovano'
-        order.save()
-        
-        # Smaz položky a účtenku
-        uctenka.polozky.all().delete()
-        uctenka.delete()
+        """Interní metoda - stornuje účtenku a vrátí objednávku do zrušeného stavu obsluhou."""
+        cancel_receipt_and_order(uctenka.id, storno_user)
 
     def stornovat_ucetnky_se_objednavkami(self, request, queryset):
         """Hromadná akce - stornuje účtenky a označí objednávky jako STORNOVANÉ"""
@@ -445,9 +411,11 @@ class VydejniUctenkaAdmin(admin.ModelAdmin):
         try:
             uctenka = VydejniUctenka.objects.get(id=uctenka_id)
             self._stornovat_ucetnku_se_objednavkou(uctenka, request.user)
-            messages.success(request, f'✅ Účtenka #{uctenka_id} stornována. Objednávka označena jako STORNOVANÁ.')
+            messages.success(request, f'✅ Účtenka #{uctenka_id} stornována. Objednávka označena jako zrušená obsluhou.')
         except VydejniUctenka.DoesNotExist:
             messages.error(request, 'Účtenka nenalezena.')
+        except Exception as exc:
+            messages.error(request, str(exc))
         
         return redirect('admin:vydej_vydejniuctenka_changelist')
     
@@ -493,44 +461,53 @@ class PrehledProKuchyniAdmin(admin.ModelAdmin):
                 datum_vydeje = date.today()
         
         # Získej všechny objednávky pro dané datum
-        orders = Order.objects.filter(
-            datum_vydeje=datum_vydeje,
-            status__in=['objednano', 'zalozena-obsluhou']
-        ).prefetch_related('items__menu_item__jidlo', 'items__menu_item__druh_jidla')
-        
-        # Agreguj data podle druhu a jídla
-        stats = {}
-        total_objednavek = 0
-        total_porci = 0
-        
-        for order in orders:
-            total_objednavek += 1
-            for item in order.items.all():
-                druh_nazev = item.menu_item.druh_jidla.nazev
-                jidlo_nazev = item.menu_item.jidlo.nazev
-                
-                if druh_nazev not in stats:
-                    stats[druh_nazev] = {}
-                
-                if jidlo_nazev not in stats[druh_nazev]:
-                    stats[druh_nazev][jidlo_nazev] = {
-                        'celkem': 0,
-                        'uzivatele': []
+        overview = build_kitchen_overview(datum_vydeje)
+        stats = overview['stats']
+        total_objednavek = overview['total_objednavek']
+        total_porci = overview['total_porci']
+        uzavirka_info = overview['uzavirka_info']
+
+        section_summaries = []
+        top_meals = []
+        for druh, jidla in stats.items():
+            type_total = sum(data['celkem'] for data in jidla.values())
+            section_summaries.append(
+                {
+                    "nazev": druh,
+                    "pocet_jidel": len(jidla),
+                    "celkem": type_total,
+                }
+            )
+            for jidlo_nazev, data in jidla.items():
+                top_meals.append(
+                    {
+                        "druh": druh,
+                        "jidlo": jidlo_nazev,
+                        "celkem": data["celkem"],
+                        "objednavky": len(data["uzivatele"]),
                     }
-                
-                stats[druh_nazev][jidlo_nazev]['celkem'] += item.quantity
-                total_porci += item.quantity
-                
-                # Přidej uživatele
-                uzivatel_str = order.user.get_full_name() or order.user.username
-                stats[druh_nazev][jidlo_nazev]['uzivatele'].append({
-                    'jmeno': uzivatel_str,
-                    'mnozstvi': item.quantity,
-                    'order_id': order.id
-                })
-        
-        # Získej info o uzávěrce
-        uzavirka_info = self.get_uzavirka_info(datum_vydeje)
+                )
+
+        top_meals.sort(key=lambda row: (-row["celkem"], row["jidlo"]))
+        top_meals = top_meals[:5]
+        total_unique_meals = sum(section["pocet_jidel"] for section in section_summaries)
+
+        dates_with_orders = list(
+            Order.objects.filter(
+                datum_vydeje__gte=date.today(),
+                status__in=['objednano', 'zalozena-obsluhou', 'castecne-vydano'],
+            )
+            .values_list('datum_vydeje', flat=True)
+            .distinct()
+            .order_by('datum_vydeje')
+        )
+        previous_available_date = None
+        next_available_date = None
+        for available_date in dates_with_orders:
+            if available_date < datum_vydeje:
+                previous_available_date = available_date
+            elif available_date > datum_vydeje and next_available_date is None:
+                next_available_date = available_date
         
         # Export do PDF
         if request.GET.get('export') == 'pdf':
@@ -550,6 +527,11 @@ class PrehledProKuchyniAdmin(admin.ModelAdmin):
             'total_objednavek': total_objednavek,
             'total_porci': total_porci,
             'uzavirka_info': uzavirka_info,
+            'section_summaries': section_summaries,
+            'top_meals': top_meals,
+            'total_unique_meals': total_unique_meals,
+            'previous_available_date': previous_available_date.strftime('%Y-%m-%d') if previous_available_date else None,
+            'next_available_date': next_available_date.strftime('%Y-%m-%d') if next_available_date else None,
             'title': 'Přehled pro kuchyni',
             'site_title': 'Přehled pro kuchyni',
             'has_permission': True,
@@ -562,45 +544,8 @@ class PrehledProKuchyniAdmin(admin.ModelAdmin):
 
     
     def get_uzavirka_info(self, datum):
-        """Vrátí info o uzávěrce pro daný datum"""
-        from canteen_settings.models import OrderClosingTime
-        
-        try:
-            settings = OrderClosingTime.objects.first()
-            if not settings:
-                return {'uzavreno': False, 'uzavreno_text': 'Neznámá uzávěrka'}
-            
-            closing_date = datum - timedelta(days=settings.advance_days)
-            closing_datetime = timezone.datetime.combine(closing_date, settings.closing_time)
-            closing_datetime = timezone.make_aware(closing_datetime, timezone.get_current_timezone())
-            
-            now = timezone.now()
-            
-            if now >= closing_datetime:
-                return {
-                    'uzavreno': True,
-                    'uzavreno_text': 'Uzavřeno'
-                }
-            else:
-                delta = closing_datetime - now
-                celkem_sekund = int(delta.total_seconds())
-                dny = celkem_sekund // 86400
-                hodiny = (celkem_sekund % 86400) // 3600
-                minuty = (celkem_sekund % 3600) // 60
-                
-                if dny > 0:
-                    odpocet_text = f"{dny}d {hodiny}h"
-                elif hodiny > 0:
-                    odpocet_text = f"{hodiny}h {minuty}m"
-                else:
-                    odpocet_text = f"{minuty}m"
-                
-                return {
-                    'uzavreno': False,
-                    'uzavreno_text': f'Uzavře za {odpocet_text}',
-                }
-        except:
-            return {'uzavreno': False, 'uzavreno_text': 'Neznámá uzávěrka'}
+        """Vrátí info o uzávěrce pro daný datum."""
+        return get_order_closing_info(datum)
     
     def export_pdf(self, request, datum_vydeje, stats, total_objednavek, total_porci, uzavirka_info):
         """Export přehledu do PDF pro kuchyni"""
@@ -624,10 +569,16 @@ class StornovaneObjednavkyAdmin(admin.ModelAdmin):
     date_hierarchy = 'created_at'
     
     def get_queryset(self, request):
-        return self.model.objects.filter(status='stornovano').select_related(
+        return self.model.objects.filter(status__in=CANCELLED_ORDER_STATUSES).select_related(
             'user', 'storno_user'
         ).prefetch_related(
             'items__menu_item__jidlo', 'items__menu_item__druh_jidla'
+        ).annotate(
+            total_items_count=Sum('items__quantity'),
+            total_price_amount=Sum(
+                F('items__quantity') * F('items__cena'),
+                output_field=DecimalField(max_digits=10, decimal_places=2),
+            ),
         ).order_by('-created_at')
     
     def user_full_name(self, obj):
@@ -660,12 +611,11 @@ class StornovaneObjednavkyAdmin(admin.ModelAdmin):
     zobraz_polozky.short_description = 'Položky'
     
     def total_items(self, obj):
-        return obj.items.aggregate(total=Sum('quantity'))['total'] or 0
+        return obj.total_items_count or 0
     total_items.short_description = 'Ks'
     
     def total_price(self, obj):
-        total = sum(item.quantity * item.cena for item in obj.items.all())
-        formatted_total = f'{total:.2f}'  # ✅ Nejdřív naformátuj číslo
+        formatted_total = f'{(obj.total_price_amount or 0):.2f}'
         return format_html('<strong>{} Kč</strong>', formatted_total)  # ✅ Pak použij v HTML
     total_price.short_description = 'Cena'
 

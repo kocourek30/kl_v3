@@ -8,53 +8,94 @@
         margin: 20px 0;
     }
     
-    .vydej-stats {
-        background: #f8f8f8;
-        border: 1px solid #ddd;
-        padding: 15px;
-        margin-bottom: 20px;
+    .vydej-hero {
+        background: linear-gradient(135deg, #eef8ef 0%, #fff6df 100%);
+        border: 1px solid #d7e6d7;
+        border-radius: 20px;
+        padding: 22px 24px;
+        margin-bottom: 24px;
+        display: grid;
+        grid-template-columns: 1.3fr 1fr;
+        gap: 20px;
     }
-    
-    .vydej-stats h3 {
+
+    .vydej-hero h3 {
         margin-top: 0;
-        color: #333;
-        font-size: 16px;
-        font-weight: bold;
+        color: #15301d;
+        font-size: 28px;
+        font-weight: 700;
+    }
+
+    .vydej-hero p {
+        margin: 8px 0 0 0;
+        color: #4e5f54;
+        max-width: 720px;
+    }
+
+    .vydej-kpis {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+    }
+
+    .vydej-kpi {
+        background: rgba(255,255,255,0.85);
+        border: 1px solid #dce8dc;
+        border-radius: 16px;
+        padding: 14px 16px;
+    }
+
+    .vydej-kpi-label {
+        color: #6b7a6f;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .vydej-kpi-value {
+        font-size: 28px;
+        line-height: 1.1;
+        font-weight: 700;
+        color: #1d5c2e;
+        margin-top: 6px;
     }
     
     .den-sekce {
         background: white;
-        border: 1px solid #ddd;
+        border: 1px solid #dbe7db;
         margin-bottom: 20px;
-        border-radius: 3px;
+        border-radius: 18px;
         overflow: hidden;
+        box-shadow: 0 10px 30px rgba(39, 87, 46, 0.07);
     }
     
     .den-header {
-        background: #417690;
+        background: linear-gradient(135deg, #2fa74f 0%, #24823e 100%);
         color: white;
-        padding: 12px 15px;
+        padding: 14px 18px;
         display: flex;
         justify-content: space-between;
         align-items: center;
+        gap: 16px;
     }
     
     .den-header h3 {
         margin: 0;
-        font-size: 16px;
-        font-weight: bold;
+        font-size: 18px;
+        font-weight: 700;
     }
     
     .den-header-info {
         display: flex;
-        gap: 15px;
+        gap: 10px;
         font-size: 13px;
+        flex-wrap: wrap;
     }
     
     .den-badge {
-        background: rgba(255,255,255,0.2);
-        padding: 4px 10px;
-        border-radius: 3px;
+        background: rgba(255,255,255,0.18);
+        padding: 6px 12px;
+        border-radius: 999px;
     }
     
     .uzavirka-badge {
@@ -74,27 +115,31 @@
     }
     
     .den-obsah {
-        padding: 15px;
+        padding: 18px;
+        display: grid;
+        gap: 18px;
     }
     
     .jidlo-skupina {
-        margin-bottom: 20px;
+        margin-bottom: 0;
     }
     
     .jidlo-skupina h4 {
-        margin: 0 0 10px 0;
+        margin: 0 0 12px 0;
         padding-bottom: 8px;
-        border-bottom: 2px solid #79aec8;
-        color: #417690;
+        border-bottom: 2px solid #d9ebdd;
+        color: #1d5c2e;
         font-size: 14px;
-        font-weight: bold;
+        font-weight: 700;
     }
     
     .jidlo-polozka {
-        padding: 10px;
+        padding: 12px 14px;
         margin: 8px 0;
-        background: #fafafa;
-        border-left: 3px solid #79aec8;
+        background: #fafdfb;
+        border: 1px solid #e2efe4;
+        border-left: 4px solid #46ae5c;
+        border-radius: 12px;
     }
     
     .jidlo-polozka-header {
@@ -105,36 +150,53 @@
     }
     
     .jidlo-nazev {
-        font-weight: bold;
-        color: #333;
+        font-weight: 700;
+        color: #243328;
     }
     
     .jidlo-pocet {
-        background: #417690;
+        background: #24823e;
         color: white;
-        padding: 3px 10px;
-        border-radius: 3px;
+        padding: 4px 10px;
+        border-radius: 999px;
         font-size: 12px;
-        font-weight: bold;
+        font-weight: 700;
     }
     
     .uzivatel-list {
         font-size: 12px;
-        color: #666;
+        color: #536057;
         padding-left: 10px;
     }
     
     .uzivatel-list div {
-        padding: 3px 0;
-        border-left: 2px solid #e0e0e0;
+        padding: 4px 0;
+        border-left: 2px solid #d6dfd8;
         padding-left: 8px;
         margin: 2px 0;
     }
     
     .prazdny-den {
-        padding: 20px;
+        padding: 26px;
         text-align: center;
-        color: #999;
+        color: #7a867d;
+    }
+
+    .den-mini-empty {
+        color: #8e9990;
+        font-size: 13px;
+    }
+
+    @media (max-width: 1200px) {
+        .vydej-hero {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 900px) {
+        .vydej-kpis {
+            grid-template-columns: 1fr;
+        }
     }
 </style>
 {% endblock %}
@@ -142,15 +204,31 @@
 {% block content %}
 <div class="vydej-container">
     
-    <!-- Stats -->
-    <div class="vydej-stats">
-        <h3>📋 Přehled výdeje jídel</h3>
-        <p style="margin: 5px 0 0 0; color: #666;">
-            Zobrazeny dny s objednávkami od {{ "now"|date:"j.n.Y" }} na dalších 30 dní
-        </p>
+    <div class="vydej-hero">
+        <div>
+            <h3>Výdejový pult na příští dny</h3>
+            <p>
+                Rychlý přehled toho, co je potřeba vydat v nejbližších dnech. Počítají se jen
+                objednávky, které ještě nejsou kompletně vydané, takže obsluha vidí skutečně
+                rozpracovanou frontu.
+            </p>
+        </div>
+        <div class="vydej-kpis">
+            <div class="vydej-kpi">
+                <div class="vydej-kpi-label">Dny s výdejem</div>
+                <div class="vydej-kpi-value">{{ total_dni_s_vydejem }}</div>
+            </div>
+            <div class="vydej-kpi">
+                <div class="vydej-kpi-label">Objednávky</div>
+                <div class="vydej-kpi-value">{{ board_total_objednavek }}</div>
+            </div>
+            <div class="vydej-kpi">
+                <div class="vydej-kpi-label">Nevydané kusy</div>
+                <div class="vydej-kpi-value">{{ board_total_kusu }}</div>
+            </div>
+        </div>
     </div>
     
-    <!-- Jednotlivé dny -->
     {% for den in stats_vsechny_dny %}
     <div class="den-sekce">
         <div class="den-header">
@@ -194,8 +272,8 @@
                 </div>
                 {% endfor %}
             {% else %}
-                <div class="prazdny-den">
-                    Žádné objednávky
+                <div class="prazdny-den den-mini-empty">
+                    Na tento den zatím není nic k výdeji.
                 </div>
             {% endif %}
         </div>

@@ -2,387 +2,688 @@
 {% load static %}
 
 {% block extrastyle %}
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/material_green.css">
 <style>
-    .kuchyne-prehled {
-        padding: 20px;
+    .kuchyne-shell {
+        padding: 20px 0 28px;
     }
-    .kuchyne-header {
-        background: #54ae43;
-        color: white;
-        padding: 20px;
-        border-radius: 5px;
-        margin-bottom: 20px;
+
+    .kuchyne-hero {
+        background: linear-gradient(135deg, #eef8ef 0%, #fff7e7 100%);
+        border: 1px solid #d7e7d8;
+        border-radius: 24px;
+        padding: 24px 26px;
+        margin-bottom: 22px;
+        display: grid;
+        grid-template-columns: 1.4fr 1fr;
+        gap: 20px;
+        box-shadow: 0 16px 38px rgba(42, 95, 49, 0.08);
     }
-    .kuchyne-header h1 {
+
+    .kuchyne-hero h1 {
         margin: 0;
-        font-size: 24px;
-        color: white !important;
+        font-size: 2rem;
+        line-height: 1.15;
+        color: #16341d;
     }
-    .kuchyne-header h1 i {
-        color: white !important;
+
+    .kuchyne-hero p {
+        margin: 10px 0 0 0;
+        color: #5c6b60;
+        max-width: 760px;
     }
-    .kuchyne-header p {
-        color: white !important;
+
+    .kuchyne-hero-meta {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
     }
-    .filter-box {
-        background: #f5f5f5;
-        padding: 15px;
-        border-radius: 5px;
-        margin-bottom: 20px;
+
+    .hero-meta-card {
+        background: rgba(255, 255, 255, 0.88);
+        border: 1px solid #dce9de;
+        border-radius: 18px;
+        padding: 14px 16px;
     }
-    .filter-box form {
+
+    .hero-meta-label {
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #6d7b70;
+    }
+
+    .hero-meta-value {
+        margin-top: 6px;
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: #1d5f2f;
+    }
+
+    .hero-meta-note {
+        margin-top: 4px;
+        font-size: 12px;
+        color: #728076;
+    }
+
+    .toolbar-card {
+        background: #fff;
+        border: 1px solid #dbe7db;
+        border-radius: 20px;
+        padding: 18px;
+        margin-bottom: 18px;
+        box-shadow: 0 12px 26px rgba(42, 95, 49, 0.06);
+    }
+
+    .toolbar-grid {
+        display: grid;
+        grid-template-columns: 1.2fr auto;
+        gap: 16px;
+        align-items: end;
+    }
+
+    .date-form {
         display: flex;
-        gap: 10px;
-        align-items: flex-end;
+        gap: 12px;
+        align-items: end;
         flex-wrap: wrap;
     }
-    .filter-box .form-group {
+
+    .date-field {
         display: flex;
         flex-direction: column;
-        position: relative;
+        gap: 6px;
+        min-width: 220px;
     }
-    .filter-box label {
-        display: block;
-        margin-bottom: 5px;
-        font-weight: bold;
+
+    .date-field label {
+        font-weight: 700;
+        color: #2e4133;
     }
-    .filter-box input {
-        padding: 8px 35px 8px 8px;
-        border: 1px solid #ccc;
-        border-radius: 3px;
-        min-width: 150px;
-        cursor: pointer;
+
+    .date-field input {
+        min-height: 46px;
+        border-radius: 12px;
+        border: 1px solid #cfe0d0;
+        padding: 0.7rem 0.9rem;
     }
-    .filter-box .calendar-icon {
-        position: absolute;
-        right: 10px;
-        bottom: 10px;
-        color: #54ae43;
-        pointer-events: none;
-    }
-    .filter-box button, .filter-box .quick-btn {
-        background: #54ae43;
-        color: white !important;
+
+    .k-btn,
+    .k-link-btn {
+        min-height: 46px;
         border: none;
-        padding: 10px 20px;
-        border-radius: 3px;
-        cursor: pointer;
+        border-radius: 12px;
+        padding: 0.72rem 1rem;
+        font-weight: 800;
         text-decoration: none;
-        display: inline-block;
-        font-size: 14px;
-        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
     }
-    .filter-box button i, .filter-box .quick-btn i {
-        color: white !important;
+
+    .k-btn:hover,
+    .k-link-btn:hover {
+        transform: translateY(-1px);
     }
-    .filter-box button:hover, .filter-box .quick-btn:hover {
-        background: #468a37;
-        color: white !important;
+
+    .k-btn-primary {
+        background: #2fa74f;
+        color: #fff;
+        box-shadow: 0 10px 22px rgba(47, 167, 79, 0.2);
     }
-    .filter-box .quick-btn.secondary {
+
+    .k-link-btn {
+        background: #fff;
+        color: #215e2f;
+        border: 1px solid #cfe0d0;
+    }
+
+    .k-link-btn.accent {
         background: #f28c28;
-        color: white !important;
+        color: #fff;
+        border-color: #f28c28;
     }
-    .filter-box .quick-btn.secondary i {
-        color: white !important;
-    }
-    .filter-box .quick-btn.secondary:hover {
-        background: #d67820;
-        color: white !important;
-    }
-    .quick-buttons {
+
+    .quick-row,
+    .export-row {
         display: flex;
         gap: 10px;
+        flex-wrap: wrap;
     }
-    .summary-box {
-        background: #e8f5e9;
-        padding: 15px;
-        border-radius: 5px;
-        margin-bottom: 20px;
+
+    .summary-strip {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 20px;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+        margin-bottom: 18px;
     }
-    .summary-item {
+
+    .summary-card {
+        background: #fff;
+        border: 1px solid #dbe7db;
+        border-radius: 18px;
+        padding: 16px;
+        box-shadow: 0 12px 26px rgba(42, 95, 49, 0.05);
+    }
+
+    .summary-card-label {
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #6f7e73;
+    }
+
+    .summary-card-value {
+        margin-top: 8px;
+        font-size: 1.8rem;
+        font-weight: 800;
+        color: #1d5f2f;
+    }
+
+    .summary-card-note {
+        margin-top: 6px;
+        font-size: 12px;
+        color: #718075;
+    }
+
+    .overview-grid {
+        display: grid;
+        grid-template-columns: 1.6fr 1fr;
+        gap: 18px;
+        margin-bottom: 20px;
+    }
+
+    .panel-card {
+        background: #fff;
+        border: 1px solid #dbe7db;
+        border-radius: 20px;
+        padding: 18px;
+        box-shadow: 0 12px 26px rgba(42, 95, 49, 0.05);
+    }
+
+    .panel-card h3 {
+        margin: 0 0 14px 0;
+        font-size: 1.1rem;
+        color: #1f3e28;
+    }
+
+    .chip-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 12px;
+    }
+
+    .chip-card {
+        background: linear-gradient(135deg, #f7fbf7 0%, #fff 100%);
+        border: 1px solid #e4eee5;
+        border-radius: 16px;
+        padding: 14px;
+    }
+
+    .chip-title {
+        font-weight: 800;
+        color: #24442d;
+        margin-bottom: 6px;
+    }
+
+    .chip-stats {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 0.9rem;
+        color: #5f6e63;
+    }
+
+    .top-list {
+        display: grid;
+        gap: 10px;
+    }
+
+    .top-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        background: #f8fbf8;
+        border: 1px solid #e5efe5;
+        border-radius: 14px;
+        padding: 12px 14px;
+    }
+
+    .top-row strong {
+        color: #203927;
+    }
+
+    .top-row small {
+        display: block;
+        color: #738077;
+        margin-top: 2px;
+    }
+
+    .top-qty {
+        min-width: 72px;
         text-align: center;
+        border-radius: 999px;
+        background: #2fa74f;
+        color: #fff;
+        padding: 0.45rem 0.75rem;
+        font-weight: 800;
     }
-    .summary-item h3 {
-        margin: 0 0 10px 0;
-        color: #666;
-        font-size: 14px;
+
+    .meal-section {
+        margin-bottom: 22px;
+        background: #fff;
+        border: 1px solid #dbe7db;
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0 12px 26px rgba(42, 95, 49, 0.05);
     }
-    .summary-item .value {
-        font-size: 28px;
-        font-weight: bold;
-        color: #54ae43;
+
+    .meal-section-header {
+        background: linear-gradient(135deg, #2fa74f 0%, #24823e 100%);
+        color: #fff;
+        padding: 16px 18px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
     }
-    .jidlo-table {
+
+    .meal-section-header h2 {
+        margin: 0;
+        font-size: 1.1rem;
+        color: #fff;
+    }
+
+    .meal-header-stats {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .meal-stat {
+        background: rgba(255, 255, 255, 0.18);
+        border-radius: 999px;
+        padding: 0.42rem 0.75rem;
+        font-size: 0.86rem;
+        font-weight: 700;
+    }
+
+    .meal-table-wrap {
+        overflow-x: auto;
+    }
+
+    .meal-table {
         width: 100%;
         border-collapse: collapse;
-        margin-bottom: 30px;
-        background: white;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        table-layout: fixed;
+        min-width: 760px;
     }
-    .jidlo-table thead {
-        background: #54ae43;
-        color: white;
+
+    .meal-table th,
+    .meal-table td {
+        padding: 14px 16px;
+        border-bottom: 1px solid #e7eee7;
+        vertical-align: top;
     }
-    .jidlo-table thead th {
-        color: white !important;
+
+    .meal-table thead th {
+        background: #f7fbf7;
+        color: #33523b;
+        font-size: 0.84rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        font-weight: 800;
     }
-    .jidlo-table thead th i {
-        color: white !important;
+
+    .meal-table tbody tr:hover {
+        background: #fbfefb;
     }
-    .jidlo-table th, .jidlo-table td {
-        padding: 12px;
-        text-align: left;
-        border-bottom: 1px solid #ddd;
-        vertical-align: middle;
+
+    .meal-name {
+        font-weight: 800;
+        color: #1f3425;
     }
-    .jidlo-table th {
-        font-weight: bold;
+
+    .meal-submeta {
+        margin-top: 4px;
+        color: #7a867e;
+        font-size: 0.86rem;
     }
-    .jidlo-table th:nth-child(1) {
-        width: 40%;
+
+    .qty-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 72px;
+        border-radius: 999px;
+        background: #f0f8f1;
+        color: #1e7134;
+        border: 1px solid #d8e8da;
+        padding: 0.45rem 0.75rem;
+        font-weight: 800;
+        font-size: 1rem;
     }
-    .jidlo-table th:nth-child(2) {
-        width: 20%;
+
+    .people-list {
+        display: grid;
+        gap: 8px;
+    }
+
+    .people-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 12px;
+        background: #f8fbf8;
+        border: 1px solid #e5efe5;
+        border-radius: 12px;
+    }
+
+    .people-row strong {
+        color: #22372a;
+    }
+
+    .people-row small {
+        display: block;
+        color: #7c887f;
+        margin-top: 2px;
+    }
+
+    .people-qty {
+        font-weight: 800;
+        color: #1f7134;
+        white-space: nowrap;
+    }
+
+    .empty-state {
         text-align: center;
+        padding: 56px 24px;
+        color: #7d897f;
+        background: #fff;
+        border: 1px dashed #d6e4d8;
+        border-radius: 20px;
     }
-    .jidlo-table th:nth-child(3) {
-        width: 40%;
+
+    @media (max-width: 1200px) {
+        .kuchyne-hero,
+        .overview-grid,
+        .toolbar-grid,
+        .summary-strip {
+            grid-template-columns: 1fr;
+        }
     }
-    .jidlo-table td:nth-child(2) {
-        text-align: center;
+
+    @media (max-width: 767.98px) {
+        .kuchyne-shell {
+            padding-top: 12px;
+        }
+
+        .kuchyne-hero,
+        .toolbar-card,
+        .panel-card,
+        .meal-section {
+            border-radius: 16px;
+        }
+
+        .kuchyne-hero {
+            padding: 18px;
+        }
+
+        .kuchyne-hero h1 {
+            font-size: 1.55rem;
+        }
+
+        .hero-meta-value,
+        .summary-card-value {
+            font-size: 1.35rem;
+        }
+
+        .meal-section-header {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .quick-row,
+        .export-row,
+        .date-form {
+            flex-direction: column;
+        }
+
+        .date-field,
+        .k-btn,
+        .k-link-btn {
+            width: 100%;
+        }
     }
-    .jidlo-table tbody tr:hover {
-        background: #f9f9f9;
-    }
-    .druh-section {
-        margin-bottom: 40px;
-    }
-    .druh-header {
-        background: #54ae43;
-        color: white;
-        padding: 15px;
-        border-radius: 5px 5px 0 0;
-        margin-bottom: 0;
-    }
-    .druh-header h2 {
-        margin: 0;
-        color: white;
-        font-size: 18px;
-    }
-    .druh-header h2 i {
-        color: white;
-    }
-    .export-buttons {
-        margin-bottom: 20px;
-    }
-    .export-buttons a {
-        display: inline-block;
-        padding: 10px 20px;
-        background: #f28c28;
-        color: white !important;
-        text-decoration: none;
-        border-radius: 3px;
-        margin-right: 10px;
-        font-weight: 500;
-    }
-    .export-buttons a i {
-        color: white !important;
-    }
-    .export-buttons a:hover {
-        background: #d67820;
-        color: white !important;
-    }
-    .no-data {
-        text-align: center;
-        padding: 40px;
-        color: #999;
-        font-size: 18px;
-    }
-    details summary {
-        cursor: pointer;
-        color: #54ae43;
-        font-weight: 500;
-    }
-    details[open] summary i {
-        transform: rotate(180deg);
-        transition: transform 0.2s;
-    }
-    
-    /* Flatpickr custom styling */
-    .flatpickr-day.selected, .flatpickr-day.startRange, .flatpickr-day.endRange {
-        background: #54ae43 !important;
-        border-color: #54ae43 !important;
-    }
-    .flatpickr-day.today {
-        border-color: #f28c28 !important;
-    }
-    .flatpickr-day:hover {
-        background: #e8f5e9 !important;
-    }
-    
+
     @media print {
-        .filter-box, .export-buttons, #header, .breadcrumbs {
+        .toolbar-card,
+        #header,
+        .breadcrumbs,
+        .summary-strip,
+        .overview-grid {
             display: none !important;
+        }
+
+        .meal-section,
+        .meal-section-header,
+        .meal-table thead th {
+            box-shadow: none !important;
         }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="kuchyne-prehled col-12">
-    <div class="kuchyne-header">
-        <h1><i class="fas fa-clipboard-list"></i> Přehled objednaných jídel pro kuchyni</h1>
-        <p style="margin: 5px 0 0 0;">Datum: <strong>{{ datum_vydeje|date:"d.m.Y (l)" }}</strong></p>
+<div class="kuchyne-shell col-12">
+    <div class="kuchyne-hero">
+        <div>
+            <h1><i class="fas fa-clipboard-list me-2"></i>Přehled objednaných jídel pro kuchyni</h1>
+            <p>
+                Výrobní pohled pro konkrétní den výdeje. Vidíš jen to, co je opravdu potřeba
+                připravit nebo ještě dovydat, včetně rozpisu po strávnících.
+            </p>
+        </div>
+        <div class="kuchyne-hero-meta">
+            <div class="hero-meta-card">
+                <div class="hero-meta-label">Datum výdeje</div>
+                <div class="hero-meta-value">{{ datum_vydeje|date:"d.m.Y" }}</div>
+                <div class="hero-meta-note">{{ datum_vydeje|date:"l" }}</div>
+            </div>
+            <div class="hero-meta-card">
+                <div class="hero-meta-label">Uzávěrka</div>
+                <div class="hero-meta-value" style="font-size: 1.15rem;">{{ uzavirka_info.uzavreno_text }}</div>
+                <div class="hero-meta-note">Stav pro tento den výdeje</div>
+            </div>
+            <div class="hero-meta-card">
+                <div class="hero-meta-label">Objednávky</div>
+                <div class="hero-meta-value">{{ total_objednavek }}</div>
+                <div class="hero-meta-note">Včetně rozpracovaných dovýdejů</div>
+            </div>
+            <div class="hero-meta-card">
+                <div class="hero-meta-label">Nevydané porce</div>
+                <div class="hero-meta-value">{{ total_porci }}</div>
+                <div class="hero-meta-note">Skutečný objem práce pro kuchyni</div>
+            </div>
+        </div>
     </div>
 
-    <div class="filter-box">
-        <form method="get" id="dateForm">
-            <div class="form-group">
-                <label for="datum"><i class="fas fa-calendar"></i> Datum výdeje:</label>
-                <input type="text" name="datum" id="datum" value="{{ datum_vydeje|date:'d.m.Y' }}" required placeholder="dd.mm.rrrr">
-                <i class="fas fa-calendar-alt calendar-icon"></i>
-            </div>
+    <div class="toolbar-card">
+        <div class="toolbar-grid">
             <div>
-                <button type="submit"><i class="fas fa-search"></i> Zobrazit</button>
+                <form method="get" class="date-form" id="dateForm">
+                    <div class="date-field">
+                        <label for="datum"><i class="fas fa-calendar me-1"></i>Vyber den výdeje</label>
+                        <input type="date" name="datum" id="datum" value="{{ datum_str }}" required>
+                    </div>
+                    <button type="submit" class="k-btn k-btn-primary">
+                        <i class="fas fa-search"></i>
+                        Zobrazit přehled
+                    </button>
+                </form>
+                <div class="quick-row" style="margin-top: 12px;">
+                    <a href="?datum={{ today }}" class="k-link-btn">
+                        <i class="fas fa-calendar-day"></i>
+                        Dnes
+                    </a>
+                    <a href="?datum={{ tomorrow }}" class="k-link-btn accent">
+                        <i class="fas fa-calendar-plus"></i>
+                        Zítra
+                    </a>
+                    {% if previous_available_date %}
+                    <a href="?datum={{ previous_available_date }}" class="k-link-btn">
+                        <i class="fas fa-arrow-left"></i>
+                        Předchozí den s objednávkami
+                    </a>
+                    {% endif %}
+                    {% if next_available_date %}
+                    <a href="?datum={{ next_available_date }}" class="k-link-btn">
+                        Další den s objednávkami
+                        <i class="fas fa-arrow-right"></i>
+                    </a>
+                    {% endif %}
+                </div>
             </div>
-        </form>
-        
-        <div class="quick-buttons">
-            <a href="?datum={{ today }}" class="quick-btn"><i class="fas fa-calendar-day"></i> Dnes</a>
-            <a href="?datum={{ tomorrow }}" class="quick-btn secondary"><i class="fas fa-calendar-plus"></i> Zítra</a>
+
+            <div>
+                <div class="export-row">
+                    <a href="?datum={{ datum_str }}&export=pdf" target="_blank" class="k-link-btn">
+                        <i class="fas fa-file-pdf"></i>
+                        Stáhnout PDF
+                    </a>
+                    <a href="javascript:window.print()" class="k-link-btn">
+                        <i class="fas fa-print"></i>
+                        Tisknout
+                    </a>
+                </div>
+            </div>
         </div>
     </div>
 
     {% if stats %}
-    <div class="summary-box">
-        <div class="summary-item">
-            <h3><i class="fas fa-shopping-cart"></i> Celkem objednávek</h3>
-            <div class="value">{{ total_objednavek }}</div>
+    <div class="summary-strip">
+        <div class="summary-card">
+            <div class="summary-card-label">Druhy jídel</div>
+            <div class="summary-card-value">{{ section_summaries|length }}</div>
+            <div class="summary-card-note">Kolik slotů je dnes potřeba řešit</div>
         </div>
-        <div class="summary-item">
-            <h3><i class="fas fa-utensils"></i> Celkem porcí</h3>
-            <div class="value">{{ total_porci }}</div>
+        <div class="summary-card">
+            <div class="summary-card-label">Samostatná jídla</div>
+            <div class="summary-card-value">{{ total_unique_meals }}</div>
+            <div class="summary-card-note">Rozsah dnešního menu</div>
         </div>
-        <div class="summary-item">
-            <h3><i class="fas fa-clock"></i> Uzávěrka</h3>
-            <div class="value" style="font-size: 18px;">{{ uzavirka_info.uzavreno_text }}</div>
+        <div class="summary-card">
+            <div class="summary-card-label">Nejsilnější jídlo</div>
+            <div class="summary-card-value" style="font-size: 1.2rem;">
+                {% if top_meals %}{{ top_meals.0.celkem }} ks{% else %}-{% endif %}
+            </div>
+            <div class="summary-card-note">
+                {% if top_meals %}{{ top_meals.0.jidlo }}{% else %}Bez dat{% endif %}
+            </div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-card-label">Stav dne</div>
+            <div class="summary-card-value" style="font-size: 1.2rem;">
+                {% if total_porci > 120 %}Silný provoz{% elif total_porci > 0 %}Standardní provoz{% else %}Bez výdeje{% endif %}
+            </div>
+            <div class="summary-card-note">Rychlá orientace pro kuchyň</div>
         </div>
     </div>
 
-    <div class="export-buttons">
-        <a href="?datum={{ datum_str }}&export=pdf" target="_blank"><i class="fas fa-file-pdf"></i> Stáhnout PDF</a>
-        <a href="javascript:window.print()"><i class="fas fa-print"></i> Tisknout</a>
+    <div class="overview-grid">
+        <div class="panel-card">
+            <h3><i class="fas fa-layer-group me-2"></i>Souhrn podle druhu jídla</h3>
+            <div class="chip-grid">
+                {% for section in section_summaries %}
+                <div class="chip-card">
+                    <div class="chip-title">{{ section.nazev }}</div>
+                    <div class="chip-stats">
+                        <span>{{ section.pocet_jidel }} jídel</span>
+                        <strong>{{ section.celkem }} ks</strong>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="panel-card">
+            <h3><i class="fas fa-fire me-2"></i>Nejsilnější položky dne</h3>
+            <div class="top-list">
+                {% for row in top_meals %}
+                <div class="top-row">
+                    <div>
+                        <strong>{{ row.jidlo }}</strong>
+                        <small>{{ row.druh }} • {{ row.objednavky }} objednávek</small>
+                    </div>
+                    <div class="top-qty">{{ row.celkem }} ks</div>
+                </div>
+                {% empty %}
+                <div class="top-row">
+                    <div><strong>Žádná data</strong><small>Na tento den není co vařit.</small></div>
+                    <div class="top-qty">0 ks</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
     </div>
 
     {% for druh, jidla in stats.items %}
-    <div class="druh-section">
-        <div class="druh-header">
-            <h2><i class="fas fa-bowl-food"></i> {{ druh }}</h2>
+    <section class="meal-section">
+        <div class="meal-section-header">
+            <h2><i class="fas fa-bowl-food me-2"></i>{{ druh }}</h2>
+            <div class="meal-header-stats">
+                <span class="meal-stat">{{ jidla|length }} jídel</span>
+                <span class="meal-stat">
+                    {% for section in section_summaries %}{% if section.nazev == druh %}{{ section.celkem }} ks{% endif %}{% endfor %}
+                </span>
+            </div>
         </div>
-        <table class="jidlo-table">
-            <thead>
-                <tr>
-                    <th><i class="fas fa-hamburger"></i> Jídlo</th>
-                    <th><i class="fas fa-hashtag"></i> Celkem porcí</th>
-                    <th><i class="fas fa-users"></i> Detail objednávek</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for jidlo_nazev, data in jidla.items %}
-                <tr>
-                    <td><strong>{{ jidlo_nazev }}</strong></td>
-                    <td style="font-size: 18px; font-weight: bold;">{{ data.celkem }}</td>
-                    <td>
-                        <details>
-                            <summary>
-                                <i class="fas fa-chevron-down"></i> Zobrazit {{ data.uzivatele|length }} objednávek
-                            </summary>
-                            <ul style="margin: 10px 0; padding-left: 20px;">
+        <div class="meal-table-wrap">
+            <table class="meal-table">
+                <thead>
+                    <tr>
+                        <th>Jídlo</th>
+                        <th>Porce</th>
+                        <th>Rozpis strávníků</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for jidlo_nazev, data in jidla.items %}
+                    <tr>
+                        <td>
+                            <div class="meal-name">{{ jidlo_nazev }}</div>
+                            <div class="meal-submeta">{{ data.uzivatele|length }} objednávek</div>
+                        </td>
+                        <td><span class="qty-badge">{{ data.celkem }} ks</span></td>
+                        <td>
+                            <div class="people-list">
                                 {% for uzivatel in data.uzivatele %}
-                                <li><i class="fas fa-user"></i> {{ uzivatel.jmeno }} - {{ uzivatel.mnozstvi }}× (Obj. #{{ uzivatel.order_id }})</li>
+                                <div class="people-row">
+                                    <div>
+                                        <strong>{{ uzivatel.jmeno }}</strong>
+                                        <small>Objednávka #{{ uzivatel.order_id }}</small>
+                                    </div>
+                                    <div class="people-qty">{{ uzivatel.mnozstvi }}×</div>
+                                </div>
                                 {% endfor %}
-                            </ul>
-                        </details>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
     {% endfor %}
 
     {% else %}
-    <div class="no-data">
-        <p><i class="fas fa-inbox"></i> Na vybrané datum nejsou žádné objednávky.</p>
+    <div class="empty-state">
+        <p><i class="fas fa-inbox me-2"></i>Na vybraný den nejsou žádné objednávky k přípravě.</p>
     </div>
     {% endif %}
 </div>
-
-<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/cs.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const datumInput = document.getElementById('datum');
-    const form = document.getElementById('dateForm');
-    let selectedIsoDate = null;
-    
-    // Inicializuj Flatpickr kalendář
-    flatpickr(datumInput, {
-        dateFormat: "d.m.Y",
-        locale: "cs",
-        allowInput: false,
-        disableMobile: true,
-        onChange: function(selectedDates, dateStr, instance) {
-            // Ulož vybrané datum v ISO formátu
-            if (selectedDates.length > 0) {
-                const date = selectedDates[0];
-                const year = date.getFullYear();
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const day = String(date.getDate()).padStart(2, '0');
-                selectedIsoDate = `${year}-${month}-${day}`;
-            }
-        },
-        onClose: function(selectedDates, dateStr, instance) {
-            // Automaticky odešli formulář po zavření kalendáře (po výběru)
-            if (selectedIsoDate) {
-                // Nastav ISO datum a odešli
-                datumInput.value = selectedIsoDate;
-                form.submit();
-            }
-        }
-    });
-    
-    // Odeslání formuláře tlačítkem
-    form.addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        // Pokud už máme ISO datum z kalendáře, použij ho
-        if (selectedIsoDate) {
-            datumInput.value = selectedIsoDate;
-            form.submit();
-            return;
-        }
-        
-        // Jinak parsuj ruční vstup (pokud je povolen)
-        const czDate = datumInput.value;
-        const parts = czDate.split('.');
-        if (parts.length === 3) {
-            const day = parts[0].padStart(2, '0');
-            const month = parts[1].padStart(2, '0');
-            const year = parts[2];
-            const isoDate = `${year}-${month}-${day}`;
-            datumInput.value = isoDate;
-            form.submit();
-        }
-    });
-});
-</script>
 {% endblock %}

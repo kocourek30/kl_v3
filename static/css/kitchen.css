@@ -6,7 +6,7 @@
 
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%);
+    background: radial-gradient(circle at top left, #ffe4ba 0%, #ffb347 28%, #f57c00 100%);
     min-height: 100vh;
     padding: 1rem;
 }
@@ -17,6 +17,7 @@ body {
     grid-template-columns: 3fr 1fr;
     gap: 1.5rem;
     height: calc(100vh - 40px);
+    align-items: stretch;
 }
 
 /* ========== LEVÝ PANEL ========== */
@@ -24,7 +25,7 @@ body {
     background: white;
     border-radius: 16px;
     overflow: hidden;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    box-shadow: 0 12px 32px rgba(0,0,0,0.12);
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -53,6 +54,7 @@ body {
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
+    min-height: 72px;
 }
 
 .tab-button:hover {
@@ -90,6 +92,7 @@ body {
     flex: 1;
     overflow-y: auto;
     min-height: 0;
+    overscroll-behavior: contain;
 }
 
 .tab-pane {
@@ -647,4 +650,112 @@ body {
     padding: 0.5rem;
     background: #f8f9fa;
     border-radius: 6px;
+}
+
+/* ========== DODATEČNÉ UX A MOBILNÍ LADĚNÍ ========== */
+.customer-card,
+.info-box,
+.recent-orders,
+.summary-item {
+    min-width: 0;
+}
+
+.customer-items-list,
+.recent-list {
+    overflow: hidden;
+}
+
+@media (max-width: 768px) {
+    .main-container {
+        gap: 1rem;
+    }
+
+    .left-panel,
+    .info-box,
+    .recent-orders {
+        border-radius: 14px;
+    }
+
+    .custom-tabs {
+        flex-direction: column;
+    }
+
+    .tab-button {
+        justify-content: space-between;
+        min-height: 0;
+    }
+
+    .summary-grid {
+        grid-auto-flow: row;
+        grid-auto-columns: 1fr;
+        height: auto;
+    }
+
+    .summary-item {
+        min-height: 72px;
+    }
+
+    .summary-item-name {
+        white-space: normal;
+        overflow: visible;
+        text-overflow: initial;
+    }
+
+    .customer-header,
+    .recent-order-header,
+    .rfid-user-header,
+    .rfid-order-meta {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+
+    .btn-issue-order,
+    .rfid-issue-icon-btn,
+    .btn-rfid-cancel-small,
+    .btn-rfid-cancel,
+    .btn-rfid-issue {
+        width: 100%;
+    }
+
+    .rfid-waiting-container {
+        min-height: 280px;
+        padding: 1.5rem 1rem;
+    }
+
+    .rfid-card-icon {
+        font-size: 4rem;
+    }
+
+    .rfid-waiting-title {
+        font-size: 1.45rem;
+        text-align: center;
+    }
+
+    .rfid-waiting-subtitle {
+        text-align: center;
+        font-size: 1rem;
+    }
+
+    .rfid-success-container,
+    .rfid-order-card {
+        padding: 1rem;
+    }
+
+    .rfid-user-name {
+        font-size: 1.4rem;
+        flex-wrap: wrap;
+    }
+
+    .order-item {
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+    }
+
+    .item-type {
+        display: block;
+        width: 100%;
+        margin-top: 0.15rem;
+    }
 }

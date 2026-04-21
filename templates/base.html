@@ -16,7 +16,6 @@
       referrerpolicy="no-referrer"
     />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
-    {% load static %}
 
 <link rel="stylesheet" href="{% static 'vendor/baguettebox.min.css' %}">
 <script src="{% static 'vendor/baguettebox.min.js' %}"></script>
@@ -29,16 +28,46 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-  baguetteBox.run('.menu-item-card', {
-    captions: function(element) {
-      return element.getAttribute('data-caption') || '';
-    }
-  });
+  if (document.querySelector('.menu-item-card')) {
+    baguetteBox.run('.menu-item-card', {
+      captions: function(element) {
+        return element.getAttribute('data-caption') || '';
+      }
+    });
+  }
 });
 </script>
 
 
     <style>
+        html {
+            scroll-behavior: smooth;
+        }
+
+        .skip-link {
+            position: absolute;
+            left: 1rem;
+            top: -3rem;
+            background: #0f4c22;
+            color: #fff;
+            padding: 0.65rem 0.9rem;
+            border-radius: 0.75rem;
+            z-index: 2000;
+            text-decoration: none;
+            font-weight: 700;
+            transition: top 0.2s ease;
+        }
+
+        .skip-link:focus {
+            top: 1rem;
+            color: #fff;
+        }
+
+        .app-brand-logo {
+            height: 50px;
+            max-width: 160px;
+        }
+
         /* Sticky footer layout přes flexbox */
         html, body {
             height: 100%;
@@ -48,7 +77,8 @@ document.addEventListener('DOMContentLoaded', function() {
             display: flex;
             flex-direction: column;
             min-height: 100vh;
-            background-color: #f5f7fa;
+            background:
+                radial-gradient(circle at top left, rgba(255,255,255,0.95), rgba(255,255,255,0.88) 28%, rgba(245,247,250,0.96) 100%);
         }
 
         main {
@@ -74,6 +104,10 @@ document.addEventListener('DOMContentLoaded', function() {
             min-height: 76px;
             padding-block: 0.6rem;
             border-bottom: 4px solid #f28f28;
+            position: sticky;
+            top: 0;
+            z-index: 1030;
+            backdrop-filter: blur(10px);
         }
 
         .app-navbar .navbar-brand {
@@ -107,12 +141,13 @@ document.addEventListener('DOMContentLoaded', function() {
         .app-nav-btn,
         .app-nav-balance,
         .app-nav-user {
-            height: 42px;
-            border-radius: 8px;
+            min-height: 46px;
+            border-radius: 12px;
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 0.45rem;
-            padding: 0.48rem 0.72rem;
+            padding: 0.55rem 0.9rem;
             font-weight: 800;
             line-height: 1;
             white-space: nowrap;
@@ -180,6 +215,7 @@ document.addEventListener('DOMContentLoaded', function() {
             color: #145f2f;
             background: #fff;
             border: 1px solid rgba(255,255,255,0.9);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.08);
         }
 
         .app-nav-balance-label {
@@ -190,27 +226,36 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         .app-nav-logout {
-            height: 42px;
-            border-radius: 8px;
+            min-height: 46px;
+            border-radius: 12px;
             font-weight: 800;
-            padding-inline: 0.8rem;
+            padding-inline: 1rem;
         }
 
         @media (max-width: 991.98px) {
+            .app-brand-logo {
+                height: 42px;
+                max-width: 128px;
+            }
+
             .app-navbar .navbar-collapse {
                 padding-top: 0.75rem;
             }
 
-            .app-nav-shell,
+            .app-nav-shell {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 0.75rem;
+            }
+
             .app-nav-left,
             .app-nav-right {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 0.6rem;
                 align-items: stretch;
                 justify-content: flex-start;
                 width: 100%;
-            }
-
-            .app-nav-shell {
-                flex-direction: column;
             }
 
             .app-nav-btn,
@@ -219,6 +264,40 @@ document.addEventListener('DOMContentLoaded', function() {
             .app-nav-logout {
                 width: 100%;
                 justify-content: center;
+            }
+
+            .app-nav-user,
+            .app-nav-balance,
+            .app-nav-logout,
+            .app-nav-right form {
+                grid-column: 1 / -1;
+            }
+
+            .app-nav-right form {
+                margin: 0;
+            }
+        }
+
+        @media (max-width: 575.98px) {
+            .app-navbar {
+                min-height: 70px;
+                padding-block: 0.45rem;
+            }
+
+            .app-navbar .container-fluid {
+                padding-inline: 0.75rem;
+            }
+
+            .app-nav-left {
+                grid-template-columns: 1fr;
+            }
+
+            .app-nav-btn,
+            .app-nav-balance,
+            .app-nav-user,
+            .app-nav-logout {
+                min-height: 46px;
+                font-size: 0.95rem;
             }
         }
 
@@ -250,6 +329,13 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        @media (max-width: 767.98px) {
+            .main-wrapper {
+                padding-inline: 0.75rem;
+                padding-bottom: 1.5rem;
+            }
+        }
+
         footer .vr {
             opacity: 0.5;
         }
@@ -268,12 +354,13 @@ document.addEventListener('DOMContentLoaded', function() {
     {% block head %}{% endblock %}
 </head>
 <body>
+    <a href="#main-content" class="skip-link">Přeskočit na obsah</a>
     <!-- NAVBAR - ZELENÁ (#54ae43) -->
     <nav class="navbar navbar-expand-lg navbar-dark header-green app-navbar mb-4">
         <div class="container-fluid">
             <a class="navbar-brand d-flex align-items-center" href="{% url 'jidelnicek:dashboard' %}">
               <img src="{% static 'images/logo-white.png' %}" alt="Logo jídelna"
-                   style="height:50px;max-width:160px;" class="me-2">
+                   class="me-2 app-brand-logo">
             </a>
 
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
@@ -291,11 +378,13 @@ document.addEventListener('DOMContentLoaded', function() {
                             <i class="fas fa-utensils"></i>
                             <span>Jídelníček</span>
                         </a>
+                        {% if frontend_ankety_enabled %}
                         <a href="{% url 'ankety:moje_ankety' %}"
                            class="app-nav-btn app-nav-btn-rating {% if request.resolver_match.app_name == 'ankety' %}active{% endif %}">
                             <i class="fas fa-star"></i>
                             <span>Hodnocení jídel</span>
                         </a>
+                        {% endif %}
                     </div>
 
                     <div class="app-nav-right">
@@ -326,7 +415,7 @@ document.addEventListener('DOMContentLoaded', function() {
     </nav>
 
     <!-- HLAVNÍ OBSAH -->
-    <main class="container-fluid main-wrapper">
+    <main class="container-fluid main-wrapper" id="main-content">
         {% block content %}{% endblock %}
     </main>
 
@@ -353,7 +442,7 @@ document.addEventListener('DOMContentLoaded', function() {
 .footer-box {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 16px;
+  border-radius: 20px;
   padding: 1.5rem;
   height: 100%;
 }
@@ -362,11 +451,12 @@ document.addEventListener('DOMContentLoaded', function() {
 .contact-panel {
   position: relative;
   background: rgba(255, 255, 255, 0.15);
-  border-radius: 12px;
-  padding: 2rem 2rem 2rem 220px; /* Prostor pro široké logo */
+  border-radius: 18px;
+  padding: 2rem 2rem 2rem 220px;
   margin-bottom: 0;
   overflow: visible;
   height: 100%;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
 }
 
 /* Logo - širší pro lepší vzhled */
@@ -441,16 +531,17 @@ document.addEventListener('DOMContentLoaded', function() {
 .pickup-list-mini {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .pickup-item-mini {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
   font-size: 0.9rem;
 }
 
@@ -483,6 +574,100 @@ document.addEventListener('DOMContentLoaded', function() {
 
 .site-link:hover {
   color: #fff !important;
+}
+
+@media (max-width: 991.98px) {
+  .contact-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.35rem;
+    min-height: auto;
+    text-align: center;
+  }
+
+  .logo-overflow {
+    position: static;
+    transform: none;
+    width: 120px;
+    height: 120px;
+    margin: 0 auto 1rem auto;
+  }
+
+  .panel-content {
+    gap: 1rem;
+    width: 100%;
+  }
+
+  .contact-row {
+    gap: 0.85rem;
+    flex-direction: column;
+  }
+
+  .contact-item {
+    min-width: 0;
+    width: 100%;
+    justify-content: flex-start;
+    padding: 0.8rem 0.95rem;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+}
+
+@media (max-width: 767.98px) {
+  .footer-green {
+    margin-top: 1.5rem;
+  }
+
+  .footer-box {
+    padding: 0.9rem;
+  }
+
+  .contact-panel {
+    border-radius: 16px;
+    padding: 1rem;
+  }
+
+  .panel-header h4 {
+    font-size: 1.35rem;
+  }
+
+  .panel-header p,
+  .panel-header .site-link {
+    font-size: 0.9rem;
+  }
+
+  .contact-item .small {
+    text-align: left;
+  }
+
+  .pickup-item-mini {
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.85rem 0.9rem;
+  }
+
+  .pickup-time-mini {
+    white-space: nowrap;
+    margin-left: auto;
+  }
+
+  .pickup-info {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .pickup-info span {
+    word-break: break-word;
+  }
+
+  footer .text-center.mt-4 {
+    margin-top: 1rem !important;
+    padding-top: 1rem !important;
+    font-size: 0.8rem;
+  }
 }
 </style>
 
