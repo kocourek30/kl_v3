@@ -172,6 +172,94 @@
     align-items: start;
 }
 
+.admin-footer-stack {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 1rem;
+    flex-wrap: wrap;
+    max-width: 780px;
+}
+
+.admin-license-footer {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .6rem;
+    flex-wrap: wrap;
+    max-width: 620px;
+}
+
+.admin-license-footer__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .3rem .7rem;
+    border-radius: 999px;
+    font-size: .78rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.admin-license-footer__badge--success {
+    color: #1b6d32;
+    background: #e8f6ea;
+    border: 1px solid #bfe1c3;
+}
+
+.admin-license-footer__badge--warning {
+    color: #8c5d08;
+    background: #fff3df;
+    border: 1px solid #f0d49f;
+}
+
+.admin-license-footer__badge--danger {
+    color: #9f2d2d;
+    background: #ffe9e9;
+    border: 1px solid #f3bcbc;
+}
+
+.admin-license-footer__badge--neutral {
+    color: #49606d;
+    background: #eef3f7;
+    border: 1px solid #d4e0e8;
+}
+
+.admin-license-footer__text,
+.admin-license-footer__meta {
+    color: #5e6d76;
+    font-size: .82rem;
+    line-height: 1.35;
+}
+
+.admin-license-footer__meta {
+    white-space: nowrap;
+}
+
+.admin-license-alert {
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    margin: 1rem 0 0;
+    padding: .85rem 1rem;
+    border-radius: 1rem;
+    font-weight: 600;
+    box-shadow: var(--admin-shadow-soft);
+}
+
+.admin-license-alert--warning {
+    color: #8c5d08;
+    background: #fff4df;
+    border: 1px solid #f0d49f;
+}
+
+.admin-license-alert--danger {
+    color: #922c2c;
+    background: #ffe9e9;
+    border: 1px solid #f1b9b9;
+}
+
 .admin-card,
 .admin-panel {
     background: var(--admin-surface);
@@ -1880,11 +1968,105 @@
     color: #1f7a28;
 }
 
+.admin-license-sidebar-widget {
+    margin: auto .75rem .85rem;
+    padding: .72rem .8rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(34, 40, 46, .94);
+    box-shadow: 0 18px 40px rgba(12, 20, 28, .28);
+    color: #f2f6f7;
+}
+
+.admin-license-sidebar-widget__label {
+    margin-bottom: .42rem;
+    font-size: .68rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: rgba(242, 246, 247, .56);
+}
+
+.admin-license-sidebar-widget__status {
+    margin-bottom: .42rem;
+}
+
+.admin-license-sidebar-widget__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .26rem .62rem;
+    border-radius: 999px;
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .02em;
+    background: rgba(255,255,255,.08);
+}
+
+.admin-license-sidebar-widget__body {
+    display: grid;
+    gap: .18rem;
+    font-size: .76rem;
+    line-height: 1.3;
+}
+
+.admin-license-sidebar-widget__body strong {
+    color: #ffffff;
+    font-size: .8rem;
+    font-weight: 700;
+}
+
+.admin-license-sidebar-widget__body span {
+    color: rgba(242, 246, 247, .78);
+}
+
+.admin-license-sidebar-widget--success .admin-license-sidebar-widget__badge {
+    color: #1b6d32;
+    background: #e8f6ea;
+}
+
+.admin-license-sidebar-widget--warning .admin-license-sidebar-widget__badge {
+    color: #8c5d08;
+    background: #fff3df;
+}
+
+.admin-license-sidebar-widget--danger .admin-license-sidebar-widget__badge {
+    color: #9f2d2d;
+    background: #ffe9e9;
+}
+
+.admin-license-sidebar-widget--neutral .admin-license-sidebar-widget__badge {
+    color: #49606d;
+    background: #eef3f7;
+}
+
+#jazzy-sidebar .sidebar {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 57px);
+}
+
+#jazzy-sidebar .sidebar > nav.mt-2 {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
 @media (max-width: 1100px) {
     .prepocty-panels,
     .prepocty-toolbar {
         grid-template-columns: 1fr;
     }
+}
+
+@media (max-width: 991.98px) {
+    .admin-license-sidebar-widget {
+        display: none;
+    }
+}
+
+.sidebar-mini.sidebar-collapse .admin-license-sidebar-widget,
+.sidebar-mini.sidebar-collapse #jazzy-sidebar .sidebar {
+    display: none;
 }
 
 @media print {

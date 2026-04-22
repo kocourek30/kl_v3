@@ -1,7 +1,7 @@
 ADMIN_VIEW_AREAS = (
     {
         "slug": "admin-dashboard",
-        "name": "Admin dashboard",
+        "name": "Admin přehled",
         "description": "Provozní přehled, ruční úlohy, health-checky a správa modulů.",
         "app_labels": ["admin_dashboard"],
         "route_prefixes": ["/admin/admin_dashboard/"],
@@ -10,8 +10,22 @@ ADMIN_VIEW_AREAS = (
         "slug": "users-admin",
         "name": "Uživatelé",
         "description": "Správa uživatelů, skupin, vkladů a kont.",
-        "app_labels": ["users", "auth"],
-        "route_prefixes": ["/admin/users/", "/admin/auth/"],
+        "app_labels": ["users"],
+        "route_prefixes": ["/admin/users/customuser/", "/admin/users/vklad/"],
+    },
+    {
+        "slug": "user-groups-admin",
+        "name": "Stravovací skupiny a nulování kont",
+        "description": "Pokročilé zásahy do stravovacích skupin a ruční nulování kont.",
+        "app_labels": [],
+        "route_prefixes": ["/admin/users/stravovaciskupina/", "/admin/users/vklad/nulovani-konta/"],
+    },
+    {
+        "slug": "auth-admin",
+        "name": "Autentizace a autorizace",
+        "description": "Django skupiny a technická správa oprávnění.",
+        "app_labels": ["auth"],
+        "route_prefixes": ["/admin/auth/"],
     },
     {
         "slug": "menu-admin",
@@ -30,9 +44,16 @@ ADMIN_VIEW_AREAS = (
     {
         "slug": "issuance-admin",
         "name": "Výdej",
-        "description": "Výdej jídel, kuchyňský přehled a výdejní konfigurace.",
+        "description": "Výdej jídel, kuchyňský přehled a vydané účtenky.",
         "app_labels": ["vydej", "vydej_jidel", "vydej_frontend"],
         "route_prefixes": ["/admin/vydej/", "/admin/vydej_jidel/"],
+    },
+    {
+        "slug": "canteen-operations-admin",
+        "name": "Provoz jídelny",
+        "description": "Provozní dashboard obsluhy, živý výdej a operativní rozcestník jídelny.",
+        "app_labels": ["provoz_jidelny"],
+        "route_prefixes": ["/admin/provoz_jidelny/"],
     },
     {
         "slug": "subsidy-admin",
@@ -50,10 +71,24 @@ ADMIN_VIEW_AREAS = (
     },
     {
         "slug": "reports-admin",
-        "name": "Reporty a finance",
-        "description": "Reporty, finance a přepočtové dashboardy.",
-        "app_labels": ["reporty", "finance", "prepocty"],
-        "route_prefixes": ["/admin/reporty/", "/admin/finance/", "/admin/prepocty/"],
+        "name": "Reporty",
+        "description": "Provozní a manažerské reporty jídelny.",
+        "app_labels": ["reporty"],
+        "route_prefixes": ["/admin/reporty/"],
+    },
+    {
+        "slug": "finance-admin",
+        "name": "Finance",
+        "description": "Finanční dashboardy a účetní přehledy.",
+        "app_labels": ["finance"],
+        "route_prefixes": ["/admin/finance/"],
+    },
+    {
+        "slug": "pricing-admin",
+        "name": "Přepočty cen",
+        "description": "Přepočty cen, jejich historie a detailní audit změn.",
+        "app_labels": ["prepocty"],
+        "route_prefixes": ["/admin/prepocty/"],
     },
     {
         "slug": "warehouse-admin",
@@ -82,5 +117,12 @@ ADMIN_VIEW_AREAS = (
         "description": "Fakturační dávky a přehledy pro účetní procesy.",
         "app_labels": ["fakturace"],
         "route_prefixes": ["/admin/fakturace/"],
+    },
+    {
+        "slug": "licensing-admin",
+        "name": "Licencování",
+        "description": "Správa licence aplikace, ověření platnosti a licenční audit.",
+        "app_labels": ["licencovani"],
+        "route_prefixes": ["/admin/licencovani/"],
     },
 )

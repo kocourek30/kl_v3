@@ -6,6 +6,7 @@ from django.utils.html import format_html
 
 from .models import AdminViewAccess, AppModuleToggle, DashboardTask, TaskRun
 from .services import (
+    build_permissions_matrix,
     dashboard_overview,
     resolve_task_link,
     run_dashboard_task,
@@ -13,6 +14,8 @@ from .services import (
     sync_managed_modules,
     sync_admin_view_accesses,
     sync_registered_tasks,
+    update_permissions_matrix,
+    update_role_menu_visibility,
 )
 
 
@@ -119,6 +122,11 @@ class DashboardTaskAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         custom_urls = [
             path(
+                "permissions-matrix/",
+                self.admin_site.admin_view(self.permissions_matrix_view),
+                name="admin_dashboard_permissions_matrix",
+            ),
+            path(
                 "run/<int:task_id>/",
                 self.admin_site.admin_view(self.run_task_view),
                 name="admin_dashboard_run_task",
@@ -158,6 +166,43 @@ class DashboardTaskAdmin(admin.ModelAdmin):
                 level=messages.ERROR,
             )
         return HttpResponseRedirect(reverse("admin:admin_dashboard_dashboardtask_changelist"))
+
+    def permissions_matrix_view(self, request):
+        if request.method == "POST":
+            if request.POST.get("matrix_action") == "reset_defaults":
+                sync_admin_view_accesses(force_role_defaults=True)
+                self.message_user(
+                    request,
+                    "Bylo obnoveno doporučené bezpečné nastavení provozních rolí.",
+                    level=messages.SUCCESS,
+                )
+                return HttpResponseRedirect(reverse("admin:admin_dashboard_permissions_matrix"))
+
+            if request.POST.get("matrix_action") == "save_visibility":
+                changed = update_role_menu_visibility(request.POST)
+                self.message_user(
+                    request,
+                    f"Viditelnost admin položek byla uložena. Upraveno bylo {changed} nastavení.",
+                    level=messages.SUCCESS,
+                )
+                return HttpResponseRedirect(reverse("admin:admin_dashboard_permissions_matrix"))
+
+            changed = update_permissions_matrix(request.POST)
+            self.message_user(
+                request,
+                f"Matice rolí a oprávnění byla uložena. Upraveno bylo {changed} nastavení.",
+                level=messages.SUCCESS,
+            )
+            return HttpResponseRedirect(reverse("admin:admin_dashboard_permissions_matrix"))
+
+        context = {
+            **self.admin_site.each_context(request),
+            **build_permissions_matrix(),
+            "title": "Role a oprávnění",
+            "opts": self.model._meta,
+            "media": self.media,
+        }
+        return render(request, "admin/admin_dashboard/permissions_matrix.html", context)
 
     def toggle_module_view(self, request, module_id):
         module = get_object_or_404(AppModuleToggle, pk=module_id)

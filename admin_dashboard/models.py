@@ -203,3 +203,26 @@ class AdminViewAccess(models.Model):
 
     def has_group_restrictions(self):
         return self.view_groups.exists() or self.write_groups.exists() or self.control_groups.exists()
+
+
+class AdminRoleMenuVisibility(models.Model):
+    role_group = models.OneToOneField(
+        Group,
+        on_delete=models.CASCADE,
+        related_name="admin_menu_visibility",
+        verbose_name="Role / Django skupina",
+    )
+    hidden_app_labels = models.JSONField(default=list, blank=True, verbose_name="Skryté appky")
+    hidden_menu_item_keys = models.JSONField(default=list, blank=True, verbose_name="Skryté admin položky")
+    hidden_area_slugs = models.JSONField(default=list, blank=True, verbose_name="Skryté oblasti")
+    notes = models.TextField(blank=True, verbose_name="Poznámky")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Viditelnost adminu pro roli"
+        verbose_name_plural = "Viditelnost adminu pro role"
+        ordering = ("role_group__name",)
+
+    def __str__(self):
+        return f"Viditelnost • {self.role_group.name}"

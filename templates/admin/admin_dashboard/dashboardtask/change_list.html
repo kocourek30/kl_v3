@@ -9,12 +9,18 @@
 {% block content %}
 <div class="ops-page admin-shell admin-shell--wide">
   <section class="ops-hero admin-hero">
-    <span class="ops-kicker admin-kicker">Admin přehled</span>
-    <h1>Provozní přehled a ruční spuštění úloh</h1>
-    <p>
-      Jedno místo pro pravidelné management commandy, audit jejich běhů, základní provozní health-checky
-      a rychlé odkazy na důležité administrativní operace.
-    </p>
+    <div class="ops-hero-main">
+      <span class="ops-kicker admin-kicker">Admin přehled</span>
+      <h1>Provozní přehled a ruční spuštění úloh</h1>
+      <p>
+        Jedno místo pro pravidelné management commandy, audit jejich běhů, základní provozní health-checky
+        a rychlé odkazy na důležité administrativní operace.
+      </p>
+    </div>
+    <div class="ops-hero-actions">
+      <a class="admin-btn admin-btn--primary" href="{% url 'admin:admin_dashboard_permissions_matrix' %}">Správa rolí a oprávnění</a>
+      <a class="admin-btn admin-btn--secondary" href="/admin/?classic=1">Klasický admin dashboard</a>
+    </div>
   </section>
 
   <section class="ops-card">
@@ -194,9 +200,9 @@
         <div class="ops-card-head">
           <div>
             <h2>Provozní role</h2>
-            <span class="ops-muted">Hotové balíčky pro běžné nasazení bez skládání jednotlivých oblastí ručně</span>
+            <span class="ops-muted">Rychlý náhled hotových rolí. Detailní nastavení teď pohodlně upravíš v matici rolí a oprávnění.</span>
           </div>
-          <span class="dash-badge good">Doporučený způsob přiřazování práv</span>
+          <a class="admin-btn admin-btn--small admin-btn--light" href="{% url 'admin:admin_dashboard_permissions_matrix' %}">Otevřít matici práv</a>
         </div>
         <div class="ops-access-list">
           {% for role in operational_roles %}
@@ -250,9 +256,9 @@
         <div class="ops-card-head">
           <div>
             <h2>Role a přístupy</h2>
-            <span class="ops-muted">Detailní technická vrstva. Pro běžné použití doporučujeme výše uvedené provozní role.</span>
+            <span class="ops-muted">Technický přehled přístupů podle oblastí. Pro změny používej pohodlnou matici rolí a oprávnění.</span>
           </div>
-          <span class="dash-badge neutral">Stravovací skupiny se zde nepoužívají</span>
+          <a class="admin-btn admin-btn--small admin-btn--light" href="{% url 'admin:admin_dashboard_permissions_matrix' %}">Spravovat role a oprávnění</a>
         </div>
         <div class="ops-access-list">
           {% for access in admin_accesses %}

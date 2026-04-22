@@ -1,0 +1,64 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="col-12">
+    <section class="admin-shell">
+        <section class="admin-hero admin-hero--soft">
+            <div class="admin-hero__body">
+                <span class="admin-hero__eyebrow">LICENČNÍ BUILDER</span>
+                <h1 class="admin-hero__title">Vystavit a upravit licenci</h1>
+                <p class="admin-hero__subtitle">
+                    Tady upravíš zákazníka, platnost, moduly i počet terminálů. Po uložení se licence rovnou podepíše a aktivuje pro tuto instalaci.
+                </p>
+                <div class="admin-chip-row">
+                    <span class="admin-chip"><strong>ID instalace:</strong> {{ instance_id }}</span>
+                    <span class="admin-chip"><strong>Aktuální stav:</strong> {{ license_summary.status_label }}</span>
+                    <span class="admin-chip"><strong>Licencované moduly:</strong> {{ license_summary.modules|join:", "|default:"žádné" }}</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="admin-panel">
+            <div class="admin-panel-head">
+                <h2>Parametry licence</h2>
+                <span class="admin-muted">Podepisuje se lokálně soukromým klíčem uloženým na serveru</span>
+            </div>
+            <div class="admin-panel-body">
+                {% if not can_issue_local_license %}
+                    <div class="admin-license-alert admin-license-alert--danger">
+                        <i class="fas fa-ban"></i>
+                        <span>Na serveru chybí soukromý klíč pro vystavení licence. Nejprve vygeneruj nebo nahraj klíče.</span>
+                    </div>
+                {% endif %}
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="admin-filter-grid" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
+                        {% for field in builder_form %}
+                            <div class="admin-field" {% if field.name == 'notes' or field.name == 'modules' %}style="grid-column: 1 / -1;"{% endif %}>
+                                <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                                {{ field }}
+                                {% if field.help_text %}
+                                    <div class="admin-muted">{{ field.help_text }}</div>
+                                {% endif %}
+                                {% if field.errors %}
+                                    <div class="text-danger">{{ field.errors }}</div>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <div class="admin-toolbar" style="margin-top:1rem;">
+                        <button class="admin-btn admin-btn--primary" type="submit" {% if not can_issue_local_license %}disabled{% endif %}>
+                            <i class="fas fa-file-signature"></i>
+                            Vystavit, podepsat a aktivovat licenci
+                        </button>
+                        <a class="admin-btn admin-btn--light" href="{% url 'admin:licencovani_licenseconfig_change' original.pk %}">
+                            Zpět na licenci
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </section>
+    </section>
+</div>
+{% endblock %}

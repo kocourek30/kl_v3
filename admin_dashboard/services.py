@@ -1,8 +1,12 @@
 from datetime import timedelta
+from functools import lru_cache
 from io import StringIO
 from time import perf_counter
 from urllib.parse import urlparse
 
+from django.apps import apps
+from django.conf import settings
+from django.contrib import admin
 from django.contrib.auth.models import Group, Permission
 from django.core.management import call_command
 from django.db.models import Count
@@ -14,7 +18,7 @@ from objednavky.models import Order
 from users.models import CustomUser
 
 from .access_registry import ADMIN_VIEW_AREAS
-from .models import AdminViewAccess, AppModuleToggle, DashboardTask, TaskRun
+from .models import AdminRoleMenuVisibility, AdminViewAccess, AppModuleToggle, DashboardTask, TaskRun
 from .module_registry import MANAGED_MODULES
 from .registry import REGISTERED_TASKS
 from .role_registry import OPERATIONAL_ADMIN_ROLES
@@ -24,6 +28,14 @@ ADMIN_ACCESS_LEVELS = (
     ("write", "Správa"),
     ("control", "Plná kontrola"),
 )
+ADMIN_ACCESS_LEVEL_LABELS = dict(ADMIN_ACCESS_LEVELS)
+ADMIN_ACCESS_LEVEL_CHOICES_WITH_NONE = (("", "Bez přístupu"),) + ADMIN_ACCESS_LEVELS
+ADMIN_ACCESS_LEVEL_TONES = {
+    "": "neutral",
+    "view": "neutral",
+    "write": "warning",
+    "control": "good",
+}
 
 
 def sync_registered_tasks():
@@ -65,7 +77,7 @@ def sync_managed_modules():
     return module_map
 
 
-def sync_admin_view_accesses():
+def sync_admin_view_accesses(sync_role_defaults=True, force_role_defaults=False):
     access_map = {}
     for item in ADMIN_VIEW_AREAS:
         access, _ = AdminViewAccess.objects.update_or_create(
@@ -79,20 +91,192 @@ def sync_admin_view_accesses():
         )
         ensure_default_admin_groups(access)
         access_map[access.slug] = access
-    sync_operational_admin_roles(access_map)
+    if sync_role_defaults:
+        sync_operational_admin_roles(access_map, force=force_role_defaults)
     sync_admin_access_permissions()
     return access_map
 
 
 def get_disabled_admin_app_labels():
     try:
-        return {
+        labels = {
             label
             for module in AppModuleToggle.objects.filter(enabled=False)
             for label in (module.app_labels or [])
         }
+        from licencovani.services import LICENSABLE_MODULE_SLUGS, is_module_licensed
+
+        for module in AppModuleToggle.objects.exclude(slug__isnull=True):
+            if module.slug in LICENSABLE_MODULE_SLUGS and not is_module_licensed(module.slug):
+                labels.update(module.app_labels or [])
+        return labels
     except Exception:
         return set()
+
+
+def get_admin_area_for_path(path):
+    try:
+        for area in AdminViewAccess.objects.all():
+            for prefix in area.route_prefixes or []:
+                if path.startswith(prefix):
+                    return area
+    except Exception:
+        return None
+    return None
+
+
+def ensure_role_menu_visibility_profiles():
+    profiles = {}
+    for role in OPERATIONAL_ADMIN_ROLES:
+        group, _ = Group.objects.get_or_create(name=get_operational_role_group_name(role))
+        profile, _ = AdminRoleMenuVisibility.objects.get_or_create(role_group=group)
+        profiles[group.id] = profile
+    return profiles
+
+
+@lru_cache(maxsize=1)
+def build_admin_menu_catalog():
+    hidden_models = set(settings.JAZZMIN_SETTINGS.get("hide_models", []))
+    catalog_by_app = {}
+
+    for model in admin.site._registry:
+        opts = model._meta
+        model_key = f"{opts.app_label}.{opts.object_name}"
+        if model_key in hidden_models:
+            continue
+        try:
+            changelist_url = reverse(f"admin:{opts.app_label}_{opts.model_name}_changelist")
+        except NoReverseMatch:
+            changelist_url = ""
+
+        app_config = apps.get_app_config(opts.app_label)
+        app_entry = catalog_by_app.setdefault(
+            opts.app_label,
+            {
+                "app_label": opts.app_label,
+                "app_name": app_config.verbose_name,
+                "items": [],
+            },
+        )
+        app_entry["items"].append(
+            {
+                "key": f"model:{opts.app_label}.{opts.model_name}",
+                "name": str(opts.verbose_name_plural).capitalize(),
+                "path": changelist_url,
+                "item_type": "model",
+                "hint": "Model nebo přehled položek v adminu.",
+            }
+        )
+
+    for app_label, links in settings.JAZZMIN_SETTINGS.get("custom_links", {}).items():
+        app_name = catalog_by_app.get(app_label, {}).get("app_name")
+        if not app_name:
+            try:
+                app_name = apps.get_app_config(app_label).verbose_name
+            except LookupError:
+                app_name = app_label
+        app_entry = catalog_by_app.setdefault(
+            app_label,
+            {
+                "app_label": app_label,
+                "app_name": app_name,
+                "items": [],
+            },
+        )
+        for link in links:
+            target = link.get("url", "")
+            try:
+                path = reverse(target) if target and not target.startswith("/") else target
+            except NoReverseMatch:
+                path = target
+            if not path:
+                continue
+            item_key = f"custom:{app_label}:{path}"
+            if any(existing["key"] == item_key for existing in app_entry["items"]):
+                continue
+            app_entry["items"].append(
+                {
+                    "key": item_key,
+                    "name": link.get("name", "Rychlá akce"),
+                    "path": path,
+                    "item_type": "custom_link",
+                    "hint": "Vlastní admin odkaz nebo rychlá akce.",
+                }
+            )
+
+    order = settings.JAZZMIN_SETTINGS.get("order_with_respect_to", [])
+    order_index = {label: index for index, label in enumerate(order)}
+    catalog = sorted(
+        catalog_by_app.values(),
+        key=lambda item: (order_index.get(item["app_label"], 999), item["app_name"].lower()),
+    )
+    for app_entry in catalog:
+        app_entry["items"] = sorted(app_entry["items"], key=lambda item: item["name"].lower())
+        app_entry["app_path"] = next((item["path"] for item in app_entry["items"] if item["path"]), "")
+    return catalog
+
+
+@lru_cache(maxsize=1)
+def get_admin_menu_item_map():
+    item_map = {}
+    app_by_path = {}
+    for app_entry in build_admin_menu_catalog():
+        if app_entry.get("app_path"):
+            app_by_path[app_entry["app_path"]] = app_entry["app_label"]
+        for item in app_entry["items"]:
+            if item.get("path"):
+                item_map[item["path"]] = item
+                app_by_path[item["path"]] = app_entry["app_label"]
+    return item_map, app_by_path
+
+
+def get_admin_menu_item_for_path(path):
+    item_map, _ = get_admin_menu_item_map()
+    return item_map.get(path)
+
+
+def get_admin_app_label_for_path(path):
+    _, app_by_path = get_admin_menu_item_map()
+    return app_by_path.get(path)
+
+
+def get_hidden_area_slugs_for_user(user):
+    if not getattr(user, "is_authenticated", False) or getattr(user, "is_superuser", False):
+        return set()
+    ensure_role_menu_visibility_profiles()
+    group_ids = list(user.groups.values_list("id", flat=True))
+    if not group_ids:
+        return set()
+    hidden = set()
+    for profile in AdminRoleMenuVisibility.objects.filter(role_group_id__in=group_ids):
+        hidden.update(profile.hidden_area_slugs or [])
+    return hidden
+
+
+def get_hidden_app_labels_for_user(user):
+    if not getattr(user, "is_authenticated", False) or getattr(user, "is_superuser", False):
+        return set()
+    ensure_role_menu_visibility_profiles()
+    group_ids = list(user.groups.values_list("id", flat=True))
+    if not group_ids:
+        return set()
+    hidden = set()
+    for profile in AdminRoleMenuVisibility.objects.filter(role_group_id__in=group_ids):
+        hidden.update(profile.hidden_app_labels or [])
+    return hidden
+
+
+def get_hidden_menu_item_keys_for_user(user):
+    if not getattr(user, "is_authenticated", False) or getattr(user, "is_superuser", False):
+        return set()
+    ensure_role_menu_visibility_profiles()
+    group_ids = list(user.groups.values_list("id", flat=True))
+    if not group_ids:
+        return set()
+    hidden = set()
+    for profile in AdminRoleMenuVisibility.objects.filter(role_group_id__in=group_ids):
+        hidden.update(profile.hidden_menu_item_keys or [])
+    return hidden
 
 
 def user_has_admin_area_access(user, area):
@@ -139,6 +323,14 @@ def get_blocked_module_for_path(path):
             for prefix in module.route_prefixes or []:
                 if path.startswith(prefix):
                     return module
+        from licencovani.services import LICENSABLE_MODULE_SLUGS, is_module_licensed
+
+        for module in AppModuleToggle.objects.all():
+            if module.slug not in LICENSABLE_MODULE_SLUGS:
+                continue
+            for prefix in module.route_prefixes or []:
+                if path.startswith(prefix) and not is_module_licensed(module.slug):
+                    return module
     except Exception:
         return None
     return None
@@ -168,10 +360,48 @@ def is_menu_link_visible_for_user(user, url):
     if get_blocked_module_for_path(parsed_path):
         return False
 
+    item = get_admin_menu_item_for_path(parsed_path)
+    if item and item["key"] in get_hidden_menu_item_keys_for_user(user):
+        return False
+
+    app_label = get_admin_app_label_for_path(parsed_path)
+    if app_label and app_label in get_hidden_app_labels_for_user(user):
+        return False
+
+    area = get_admin_area_for_path(parsed_path)
+    if area and area.slug in get_hidden_area_slugs_for_user(user):
+        return False
+
     if get_blocked_admin_area_for_user_path(user, parsed_path):
         return False
 
     return True
+
+
+def filter_admin_app_items_for_user(user, app_list):
+    hidden_app_labels = get_hidden_app_labels_for_user(user)
+    filtered_apps = []
+    for app in app_list:
+        if app.get("app_label") in hidden_app_labels:
+            continue
+        models = []
+        for model in app.get("models", []):
+            target_url = model.get("admin_url") or model.get("url") or model.get("add_url") or ""
+            if target_url and not is_menu_link_visible_for_user(user, target_url):
+                continue
+            models.append(model)
+
+        app_url = app.get("app_url", "")
+        app_label = app.get("app_label")
+        if app_url and not is_menu_link_visible_for_user(user, app_url):
+            if not models:
+                continue
+
+        if app_label and not models:
+            continue
+
+        filtered_apps.append({**app, "models": models})
+    return filtered_apps
 
 
 def get_blocked_admin_area_for_request(request):
@@ -298,8 +528,37 @@ def build_dashboard_health():
         if getattr(user, "aktualni_zustatek", 0) < 0
     )
 
+    try:
+        from licencovani.services import get_license_summary_cards
+
+        license_summary = get_license_summary_cards()
+    except Exception:
+        license_summary = {
+            "status": "invalid",
+            "status_label": "Neplatná",
+            "message": "Licenci se nepodařilo vyhodnotit.",
+            "modules": [],
+            "payload": {},
+            "is_operational": False,
+            "instance_id": "-",
+            "enforced": False,
+        }
+
+    if license_summary["status"] == "active":
+        license_tone = "good"
+    elif license_summary["status"] in {"grace", "support"}:
+        license_tone = "warning"
+    else:
+        license_tone = "danger"
+
     return {
         "cards": [
+            {
+                "label": "Licence",
+                "value": license_summary["status_label"],
+                "tone": license_tone,
+                "hint": license_summary["message"],
+            },
             {
                 "label": "Úlohy po termínu",
                 "value": len(stale_tasks),
@@ -353,6 +612,16 @@ def build_dashboard_health():
                 ],
                 "empty": "",
             },
+            {
+                "title": "Licenční stav",
+                "items": [
+                    f"Stav: {license_summary['status_label']}",
+                    f"Zpráva: {license_summary['message']}",
+                    f"Licencované moduly: {', '.join(license_summary['modules']) if license_summary['modules'] else 'žádné'}",
+                    f"Vynucování: {'zapnuté' if license_summary['enforced'] else 'vypnuté'}",
+                ],
+                "empty": "",
+            },
         ],
     }
 
@@ -384,8 +653,7 @@ def dashboard_overview():
 
 
 def get_default_admin_group_name(access, level):
-    labels = {slug: label for slug, label in ADMIN_ACCESS_LEVELS}
-    return f"Admin • {access.name} • {labels[level]}"
+    return f"Admin • {access.name} • {ADMIN_ACCESS_LEVEL_LABELS[level]}"
 
 
 def ensure_default_admin_groups(access):
@@ -467,39 +735,59 @@ def get_operational_role_group_name(role):
     return f"Role • {role['name']}"
 
 
-def sync_operational_admin_roles(access_map=None):
+def get_group_level_for_access(group, access):
+    if not group:
+        return ""
+    if access.control_groups.filter(pk=group.pk).exists():
+        return "control"
+    if access.write_groups.filter(pk=group.pk).exists():
+        return "write"
+    if access.view_groups.filter(pk=group.pk).exists():
+        return "view"
+    return ""
+
+
+def set_group_level_for_access(group, access, level):
+    access.view_groups.remove(group)
+    access.write_groups.remove(group)
+    access.control_groups.remove(group)
+    if level == "view":
+        access.view_groups.add(group)
+    elif level == "write":
+        access.write_groups.add(group)
+    elif level == "control":
+        access.control_groups.add(group)
+
+
+def sync_operational_admin_roles(access_map=None, force=False):
     if access_map is None:
         access_map = {access.slug: access for access in AdminViewAccess.objects.all()}
-
-    area_managers = {
-        "view": "view_groups",
-        "write": "write_groups",
-        "control": "control_groups",
-    }
     synced_groups = []
 
     for role in OPERATIONAL_ADMIN_ROLES:
         group, _ = Group.objects.get_or_create(name=get_operational_role_group_name(role))
         synced_groups.append(group)
+        has_existing_assignments = any(
+            get_group_level_for_access(group, area) for area in access_map.values()
+        )
+        if has_existing_assignments and not force:
+            continue
 
         for area in access_map.values():
-            area.view_groups.remove(group)
-            area.write_groups.remove(group)
-            area.control_groups.remove(group)
+            set_group_level_for_access(group, area, "")
 
         for area_slug, level in role.get("assignments", {}).items():
             area = access_map.get(area_slug)
-            if not area:
-                continue
-            getattr(area, area_managers[level]).add(group)
+            if area:
+                set_group_level_for_access(group, area, level)
 
     return synced_groups
 
 
 def get_operational_roles_overview():
-    areas_by_slug = {
-        area["slug"]: area["name"]
-        for area in ADMIN_VIEW_AREAS
+    access_by_slug = {
+        access.slug: access
+        for access in AdminViewAccess.objects.prefetch_related("view_groups", "write_groups", "control_groups").all()
     }
     groups_by_name = {
         group.name: group
@@ -507,11 +795,22 @@ def get_operational_roles_overview():
             name__in=[get_operational_role_group_name(role) for role in OPERATIONAL_ADMIN_ROLES]
         )
     }
-    labels = {slug: label for slug, label in ADMIN_ACCESS_LEVELS}
     overview = []
     for role in OPERATIONAL_ADMIN_ROLES:
         group_name = get_operational_role_group_name(role)
         group = groups_by_name.get(group_name)
+        assignments = []
+        for access in access_by_slug.values():
+            level = get_group_level_for_access(group, access)
+            if not level:
+                continue
+            assignments.append(
+                {
+                    "area_name": access.name,
+                    "level": ADMIN_ACCESS_LEVEL_LABELS.get(level, level),
+                    "tone": ADMIN_ACCESS_LEVEL_TONES.get(level, "neutral"),
+                }
+            )
         overview.append(
             {
                 "name": role["name"],
@@ -520,18 +819,213 @@ def get_operational_roles_overview():
                 "scope_note": role.get("scope_note", ""),
                 "group": group,
                 "group_name": group_name,
-                "assignments": [
-                    {
-                        "area_name": areas_by_slug.get(area_slug, area_slug),
-                        "level": labels.get(level, level),
-                        "tone": {
-                            "view": "neutral",
-                            "write": "warning",
-                            "control": "good",
-                        }.get(level, "neutral"),
-                    }
-                    for area_slug, level in role.get("assignments", {}).items()
-                ],
+                "assignments": assignments,
             }
         )
     return overview
+
+
+def build_permissions_matrix():
+    sync_registered_tasks()
+    sync_managed_modules()
+    sync_admin_view_accesses()
+    ensure_role_menu_visibility_profiles()
+
+    areas = list(
+        AdminViewAccess.objects.prefetch_related("view_groups", "write_groups", "control_groups").order_by("name")
+    )
+    groups_by_name = {
+        group.name: group
+        for group in Group.objects.filter(
+            name__in=[get_operational_role_group_name(role) for role in OPERATIONAL_ADMIN_ROLES]
+        ).prefetch_related("user_set")
+    }
+    menu_catalog = build_admin_menu_catalog()
+    rows = []
+    for role in OPERATIONAL_ADMIN_ROLES:
+        group_name = get_operational_role_group_name(role)
+        group = groups_by_name.get(group_name)
+        hidden_area_slugs = set()
+        hidden_app_labels = set()
+        hidden_menu_item_keys = set()
+        if group and hasattr(group, "admin_menu_visibility"):
+            hidden_area_slugs = set(group.admin_menu_visibility.hidden_area_slugs or [])
+            hidden_app_labels = set(group.admin_menu_visibility.hidden_app_labels or [])
+            hidden_menu_item_keys = set(group.admin_menu_visibility.hidden_menu_item_keys or [])
+        assignments = []
+        for area in areas:
+            level = get_group_level_for_access(group, area)
+            assignments.append(
+                {
+                    "area_slug": area.slug,
+                    "area_name": area.name,
+                    "level": level,
+                    "level_label": ADMIN_ACCESS_LEVEL_LABELS.get(level, "Bez přístupu"),
+                    "tone": ADMIN_ACCESS_LEVEL_TONES.get(level, "neutral"),
+                    "field_name": f"matrix__{role['slug']}__{area.slug}",
+                    "visibility_field_name": f"visibility__{role['slug']}__{area.slug}",
+                    "visible": area.slug not in hidden_area_slugs,
+                }
+            )
+        visibility_apps = []
+        for app_entry in menu_catalog:
+            item_rows = []
+            for item in app_entry["items"]:
+                item_rows.append(
+                    {
+                        **item,
+                        "field_name": f"item_visibility__{role['slug']}__{item['key']}",
+                        "visible": item["key"] not in hidden_menu_item_keys,
+                    }
+                )
+            visibility_apps.append(
+                {
+                    "app_label": app_entry["app_label"],
+                    "app_name": app_entry["app_name"],
+                    "field_name": f"app_visibility__{role['slug']}__{app_entry['app_label']}",
+                    "visible": app_entry["app_label"] not in hidden_app_labels,
+                    "items": item_rows,
+                }
+            )
+        user_count = group.user_set.count() if group else 0
+        users_preview = (
+            list(group.user_set.order_by("username").values_list("username", flat=True)[:5]) if group else []
+        )
+        rows.append(
+            {
+                "slug": role["slug"],
+                "name": role["name"],
+                "description": role["description"],
+                "best_for": role.get("best_for", ""),
+                "scope_note": role.get("scope_note", ""),
+                "group_name": group_name,
+                "group": group,
+                "user_count": user_count,
+                "users_preview": users_preview,
+                "assignments": assignments,
+                "visibility_apps": visibility_apps,
+            }
+        )
+
+    return {
+        "areas": areas,
+        "rows": rows,
+        "choices": ADMIN_ACCESS_LEVEL_CHOICES_WITH_NONE,
+        "summary_cards": [
+            {
+                "label": "Oblasti systému",
+                "value": len(areas),
+                "tone": "good",
+                "hint": "Samostatně řízené části adminu a provozu.",
+            },
+            {
+                "label": "Provozní role",
+                "value": len(rows),
+                "tone": "good",
+                "hint": "Přednastavené role připravené k přiřazení uživatelům.",
+            },
+            {
+                "label": "Uživatelé v rolích",
+                "value": sum(row["user_count"] for row in rows),
+                "tone": "neutral",
+                "hint": "Počet uživatelů, kteří už některou provozní roli používají.",
+            },
+        ],
+        "visibility_summary_cards": [
+            {
+                "label": "Viditelné appky",
+                "value": sum(1 for row in rows for app in row["visibility_apps"] if app["visible"]),
+                "tone": "good",
+                "hint": "Kolik app sekcí se po přihlášení role v adminu opravdu ukáže.",
+            },
+            {
+                "label": "Skryté položky",
+                "value": sum(1 for row in rows for app in row["visibility_apps"] for item in app["items"] if not item["visible"]),
+                "tone": "neutral",
+                "hint": "Jemně skryté modely a rychlé odkazy v rámci povolených appek.",
+            },
+            {
+                "label": "Režim",
+                "value": "Pouze UI",
+                "tone": "warning",
+                "hint": "Skrytí položky neblokuje URL ani běh aplikace. Jde jen o čistotu adminu.",
+            },
+        ],
+    }
+
+
+def update_permissions_matrix(post_data):
+    matrix = build_permissions_matrix()
+    areas_by_slug = {area.slug: area for area in matrix["areas"]}
+    changed = 0
+
+    for role in OPERATIONAL_ADMIN_ROLES:
+        group, _ = Group.objects.get_or_create(name=get_operational_role_group_name(role))
+        for area_slug, area in areas_by_slug.items():
+            field_name = f"matrix__{role['slug']}__{area_slug}"
+            new_level = (post_data.get(field_name) or "").strip()
+            if new_level not in {"", "view", "write", "control"}:
+                continue
+            current_level = get_group_level_for_access(group, area)
+            if current_level == new_level:
+                continue
+            set_group_level_for_access(group, area, new_level)
+            changed += 1
+
+    sync_admin_access_permissions()
+    return changed
+
+
+def update_role_menu_visibility(post_data):
+    matrix = build_permissions_matrix()
+    changed = 0
+
+    for role_row in matrix["rows"]:
+        role_slug = role_row["slug"]
+        role = next(role for role in OPERATIONAL_ADMIN_ROLES if role["slug"] == role_slug)
+        group, _ = Group.objects.get_or_create(name=get_operational_role_group_name(role))
+        profile, _ = AdminRoleMenuVisibility.objects.get_or_create(role_group=group)
+        hidden_area_slugs = set(profile.hidden_area_slugs or [])
+        hidden_app_labels = set(profile.hidden_app_labels or [])
+        hidden_menu_item_keys = set(profile.hidden_menu_item_keys or [])
+        area_field_names = {f"visibility__{role_slug}__{area.slug}" for area in matrix["areas"]}
+        if any(field_name in post_data for field_name in area_field_names):
+            new_hidden_area_slugs = set()
+            for area in matrix["areas"]:
+                field_name = f"visibility__{role_slug}__{area.slug}"
+                is_visible = post_data.get(field_name) == "on"
+                if not is_visible:
+                    new_hidden_area_slugs.add(area.slug)
+        else:
+            new_hidden_area_slugs = set(hidden_area_slugs)
+
+        new_hidden_app_labels = set()
+        new_hidden_menu_item_keys = set()
+        for app_entry in role_row["visibility_apps"]:
+            app_visible = post_data.get(app_entry["field_name"]) == "on"
+            if not app_visible:
+                new_hidden_app_labels.add(app_entry["app_label"])
+            for item in app_entry["items"]:
+                item_visible = post_data.get(item["field_name"]) == "on"
+                if not item_visible:
+                    new_hidden_menu_item_keys.add(item["key"])
+
+        if (
+            hidden_area_slugs != new_hidden_area_slugs
+            or hidden_app_labels != new_hidden_app_labels
+            or hidden_menu_item_keys != new_hidden_menu_item_keys
+        ):
+            profile.hidden_area_slugs = sorted(new_hidden_area_slugs)
+            profile.hidden_app_labels = sorted(new_hidden_app_labels)
+            profile.hidden_menu_item_keys = sorted(new_hidden_menu_item_keys)
+            profile.save(
+                update_fields=[
+                    "hidden_area_slugs",
+                    "hidden_app_labels",
+                    "hidden_menu_item_keys",
+                    "updated_at",
+                ]
+            )
+            changed += 1
+
+    return changed

@@ -1,0 +1,181 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'vydej_jidel/css/admin_dashboard.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="canteen-admin admin-shell admin-shell--wide">
+  <section class="admin-hero admin-hero-grid canteen-admin__hero">
+    <div>
+      <span class="admin-kicker">Výdej jídelna</span>
+      <h1>Provozní dashboard pro obsluhu</h1>
+      <p>
+        Rychlý přehled dnešního výdeje, důležitých upozornění a přímých vstupů do míst,
+        která obsluha používá během směny nejčastěji.
+      </p>
+      <div class="canteen-admin__hero-meta">
+        <span class="admin-chip admin-chip--light"><i class="fas fa-calendar-day"></i> {{ dashboard.today|date:"l j. F Y" }}</span>
+        <span class="admin-chip admin-chip--light"><i class="fas fa-clock"></i> {{ dashboard.now|date:"H:i" }}</span>
+        <span class="admin-chip admin-chip--light"><i class="fas fa-stopwatch"></i> Timeout {{ dashboard.settings_obj.timeout_seconds }} s</span>
+      </div>
+    </div>
+    <div class="admin-hero-kpis">
+      <div class="admin-kpi-card">
+        <span class="admin-kpi-card__label">Čekající objednávky</span>
+        <strong class="admin-kpi-card__value">{{ dashboard.pending_orders_count }}</strong>
+        <span class="admin-kpi-card__hint">{{ dashboard.pending_users_count }} strávníků čeká na výdej</span>
+      </div>
+      <div class="admin-kpi-card">
+        <span class="admin-kpi-card__label">Nevydané porce</span>
+        <strong class="admin-kpi-card__value">{{ dashboard.pending_portions }}</strong>
+        <span class="admin-kpi-card__hint">Skutečný objem práce pro obsluhu</span>
+      </div>
+      <div class="admin-kpi-card">
+        <span class="admin-kpi-card__label">Vydané dnes</span>
+        <strong class="admin-kpi-card__value">{{ dashboard.issued_receipts_count }}</strong>
+        <span class="admin-kpi-card__hint">{{ dashboard.issued_portions }} porcí odbaveno</span>
+      </div>
+      <div class="admin-kpi-card">
+        <span class="admin-kpi-card__label">Rizikové položky</span>
+        <strong class="admin-kpi-card__value">{{ dashboard.cancelled_today_count|add:dashboard.stale_pending_count }}</strong>
+        <span class="admin-kpi-card__hint">Storna, nevyzvednuté a staré rozpracované</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="toolbar-card">
+    <div class="canteen-admin__quicklinks">
+      {% for link in dashboard.quick_links %}
+        <a class="admin-btn {% if link.tone == 'primary' %}admin-btn--primary{% elif link.tone == 'accent' %}admin-btn--accent{% elif link.tone == 'danger' %}admin-btn--danger{% else %}admin-btn--light{% endif %}" href="{{ link.url }}">
+          <i class="{{ link.icon }}"></i>
+          {{ link.label }}
+        </a>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="summary-strip">
+    <div class="admin-metric-card">
+      <span class="admin-metric-card__label">Aktivní výdejní okna</span>
+      <strong class="admin-metric-card__value">{{ dashboard.active_window_count }}</strong>
+      <span class="admin-metric-card__hint">Kolik slotů právě běží</span>
+    </div>
+    <div class="admin-metric-card">
+      <span class="admin-metric-card__label">Nadcházející sloty</span>
+      <strong class="admin-metric-card__value">{{ dashboard.upcoming_windows|length }}</strong>
+      <span class="admin-metric-card__hint">Na co se připravit dál</span>
+    </div>
+    <div class="admin-metric-card">
+      <span class="admin-metric-card__label">Top jídlo dne</span>
+      <strong class="admin-metric-card__value admin-metric-card__value--compact">{% if dashboard.top_meals %}{{ dashboard.top_meals.0.total }} ks{% else %}-{% endif %}</strong>
+      <span class="admin-metric-card__hint">{% if dashboard.top_meals %}{{ dashboard.top_meals.0.menu_item__jidlo__nazev }}{% else %}Zatím bez dat{% endif %}</span>
+    </div>
+    <div class="admin-metric-card">
+      <span class="admin-metric-card__label">Nastavení výdeje</span>
+      <strong class="admin-metric-card__value admin-metric-card__value--compact">{{ dashboard.settings_obj.timeout_seconds }} s</strong>
+      <span class="admin-metric-card__hint">Automatické dokončení výdeje</span>
+    </div>
+  </div>
+
+  <div class="overview-grid">
+    <section class="panel-card">
+      <div class="panel-card__head">
+        <h2>Výdejní okna a zatížení</h2>
+        <span class="ops-muted">Co právě běží a co přijde dál</span>
+      </div>
+      <div class="canteen-window-list">
+        {% for window in dashboard.meal_windows %}
+          <article class="canteen-window canteen-window--{{ window.state }}">
+            <div>
+              <strong>{{ window.label }}</strong>
+              <div class="ops-muted">{{ window.time_range }}</div>
+            </div>
+            <div class="canteen-window__meta">
+              <span class="dash-badge {% if window.state == 'active' %}good{% elif window.state == 'upcoming' %}warning{% else %}neutral{% endif %}">{{ window.note }}</span>
+              <span class="canteen-window__count">{{ window.queue_count }} ks</span>
+            </div>
+          </article>
+        {% empty %}
+          <div class="admin-empty-state">Výdejní okna ještě nejsou nastavená.</div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel-card">
+      <div class="panel-card__head">
+        <h2>Provozní upozornění</h2>
+        <span class="ops-muted">Co si zaslouží pozornost během směny</span>
+      </div>
+      <div class="canteen-notice-list">
+        {% for notice in dashboard.notices %}
+          <article class="canteen-notice canteen-notice--{{ notice.tone }}">
+            <strong>{{ notice.title }}</strong>
+            <p>{{ notice.text }}</p>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+
+  <div class="overview-grid">
+    <section class="panel-card">
+      <div class="panel-card__head">
+        <h2>Největší čekající jídla</h2>
+        <span class="ops-muted">Pomáhá odhadnout tlak na kuchyň i výdej</span>
+      </div>
+      <div class="canteen-top-list">
+        {% for meal in dashboard.top_meals %}
+          <div class="canteen-top-item">
+            <div>
+              <strong>{{ meal.menu_item__jidlo__nazev }}</strong>
+              <div class="ops-muted">{{ meal.menu_item__druh_jidla__nazev }}</div>
+            </div>
+            <span class="canteen-top-item__count">{{ meal.total }} ks</span>
+          </div>
+        {% empty %}
+          <div class="admin-empty-state">Pro dnešní den zatím nejsou žádná čekající jídla.</div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel-card">
+      <div class="panel-card__head">
+        <h2>Poslední provozní události</h2>
+        <span class="ops-muted">Výdej a problematické změny v jednom seznamu</span>
+      </div>
+      <div class="canteen-activity-list">
+        {% for item in dashboard.recent_activity %}
+          <div class="canteen-activity canteen-activity--{{ item.tone }}">
+            <div class="canteen-activity__dot"></div>
+            <div class="canteen-activity__content">
+              <strong>{{ item.title }}</strong>
+              <div class="ops-muted">{{ item.detail }}</div>
+            </div>
+            <span class="canteen-activity__meta">{{ item.meta }}</span>
+          </div>
+        {% empty %}
+          <div class="admin-empty-state">Zatím nejsou žádné dnešní provozní události.</div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+
+  <section class="panel-card">
+    <div class="panel-card__head">
+      <h2>Nastavení a správa směny</h2>
+      <span class="ops-muted">Rychlé vstupy do věcí, které obsluha a vedoucí upravují nejčastěji</span>
+    </div>
+    <div class="canteen-settings-grid">
+      {% for link in dashboard.settings_links %}
+        <a class="canteen-settings-card" href="{{ link.url }}">
+          <strong>{{ link.label }}</strong>
+          <span>{{ link.description }}</span>
+        </a>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

@@ -114,6 +114,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     'django_extensions',
     "admin_dashboard",
+    "licencovani",
+    "provoz_jidelny",
     "users",
     "jidelnicek",
     "objednavky",
@@ -220,6 +222,7 @@ TEMPLATES = [
                 'users.context_processors.user_balance',
                 'canteen_settings.context_processors.footer_info',
                 'admin_dashboard.context_processors.frontend_feature_flags',
+                'licencovani.context_processors.admin_license_footer',
             ],
         },
     },
@@ -375,6 +378,7 @@ JAZZMIN_SETTINGS = {
         "jidelnicek": "fas fa-utensils",
         "objednavky": "fas fa-shopping-cart",
         "vydej": "fas fa-dolly",
+        "provoz_jidelny": "fas fa-store",
         "vydej_jidel": "fas fa-concierge-bell",
         "dotace": "fas fa-file-contract",
         "canteen_settings": "fas fa-gear",
@@ -419,6 +423,8 @@ JAZZMIN_SETTINGS = {
         "vydej.VydejOrder": "fas fa-shopping-cart",
         "vydej.PrehledProKuchyni": "fas fa-kitchen-set",
         "vydej.VydejSettings": "fas fa-sliders-h",
+        "provoz_jidelny.ProvozniDashboard": "fas fa-store",
+        "provoz_jidelny.NastaveniVydaje": "fas fa-stopwatch-20",
         "vydej.VydejniUctenka": "fas fa-receipt",
         "vydej.PolozkaUctenky": "fas fa-list-ol",
         "vydej.StornovaneObjednavky": "fas fa-trash-alt",
@@ -451,6 +457,9 @@ JAZZMIN_SETTINGS = {
         "fakturace.FakturacniDavka": "fas fa-file-invoice-dollar",
         "fakturace.FakturacniPolozka": "fas fa-list-check",
         "prepocty.PrepoctyDummy": "fas fa-calculator",
+        "licencovani": "fas fa-key",
+        "licencovani.LicenseConfig": "fas fa-id-badge",
+        "licencovani.LicenseEvent": "fas fa-clock-rotate-left",
 
         # === SKLAD ===
         "sklad.Surovina": "fas fa-carrot",
@@ -499,6 +508,7 @@ JAZZMIN_SETTINGS = {
         "jidelnicek",
         "objednavky",
         "vydej",
+        "provoz_jidelny",
         "vydej_jidel",
         "dotace",
         "canteen_settings",
@@ -507,6 +517,7 @@ JAZZMIN_SETTINGS = {
         "finance",
         "fakturace",
         "prepocty",
+        "licencovani",
         "auth",
         "sklad",
         "pokladna",
@@ -549,8 +560,8 @@ JAZZMIN_SETTINGS = {
         },
         {
             "name": "Výdej jídelna",
-            "url": "admin:vydej_jidel_vydejsettings_changelist",
-            "icon": "fas fa-concierge-bell",
+            "url": "admin:provoz_jidelny_provoznidashboard_changelist",
+            "icon": "fas fa-store",
         },
         {
             "name": "Dotace",
@@ -664,6 +675,7 @@ JAZZMIN_SETTINGS = {
     "hide_models": [
         "reporty.ReportDummy",
         "prepocty.PrepoctyDummy",
+        "provoz_jidelny.NastaveniVydaje",
         "objednavky.PriceRecalculationLog",
         "objednavky.PriceRecalculationDetail",
     ],
@@ -703,6 +715,10 @@ JAZZMIN_UI_TWEAKS = {
     },
     "actions_sticky_top": False,
 }
+
+LICENSE_PUBLIC_KEY_PATH = BASE_DIR / "data" / "licencovani" / "public_key.pem"
+LICENSE_PRIVATE_KEY_PATH = BASE_DIR / "data" / "licencovani" / "private_key.pem"
+LICENSE_ENFORCEMENT = os.getenv("LICENSE_ENFORCEMENT", "false").lower() == "true"
 
 
 if DATABASES["default"]["ENGINE"] == "django.db.backends.sqlite3" and "test" not in sys.argv:

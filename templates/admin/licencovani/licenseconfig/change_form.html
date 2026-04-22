@@ -1,0 +1,38 @@
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="col-12">
+    <section class="admin-shell">
+        <section class="admin-hero admin-hero--soft">
+            <div class="admin-hero__body">
+                <span class="admin-hero__eyebrow">OFFLINE LICENCE</span>
+                <h1 class="admin-hero__title">Správa licence aplikace</h1>
+                <p class="admin-hero__subtitle">
+                    Licence je lokálně ověřovaná bez potřeby internetu. Podepsaný soubor určuje zákazníka, platnost a povolené moduly.
+                </p>
+                <div class="admin-chip-row">
+                    <span class="admin-chip"><strong>ID instalace:</strong> {{ license_summary.instance_id }}</span>
+                    <span class="admin-chip"><strong>Režim:</strong> {% if license_summary.enforced %}Vynucovaný{% else %}Nevynucovaný{% endif %}</span>
+                    <span class="admin-chip"><strong>Moduly:</strong> {{ license_summary.modules|length }}</span>
+                </div>
+                {% if reverify_url %}
+                <div class="admin-toolbar" style="margin-top:1rem;">
+                    {% if builder_url and can_issue_local_license %}
+                    <a class="admin-btn admin-btn--primary" href="{{ builder_url }}">
+                        <i class="fas fa-pen-ruler"></i>
+                        Upravit a znovu vystavit licenci
+                    </a>
+                    {% endif %}
+                    <a class="admin-btn admin-btn--light" href="{{ reverify_url }}">
+                        <i class="fas fa-rotate-right"></i>
+                        Znovu ověřit licenci
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </section>
+    </section>
+</div>
+{{ block.super }}
+{% endblock %}
