@@ -2,480 +2,7 @@
 {% load static %}
 
 {% block extrastyle %}
-<style>
-    .kuchyne-shell {
-        padding: 20px 0 28px;
-    }
-
-    .kuchyne-hero {
-        background: linear-gradient(135deg, #eef8ef 0%, #fff7e7 100%);
-        border: 1px solid #d7e7d8;
-        border-radius: 24px;
-        padding: 24px 26px;
-        margin-bottom: 22px;
-        display: grid;
-        grid-template-columns: 1.4fr 1fr;
-        gap: 20px;
-        box-shadow: 0 16px 38px rgba(42, 95, 49, 0.08);
-    }
-
-    .kuchyne-hero h1 {
-        margin: 0;
-        font-size: 2rem;
-        line-height: 1.15;
-        color: #16341d;
-    }
-
-    .kuchyne-hero p {
-        margin: 10px 0 0 0;
-        color: #5c6b60;
-        max-width: 760px;
-    }
-
-    .kuchyne-hero-meta {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-    }
-
-    .hero-meta-card {
-        background: rgba(255, 255, 255, 0.88);
-        border: 1px solid #dce9de;
-        border-radius: 18px;
-        padding: 14px 16px;
-    }
-
-    .hero-meta-label {
-        font-size: 12px;
-        font-weight: 800;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        color: #6d7b70;
-    }
-
-    .hero-meta-value {
-        margin-top: 6px;
-        font-size: 1.5rem;
-        font-weight: 800;
-        color: #1d5f2f;
-    }
-
-    .hero-meta-note {
-        margin-top: 4px;
-        font-size: 12px;
-        color: #728076;
-    }
-
-    .toolbar-card {
-        background: #fff;
-        border: 1px solid #dbe7db;
-        border-radius: 20px;
-        padding: 18px;
-        margin-bottom: 18px;
-        box-shadow: 0 12px 26px rgba(42, 95, 49, 0.06);
-    }
-
-    .toolbar-grid {
-        display: grid;
-        grid-template-columns: 1.2fr auto;
-        gap: 16px;
-        align-items: end;
-    }
-
-    .date-form {
-        display: flex;
-        gap: 12px;
-        align-items: end;
-        flex-wrap: wrap;
-    }
-
-    .date-field {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        min-width: 220px;
-    }
-
-    .date-field label {
-        font-weight: 700;
-        color: #2e4133;
-    }
-
-    .date-field input {
-        min-height: 46px;
-        border-radius: 12px;
-        border: 1px solid #cfe0d0;
-        padding: 0.7rem 0.9rem;
-    }
-
-    .k-btn,
-    .k-link-btn {
-        min-height: 46px;
-        border: none;
-        border-radius: 12px;
-        padding: 0.72rem 1rem;
-        font-weight: 800;
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-        transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
-    }
-
-    .k-btn:hover,
-    .k-link-btn:hover {
-        transform: translateY(-1px);
-    }
-
-    .k-btn-primary {
-        background: #2fa74f;
-        color: #fff;
-        box-shadow: 0 10px 22px rgba(47, 167, 79, 0.2);
-    }
-
-    .k-link-btn {
-        background: #fff;
-        color: #215e2f;
-        border: 1px solid #cfe0d0;
-    }
-
-    .k-link-btn.accent {
-        background: #f28c28;
-        color: #fff;
-        border-color: #f28c28;
-    }
-
-    .quick-row,
-    .export-row {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-    }
-
-    .summary-strip {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 14px;
-        margin-bottom: 18px;
-    }
-
-    .summary-card {
-        background: #fff;
-        border: 1px solid #dbe7db;
-        border-radius: 18px;
-        padding: 16px;
-        box-shadow: 0 12px 26px rgba(42, 95, 49, 0.05);
-    }
-
-    .summary-card-label {
-        font-size: 12px;
-        font-weight: 800;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        color: #6f7e73;
-    }
-
-    .summary-card-value {
-        margin-top: 8px;
-        font-size: 1.8rem;
-        font-weight: 800;
-        color: #1d5f2f;
-    }
-
-    .summary-card-note {
-        margin-top: 6px;
-        font-size: 12px;
-        color: #718075;
-    }
-
-    .overview-grid {
-        display: grid;
-        grid-template-columns: 1.6fr 1fr;
-        gap: 18px;
-        margin-bottom: 20px;
-    }
-
-    .panel-card {
-        background: #fff;
-        border: 1px solid #dbe7db;
-        border-radius: 20px;
-        padding: 18px;
-        box-shadow: 0 12px 26px rgba(42, 95, 49, 0.05);
-    }
-
-    .panel-card h3 {
-        margin: 0 0 14px 0;
-        font-size: 1.1rem;
-        color: #1f3e28;
-    }
-
-    .chip-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-        gap: 12px;
-    }
-
-    .chip-card {
-        background: linear-gradient(135deg, #f7fbf7 0%, #fff 100%);
-        border: 1px solid #e4eee5;
-        border-radius: 16px;
-        padding: 14px;
-    }
-
-    .chip-title {
-        font-weight: 800;
-        color: #24442d;
-        margin-bottom: 6px;
-    }
-
-    .chip-stats {
-        display: flex;
-        justify-content: space-between;
-        gap: 8px;
-        font-size: 0.9rem;
-        color: #5f6e63;
-    }
-
-    .top-list {
-        display: grid;
-        gap: 10px;
-    }
-
-    .top-row {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 12px;
-        align-items: center;
-        background: #f8fbf8;
-        border: 1px solid #e5efe5;
-        border-radius: 14px;
-        padding: 12px 14px;
-    }
-
-    .top-row strong {
-        color: #203927;
-    }
-
-    .top-row small {
-        display: block;
-        color: #738077;
-        margin-top: 2px;
-    }
-
-    .top-qty {
-        min-width: 72px;
-        text-align: center;
-        border-radius: 999px;
-        background: #2fa74f;
-        color: #fff;
-        padding: 0.45rem 0.75rem;
-        font-weight: 800;
-    }
-
-    .meal-section {
-        margin-bottom: 22px;
-        background: #fff;
-        border: 1px solid #dbe7db;
-        border-radius: 20px;
-        overflow: hidden;
-        box-shadow: 0 12px 26px rgba(42, 95, 49, 0.05);
-    }
-
-    .meal-section-header {
-        background: linear-gradient(135deg, #2fa74f 0%, #24823e 100%);
-        color: #fff;
-        padding: 16px 18px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-    }
-
-    .meal-section-header h2 {
-        margin: 0;
-        font-size: 1.1rem;
-        color: #fff;
-    }
-
-    .meal-header-stats {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-    }
-
-    .meal-stat {
-        background: rgba(255, 255, 255, 0.18);
-        border-radius: 999px;
-        padding: 0.42rem 0.75rem;
-        font-size: 0.86rem;
-        font-weight: 700;
-    }
-
-    .meal-table-wrap {
-        overflow-x: auto;
-    }
-
-    .meal-table {
-        width: 100%;
-        border-collapse: collapse;
-        min-width: 760px;
-    }
-
-    .meal-table th,
-    .meal-table td {
-        padding: 14px 16px;
-        border-bottom: 1px solid #e7eee7;
-        vertical-align: top;
-    }
-
-    .meal-table thead th {
-        background: #f7fbf7;
-        color: #33523b;
-        font-size: 0.84rem;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        font-weight: 800;
-    }
-
-    .meal-table tbody tr:hover {
-        background: #fbfefb;
-    }
-
-    .meal-name {
-        font-weight: 800;
-        color: #1f3425;
-    }
-
-    .meal-submeta {
-        margin-top: 4px;
-        color: #7a867e;
-        font-size: 0.86rem;
-    }
-
-    .qty-badge {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 72px;
-        border-radius: 999px;
-        background: #f0f8f1;
-        color: #1e7134;
-        border: 1px solid #d8e8da;
-        padding: 0.45rem 0.75rem;
-        font-weight: 800;
-        font-size: 1rem;
-    }
-
-    .people-list {
-        display: grid;
-        gap: 8px;
-    }
-
-    .people-row {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 10px;
-        align-items: center;
-        padding: 10px 12px;
-        background: #f8fbf8;
-        border: 1px solid #e5efe5;
-        border-radius: 12px;
-    }
-
-    .people-row strong {
-        color: #22372a;
-    }
-
-    .people-row small {
-        display: block;
-        color: #7c887f;
-        margin-top: 2px;
-    }
-
-    .people-qty {
-        font-weight: 800;
-        color: #1f7134;
-        white-space: nowrap;
-    }
-
-    .empty-state {
-        text-align: center;
-        padding: 56px 24px;
-        color: #7d897f;
-        background: #fff;
-        border: 1px dashed #d6e4d8;
-        border-radius: 20px;
-    }
-
-    @media (max-width: 1200px) {
-        .kuchyne-hero,
-        .overview-grid,
-        .toolbar-grid,
-        .summary-strip {
-            grid-template-columns: 1fr;
-        }
-    }
-
-    @media (max-width: 767.98px) {
-        .kuchyne-shell {
-            padding-top: 12px;
-        }
-
-        .kuchyne-hero,
-        .toolbar-card,
-        .panel-card,
-        .meal-section {
-            border-radius: 16px;
-        }
-
-        .kuchyne-hero {
-            padding: 18px;
-        }
-
-        .kuchyne-hero h1 {
-            font-size: 1.55rem;
-        }
-
-        .hero-meta-value,
-        .summary-card-value {
-            font-size: 1.35rem;
-        }
-
-        .meal-section-header {
-            align-items: flex-start;
-            flex-direction: column;
-        }
-
-        .quick-row,
-        .export-row,
-        .date-form {
-            flex-direction: column;
-        }
-
-        .date-field,
-        .k-btn,
-        .k-link-btn {
-            width: 100%;
-        }
-    }
-
-    @media print {
-        .toolbar-card,
-        #header,
-        .breadcrumbs,
-        .summary-strip,
-        .overview-grid {
-            display: none !important;
-        }
-
-        .meal-section,
-        .meal-section-header,
-        .meal-table thead th {
-            box-shadow: none !important;
-        }
-    }
-</style>
+{{ block.super }}
 {% endblock %}
 
 {% block content %}
@@ -496,7 +23,7 @@
             </div>
             <div class="hero-meta-card">
                 <div class="hero-meta-label">Uzávěrka</div>
-                <div class="hero-meta-value" style="font-size: 1.15rem;">{{ uzavirka_info.uzavreno_text }}</div>
+                <div class="hero-meta-value hero-meta-value--compact">{{ uzavirka_info.uzavreno_text }}</div>
                 <div class="hero-meta-note">Stav pro tento den výdeje</div>
             </div>
             <div class="hero-meta-card">
@@ -520,28 +47,28 @@
                         <label for="datum"><i class="fas fa-calendar me-1"></i>Vyber den výdeje</label>
                         <input type="date" name="datum" id="datum" value="{{ datum_str }}" required>
                     </div>
-                    <button type="submit" class="k-btn k-btn-primary">
+                    <button type="submit" class="admin-btn admin-btn--primary">
                         <i class="fas fa-search"></i>
                         Zobrazit přehled
                     </button>
                 </form>
-                <div class="quick-row" style="margin-top: 12px;">
-                    <a href="?datum={{ today }}" class="k-link-btn">
+                <div class="quick-row">
+                    <a href="?datum={{ today }}" class="admin-btn admin-btn--light">
                         <i class="fas fa-calendar-day"></i>
                         Dnes
                     </a>
-                    <a href="?datum={{ tomorrow }}" class="k-link-btn accent">
+                    <a href="?datum={{ tomorrow }}" class="admin-btn admin-btn--accent">
                         <i class="fas fa-calendar-plus"></i>
                         Zítra
                     </a>
                     {% if previous_available_date %}
-                    <a href="?datum={{ previous_available_date }}" class="k-link-btn">
+                    <a href="?datum={{ previous_available_date }}" class="admin-btn admin-btn--light">
                         <i class="fas fa-arrow-left"></i>
                         Předchozí den s objednávkami
                     </a>
                     {% endif %}
                     {% if next_available_date %}
-                    <a href="?datum={{ next_available_date }}" class="k-link-btn">
+                    <a href="?datum={{ next_available_date }}" class="admin-btn admin-btn--light">
                         Další den s objednávkami
                         <i class="fas fa-arrow-right"></i>
                     </a>
@@ -551,11 +78,11 @@
 
             <div>
                 <div class="export-row">
-                    <a href="?datum={{ datum_str }}&export=pdf" target="_blank" class="k-link-btn">
+                    <a href="?datum={{ datum_str }}&export=pdf" target="_blank" class="admin-btn admin-btn--light">
                         <i class="fas fa-file-pdf"></i>
                         Stáhnout PDF
                     </a>
-                    <a href="javascript:window.print()" class="k-link-btn">
+                    <a href="javascript:window.print()" class="admin-btn admin-btn--light">
                         <i class="fas fa-print"></i>
                         Tisknout
                     </a>
@@ -578,7 +105,7 @@
         </div>
         <div class="summary-card">
             <div class="summary-card-label">Nejsilnější jídlo</div>
-            <div class="summary-card-value" style="font-size: 1.2rem;">
+            <div class="summary-card-value summary-card-value--compact">
                 {% if top_meals %}{{ top_meals.0.celkem }} ks{% else %}-{% endif %}
             </div>
             <div class="summary-card-note">
@@ -587,7 +114,7 @@
         </div>
         <div class="summary-card">
             <div class="summary-card-label">Stav dne</div>
-            <div class="summary-card-value" style="font-size: 1.2rem;">
+            <div class="summary-card-value summary-card-value--compact">
                 {% if total_porci > 120 %}Silný provoz{% elif total_porci > 0 %}Standardní provoz{% else %}Bez výdeje{% endif %}
             </div>
             <div class="summary-card-note">Rychlá orientace pro kuchyň</div>

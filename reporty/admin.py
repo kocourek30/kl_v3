@@ -44,6 +44,10 @@ def fmt_max2(value):
     return decimal_cs(value or 0, places=2, trim=True)
 
 
+REPORT_FINAL_ORDER_STATUSES = ['vydano', 'castecne-vydano', 'nevyzvednuto']
+REPORT_COMPLETE_ORDER_STATUSES = ['vydano', 'nevyzvednuto']
+
+
 
 
 PERIOD_CHOICES = [
@@ -264,10 +268,15 @@ class ReportAdmin(admin.ModelAdmin):
             return today.replace(month=1, day=1), today
         return form.cleaned_data.get('date_from'), form.cleaned_data.get('date_to')
 
+    def get_reportable_orderitem_queryset(self):
+        return (
+            OrderItem.objects.filter(order__status__in=REPORT_FINAL_ORDER_STATUSES)
+            .filter(Q(order__status__in=REPORT_COMPLETE_ORDER_STATUSES) | Q(vydano=True))
+        )
+
 
     def get_report_calculations(self, form):
         """Pomocná metoda pro výpočet dat reportu sdílená mezi view a exportem"""
-        today = timezone.now().date()
         report_data = []
         totals = {'unclaimed_total': 0, 'dotace': 0, 'final_price': 0}
         grouping = 'day'
@@ -275,31 +284,12 @@ class ReportAdmin(admin.ModelAdmin):
         if not form.is_valid():
             return report_data, totals, grouping
 
-        period = form.cleaned_data['period']
         grouping = form.cleaned_data.get('grouping', 'day')
-
-        # výpočet období
-        if period == 'today':
-            date_from = date_to = today
-        elif period == 'yesterday':
-            date_from = date_to = today - timedelta(days=1)
-        elif period == 'week':
-            date_from = date_to = today - timedelta(days=7)
-        elif period == 'month':
-            date_from = date_to = today.replace(day=1) - timedelta(days=1)
-        elif period == 'current_month':
-            date_from = today.replace(day=1)
-            date_to = today
-        elif period == 'year':
-            date_from = today.replace(month=1, day=1)
-            date_to = today
-        else:  # custom
-            date_from = form.cleaned_data.get('date_from')
-            date_to = form.cleaned_data.get('date_to')
+        date_from, date_to = self.resolve_period_range(form)
 
         # základní queryset
         queryset = Order.objects.filter(
-            status__in=['vydano', 'nevyzvednuto']
+            status__in=REPORT_FINAL_ORDER_STATUSES
         ).select_related('user').prefetch_related('items').order_by('datum_vydeje', 'user__first_name')
 
         if date_from and date_to:
@@ -312,10 +302,10 @@ class ReportAdmin(admin.ModelAdmin):
             queryset = queryset.filter(user=form.cleaned_data['customer'])
 
         for order in queryset:
-            if order.status == 'vydano':
-                items = order.items.filter(vydano=True)
-            elif order.status == 'nevyzvednuto':
+            if order.status in REPORT_COMPLETE_ORDER_STATUSES:
                 items = order.items.all()
+            elif order.status == 'castecne-vydano':
+                items = order.items.filter(vydano=True)
             else:
                 continue
 
@@ -397,8 +387,6 @@ class ReportAdmin(admin.ModelAdmin):
 
         totals['rows_count'] = len(report_data)
         totals['orders_count'] = sum(row.get('count', 1) for row in report_data) if grouping == 'total' else len(report_data)
-        totals['rows_count'] = len(report_data)
-        totals['rows_count'] = len(report_data)
         return report_data, totals, grouping
 
     def build_pdf_document_meta(self, form, report_type, grouping, totals):
@@ -734,7 +722,6 @@ class ReportAdmin(admin.ModelAdmin):
 
     def get_order_items_report(self, form):
         """Report pro položky objednávek - počet a názvy jídel"""
-        today = timezone.now().date()
         report_data = []
         totals = {'total_items': 0, 'unclaimed_total': 0, 'dotace': 0, 'final_price': 0}
         grouping = 'day'
@@ -742,33 +729,13 @@ class ReportAdmin(admin.ModelAdmin):
         if not form.is_valid():
             return report_data, totals, grouping
         
-        period = form.cleaned_data['period']
         grouping = form.cleaned_data.get('grouping', 'day')
-        
-        # výpočet období
-        if period == 'today':
-            date_from = date_to = today
-        elif period == 'yesterday':
-            date_from = date_to = today - timedelta(days=1)
-        elif period == 'week':
-            date_from = date_to = today - timedelta(days=7)
-        elif period == 'month':
-            date_from = date_to = today.replace(day=1) - timedelta(days=1)
-        elif period == 'current_month':
-            date_from = today.replace(day=1)
-            date_to = today
-        elif period == 'year':
-            date_from = today.replace(month=1, day=1)
-            date_to = today
-        else:  # custom
-            date_from = form.cleaned_data.get('date_from')
-            date_to = form.cleaned_data.get('date_to')
+        date_from, date_to = self.resolve_period_range(form)
         
         # Queryset pro OrderItems
-        queryset = OrderItem.objects.filter(
-            order__status__in=['vydano', 'nevyzvednuto'],
-            vydano=True
-        ).select_related('order__user', 'menu_item__jidlo').order_by('order__datum_vydeje', 'order__user__first_name')
+        queryset = self.get_reportable_orderitem_queryset().select_related(
+            'order__user', 'menu_item__jidlo'
+        ).order_by('order__datum_vydeje', 'order__user__first_name')
         
         if date_from and date_to:
             queryset = queryset.filter(order__datum_vydeje__range=[date_from, date_to])
@@ -874,7 +841,6 @@ class ReportAdmin(admin.ModelAdmin):
 
     def get_food_types_report(self, form):
         """NOVÝ: Report pro druhy jídel - detailní výpis s jmény zákazníků a názvy jídel"""
-        today = timezone.now().date()
         report_data = []
         totals = {'total_portions': 0, 'unclaimed_total': 0, 'dotace': 0, 'final_price': 0}
         grouping = 'day'
@@ -882,33 +848,13 @@ class ReportAdmin(admin.ModelAdmin):
         if not form.is_valid():
             return report_data, totals, grouping
         
-        period = form.cleaned_data['period']
         grouping = form.cleaned_data.get('grouping', 'day')
-        
-        # výpočet období
-        if period == 'today':
-            date_from = date_to = today
-        elif period == 'yesterday':
-            date_from = date_to = today - timedelta(days=1)
-        elif period == 'week':
-            date_from = date_to = today - timedelta(days=7)
-        elif period == 'month':
-            date_from = date_to = today.replace(day=1) - timedelta(days=1)
-        elif period == 'current_month':
-            date_from = today.replace(day=1)
-            date_to = today
-        elif period == 'year':
-            date_from = today.replace(month=1, day=1)
-            date_to = today
-        else:  # custom
-            date_from = form.cleaned_data.get('date_from')
-            date_to = form.cleaned_data.get('date_to')
+        date_from, date_to = self.resolve_period_range(form)
         
         # Základní queryset - detailní položky
-        queryset = OrderItem.objects.filter(
-            order__status__in=['vydano', 'nevyzvednuto'],
-            
-        ).select_related('order__user', 'menu_item__jidlo', 'menu_item__druh_jidla').order_by(
+        queryset = self.get_reportable_orderitem_queryset().select_related(
+            'order__user', 'menu_item__jidlo', 'menu_item__druh_jidla'
+        ).order_by(
             'order__datum_vydeje', 'order__user__first_name', 'menu_item__druh_jidla__nazev'
         )
         
@@ -1041,11 +987,9 @@ class ReportAdmin(admin.ModelAdmin):
         date_to = today.replace(year=selected_year, month=selected_month, day=days_in_month)
 
         queryset = (
-            OrderItem.objects.filter(
+            self.get_reportable_orderitem_queryset().filter(
                 order__datum_vydeje__range=[date_from, date_to],
-                order__status__in=['vydano', 'castecne-vydano'],
             )
-            .filter(Q(vydano=True) | Q(order__status='vydano'))
             .select_related('order__user', 'menu_item__druh_jidla')
             .order_by('order__user__last_name', 'order__user__first_name', 'order__datum_vydeje', 'menu_item__druh_jidla__poradi')
         )
@@ -1252,9 +1196,7 @@ class ReportAdmin(admin.ModelAdmin):
         date_from, date_to = self.resolve_period_range(form)
 
         queryset = (
-            OrderItem.objects.filter(
-                order__status__in=['vydano', 'castecne-vydano', 'nevyzvednuto'],
-            )
+            self.get_reportable_orderitem_queryset()
             .select_related('order__user', 'menu_item__jidlo', 'menu_item__druh_jidla')
             .order_by('order__datum_vydeje', 'order__user__last_name', 'order__user__first_name')
         )

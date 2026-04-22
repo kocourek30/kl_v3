@@ -1,10 +1,12 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
 from django.http import QueryDict
 from django.test import RequestFactory, TestCase
+from django.utils import timezone
 
 from jidelnicek.models import DruhJidla, Jidelnicek, Jidlo, PolozkaJidelnicku
 from objednavky.models import Order, OrderItem
@@ -251,3 +253,132 @@ class ReportAdminCarkovniceTests(TestCase):
         self.assertEqual(rows[0]["subsidy_total"], Decimal("26.00"))
         self.assertEqual(rows[0]["paid_total"], Decimal("164.00"))
         self.assertEqual(totals["subsidy_total"], Decimal("26.00"))
+
+    def test_amount_report_last_month_uses_full_previous_month_range(self):
+        march_first_order = Order.objects.create(
+            user=self.user,
+            datum_vydeje=date(2026, 3, 2),
+            status="vydano",
+        )
+        OrderItem.objects.create(
+            order=march_first_order,
+            menu_item=self.obed_polozka,
+            quantity=1,
+            cena=Decimal("82.00"),
+            vydano=True,
+        )
+
+        march_last_order = Order.objects.create(
+            user=self.user,
+            datum_vydeje=date(2026, 3, 31),
+            status="nevyzvednuto",
+        )
+        OrderItem.objects.create(
+            order=march_last_order,
+            menu_item=self.snidane_polozka,
+            quantity=1,
+            cena=Decimal("18.00"),
+            vydano=True,
+        )
+
+        april_order = Order.objects.create(
+            user=self.user,
+            datum_vydeje=date(2026, 4, 2),
+            status="vydano",
+        )
+        OrderItem.objects.create(
+            order=april_order,
+            menu_item=self.obed_polozka,
+            quantity=1,
+            cena=Decimal("82.00"),
+            vydano=True,
+        )
+
+        form = ReportForm(
+            data={
+                "period": "month",
+                "grouping": "day",
+                "customer": str(self.user.pk),
+                "search": "",
+            }
+        )
+
+        frozen_now = timezone.make_aware(datetime(2026, 4, 22, 10, 0, 0))
+        with patch("reporty.admin.timezone.now", return_value=frozen_now):
+            rows, totals, grouping = self.admin.get_report_calculations(form)
+
+        self.assertEqual(grouping, "day")
+        self.assertEqual([row["date"] for row in rows], [date(2026, 3, 2), date(2026, 3, 31)])
+        self.assertEqual(totals["rows_count"], 2)
+
+    def test_amount_report_counts_completed_orders_even_when_item_issue_flags_are_false(self):
+        completed_order = Order.objects.create(
+            user=self.user,
+            datum_vydeje=date(2026, 3, 10),
+            status="vydano",
+        )
+        OrderItem.objects.create(
+            order=completed_order,
+            menu_item=self.obed_polozka,
+            quantity=1,
+            cena=Decimal("82.00"),
+            vydano=False,
+        )
+
+        form = ReportForm(
+            data={
+                "period": "month",
+                "grouping": "day",
+                "customer": str(self.user.pk),
+                "search": "",
+            }
+        )
+
+        frozen_now = timezone.make_aware(datetime(2026, 4, 22, 10, 0, 0))
+        with patch("reporty.admin.timezone.now", return_value=frozen_now):
+            rows, totals, grouping = self.admin.get_report_calculations(form)
+
+        self.assertEqual(grouping, "day")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["date"], date(2026, 3, 10))
+        self.assertEqual(rows[0]["status"], "vydano")
+        self.assertEqual(rows[0]["final_price"], Decimal("82.00"))
+        self.assertEqual(totals["rows_count"], 1)
+
+    def test_financial_report_counts_only_issued_items_for_partial_orders(self):
+        partial_order = Order.objects.create(
+            user=self.user,
+            datum_vydeje=date(2026, 4, 6),
+            status="castecne-vydano",
+        )
+        OrderItem.objects.create(
+            order=partial_order,
+            menu_item=self.obed_polozka,
+            quantity=1,
+            cena=Decimal("82.00"),
+            vydano=True,
+        )
+        OrderItem.objects.create(
+            order=partial_order,
+            menu_item=self.snidane_polozka,
+            quantity=1,
+            cena=Decimal("18.00"),
+            vydano=False,
+        )
+
+        form = ReportForm(
+            data={
+                "period": "current_month",
+                "grouping": "day",
+                "customer": str(self.user.pk),
+                "search": "",
+            }
+        )
+
+        rows, totals, grouping = self.admin.get_financial_subsidy_report(form)
+
+        self.assertEqual(grouping, "day")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["food_name"], "Guláš")
+        self.assertEqual(rows[0]["quantity"], 1)
+        self.assertEqual(totals["total_portions"], 1)

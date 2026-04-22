@@ -528,7 +528,7 @@ JAZZMIN_SETTINGS = {
             "icon": "fas fa-user-friends",
         },
         {
-            "name": "Admin dashboard",
+            "name": "Admin přehled",
             "url": "admin:admin_dashboard_dashboardtask_changelist",
             "icon": "fas fa-screwdriver-wrench",
         },
@@ -609,17 +609,17 @@ JAZZMIN_SETTINGS = {
         "prepocty": [
             {
                 "name": "Spustit přepočet cen",
-                "url": "admin:objednavky_order_price_recalculation",
+                "url": "admin:prepocty_run_recalculation",
                 "icon": "fas fa-play-circle",
             },
             {
                 "name": "Historie přepočtů",
-                "url": "admin:objednavky_pricerecalculationlog_changelist",
+                "url": "admin:prepocty_history",
                 "icon": "fas fa-history",
             },
             {
                 "name": "Detaily přepočtů",
-                "url": "admin:objednavky_pricerecalculationdetail_changelist",
+                "url": "admin:prepocty_details",
                 "icon": "fas fa-list",
             },
         ],
@@ -654,7 +654,7 @@ JAZZMIN_SETTINGS = {
         ],
         "reporty": [
             {
-                "name": "Dashboard reportů",
+                "name": "Přehled reportů",
                 "url": "admin:reporty_reportdummy_changelist",
                 "icon": "fas fa-chart-line",
             },

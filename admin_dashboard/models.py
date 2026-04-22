@@ -28,7 +28,7 @@ class DashboardTask(models.Model):
     command_name = models.CharField(
         max_length=200,
         blank=True,
-        verbose_name="Management command",
+        verbose_name="Příkaz pro správu",
     )
     description = models.TextField(blank=True, verbose_name="Popis")
     expected_interval_hours = models.PositiveIntegerField(
@@ -43,7 +43,7 @@ class DashboardTask(models.Model):
     target_url_name = models.CharField(
         max_length=200,
         blank=True,
-        verbose_name="Cílový URL name",
+        verbose_name="Název cílové URL",
     )
     target_url = models.CharField(
         max_length=255,
@@ -55,8 +55,8 @@ class DashboardTask(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "Úloha dashboardu"
-        verbose_name_plural = "Úlohy dashboardu"
+        verbose_name = "Úloha administrace"
+        verbose_name_plural = "Úlohy administrace"
         ordering = ("category", "name")
 
     def __str__(self):
@@ -106,7 +106,7 @@ class TaskRun(models.Model):
         related_name="runs",
         verbose_name="Úloha",
     )
-    command_name = models.CharField(max_length=200, blank=True, verbose_name="Command")
+    command_name = models.CharField(max_length=200, blank=True, verbose_name="Příkaz")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_RUNNING)
     trigger_source = models.CharField(
         max_length=20,
@@ -149,8 +149,8 @@ class AppModuleToggle(models.Model):
     slug = models.SlugField(unique=True, verbose_name="Slug modulu")
     name = models.CharField(max_length=200, verbose_name="Název modulu")
     description = models.TextField(blank=True, verbose_name="Popis")
-    app_labels = models.JSONField(default=list, blank=True, verbose_name="Admin app labels")
-    route_prefixes = models.JSONField(default=list, blank=True, verbose_name="Route prefixy")
+    app_labels = models.JSONField(default=list, blank=True, verbose_name="Štítky admin aplikací")
+    route_prefixes = models.JSONField(default=list, blank=True, verbose_name="Prefixy adres")
     enabled = models.BooleanField(default=True, verbose_name="Povoleno")
     notes = models.TextField(blank=True, verbose_name="Poznámky")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -169,8 +169,8 @@ class AdminViewAccess(models.Model):
     slug = models.SlugField(unique=True, verbose_name="Slug oblasti")
     name = models.CharField(max_length=200, verbose_name="Název oblasti")
     description = models.TextField(blank=True, verbose_name="Popis")
-    app_labels = models.JSONField(default=list, blank=True, verbose_name="Admin app labels")
-    route_prefixes = models.JSONField(default=list, blank=True, verbose_name="Route prefixy")
+    app_labels = models.JSONField(default=list, blank=True, verbose_name="Štítky admin aplikací")
+    route_prefixes = models.JSONField(default=list, blank=True, verbose_name="Prefixy adres")
     view_groups = models.ManyToManyField(
         Group,
         blank=True,

@@ -181,7 +181,8 @@ class VydejOrderAdmin(admin.ModelAdmin):
     
     def total_price_display(self, obj):
         """Celková cena objednávky"""
-        return format_html('<strong>{:.2f} Kč</strong>', obj.total_price_amount or 0)
+        formatted_total = f"{(obj.total_price_amount or 0):.2f}"
+        return format_html("<strong>{} Kč</strong>", formatted_total)
     total_price_display.short_description = 'Celková cena'
     
     def akce_vydat(self, obj):
@@ -593,7 +594,7 @@ class StornovaneObjednavkyAdmin(admin.ModelAdmin):
                 obj.storno_user.get_full_name() or obj.storno_user.username,
                 obj.storno_datum.strftime('%d.%m. %H:%M')
             )
-        return '<small style="color: #6c757d;">NULL</small>'
+        return format_html('<small style="color: #6c757d;">Bez záznamu</small>')
     storno_info.short_description = 'Storno'
     storno_info.allow_tags = True
 

@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Výdej jídel - Kuchyně</title>
+    <title>Výdej jídelny</title>
     
     <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -36,7 +36,7 @@
             <div class="custom-tabs">
                 <button class="tab-button active" data-tab="rfid">
                     <i class="fas fa-wifi"></i>
-                    RFID Čtečka
+                    RFID čtečka
                 </button>
                 <button class="tab-button" data-tab="customers">
                     <i class="fas fa-users"></i>
@@ -84,14 +84,14 @@
                             </div>
                             <div class="rfid-order-meta-item">
                                 <i class="far fa-clock"></i>
-                                <span>Jídla byla vydána: <strong id="rfidScanTime">-</strong></span>
+                                <span>Vydáno v: <strong id="rfidScanTime">-</strong></span>
                             </div>
                         </div>
                     </div>
                     <!-- ✅ KLIKATELNÁ FAJFKA S TEXTEM -->
                     <button class="rfid-issue-icon-btn" id="rfidIssueIconBtn" title="Vydat jídlo">
                         <i class="fas fa-check-circle"></i>
-                        <span class="rfid-issue-text">Vydat jídla</span>
+                        <span class="rfid-issue-text">Vydat vše</span>
                     </button>
                 </div>
 
@@ -219,7 +219,7 @@
                     
                     <div class="empty-state" id="noResultsMessage" style="display: none;">
                         <i class="fas fa-search"></i>
-                        <p>Žádný uživatel nenalezen</p>
+                        <p>Nebyl nalezen žádný uživatel</p>
                     </div>
                     {% else %}
                     <div class="empty-state">
@@ -308,7 +308,7 @@
             <div class="summary-footer">
                 <h4>
                     <i class="fas fa-clipboard-list"></i>
-                    Celkem k výdeji dnes
+                    Celkem k dnešnímu výdeji
                 </h4>
                 {% if pending_items %}
                 <div class="summary-grid">
@@ -335,7 +335,7 @@
             <!-- INFO BOX -->
             <div class="info-box">
     <div class="info-title">
-        <i class="fas fa-info-circle"></i> Stav
+            <i class="fas fa-info-circle"></i> Stav výdeje
     </div>
     <div class="info-content">
         <div class="info-date">{{ today|date:"d.m.Y" }}</div>
@@ -344,15 +344,15 @@
             <i class="fas fa-user-circle"></i> {{ user.get_full_name }}
         </div>
         <!-- 🔥 VYPNOUT TLAČÍTKO -->
-        <button id="shutdownBtn" class="btn btn-sm btn-warning mt-2 w-100" title="Vypnout výdej">
-            <i class="fas fa-power-off me-1"></i> Vypnout výdej
+        <button id="shutdownBtn" class="btn btn-sm btn-warning mt-2 w-100" title="Ukončit výdej">
+            <i class="fas fa-power-off me-1"></i> Ukončit výdej
         </button>
     </div>
 </div>
 
             <!-- NAPOSLEDY VYDANÉ -->
             <div class="recent-orders">
-                <h3><i class="fas fa-history"></i> Naposledy vydáno</h3>
+                <h3><i class="fas fa-history"></i> Poslední vydané objednávky</h3>
                 <div class="recent-list">
                     {% if completed_orders %}
                         {% for prepared in completed_orders|slice:":10" %}
@@ -405,7 +405,7 @@
                     {% else %}
                         <div class="empty-state" style="padding: 2rem 0.5rem;">
                             <i class="fas fa-inbox" style="font-size: 2.5rem;"></i>
-                            <p style="font-size: 0.9rem;">Zatím nic vydáno</p>
+                            <p style="font-size: 0.9rem;">Zatím nebylo nic vydáno</p>
                         </div>
                     {% endif %}
                 </div>

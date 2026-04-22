@@ -35,8 +35,10 @@
   }
 </style>
 
-<div class="fin-page">
-  <div class="fin-head">
+<div class="fin-page admin-shell admin-shell--wide">
+  <section class="admin-hero">
+    <div class="admin-kicker">Finance • provozní přehled</div>
+    <div class="fin-head">
     <div>
       <h1>{{ title }}</h1>
       <div class="fin-sub">Jedno místo pro tržby z pokladny, objednávkového systému, kont a DPH.</div>
@@ -59,31 +61,32 @@
       <a class="fin-btn fin-btn-light" href="?{{ query_string }}&export=xls">XLS</a>
       <a class="fin-btn fin-btn-accent" href="?{{ query_string }}&export=pdf">PDF</a>
     </form>
-  </div>
+    </div>
+  </section>
 
-  <div class="fin-grid">
-    <div class="fin-card">
+  <div class="fin-grid admin-grid admin-grid--cards">
+    <div class="fin-card admin-card">
       <strong>Obrat celkem</strong>
       <div class="fin-value green">{{ obrat_celkem|floatformat:-2 }} Kč</div>
     </div>
-    <div class="fin-card">
+    <div class="fin-card admin-card">
       <strong>Peněžní příjem</strong>
       <div class="fin-value orange">{{ penezni_prijem|floatformat:-2 }} Kč</div>
     </div>
-    <div class="fin-card">
+    <div class="fin-card admin-card">
       <strong>Pokladna</strong>
       <div class="fin-value">{{ pokladna_trzba|floatformat:-2 }} Kč</div>
     </div>
-    <div class="fin-card">
+    <div class="fin-card admin-card">
       <strong>Objednávky</strong>
       <div class="fin-value">{{ objednavky_trzba|floatformat:-2 }} Kč</div>
     </div>
-    <div class="fin-card">
-      <strong>Dotace a slevy objednávek</strong>
+    <div class="fin-card admin-card">
+      <strong>Dotace a slevy v objednávkách</strong>
       <div class="fin-value orange">{{ objednavky_sleva_dotace|floatformat:-2 }} Kč</div>
     </div>
-    <div class="fin-card">
-      <strong>Připsané dotace na konta</strong>
+    <div class="fin-card admin-card">
+      <strong>Připsané dotace na konto</strong>
       <div class="fin-value">{{ dotace_pripsane|floatformat:-2 }} Kč</div>
     </div>
   </div>
@@ -109,7 +112,7 @@
           {% endfor %}
         </tr>
       {% empty %}
-        <tr><td colspan="{{ report_headers|length }}">Pro zvolený přehled nejsou v období žádná data.</td></tr>
+        <tr><td colspan="{{ report_headers|length }}">Ve zvoleném období nejsou pro tento přehled žádná data.</td></tr>
       {% endfor %}
     </table>
   </section>

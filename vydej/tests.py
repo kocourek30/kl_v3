@@ -1,12 +1,14 @@
 from datetime import date, time
 from decimal import Decimal
 
+from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
 from canteen_settings.models import OrderClosingTime
 from jidelnicek.models import DruhJidla, Jidelnicek, Jidlo, PolozkaJidelnicku
 from objednavky.models import Order, OrderItem
+from vydej.admin import VydejOrderAdmin
 from vydej.models import VydejniUctenka
 from vydej.services import (
     build_issue_board,
@@ -247,3 +249,17 @@ class VydejServiceTests(TestCase):
             board["stats_vsechny_dny"][0]["druhy"]["Oběd"]["Hovězí guláš"]["celkem"],
             2,
         )
+
+    def test_admin_total_price_display_formats_annotated_price_safely(self):
+        order = Order.objects.create(
+            user=self.customer,
+            datum_vydeje=self.target_date,
+            status="objednano",
+        )
+        order.total_price_amount = Decimal("123.40")
+
+        admin_instance = VydejOrderAdmin(Order, admin.site)
+
+        html = admin_instance.total_price_display(order)
+
+        self.assertIn("123.40 Kč", html)

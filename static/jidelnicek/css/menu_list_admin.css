@@ -1,0 +1,235 @@
+.menu-list-page {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.menu-list-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.7fr);
+  gap: 1rem;
+  padding: 1.5rem;
+  border: 1px solid #d8e8d2;
+  border-radius: 1.5rem;
+  background:
+    radial-gradient(circle at top left, rgba(84, 174, 67, 0.14), transparent 34%),
+    radial-gradient(circle at top right, rgba(255, 187, 66, 0.16), transparent 28%),
+    #fff;
+  box-shadow: 0 18px 40px rgba(31, 47, 70, 0.06);
+}
+
+.menu-list-kicker {
+  display: inline-flex;
+  margin-bottom: 0.75rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  background: #eef8e9;
+  color: #2a761d;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.menu-list-hero h1 {
+  margin: 0 0 0.5rem;
+  color: #193621;
+  font-size: 2.05rem;
+  line-height: 1.1;
+}
+
+.menu-list-hero p {
+  margin: 0;
+  max-width: 760px;
+  color: #627163;
+  line-height: 1.65;
+}
+
+.menu-list-chip-row,
+.menu-list-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.menu-list-chip-row {
+  margin-top: 1rem;
+}
+
+.menu-list-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid #d7e6d1;
+  background: #fff;
+  color: #3a4d3e;
+  font-size: 0.9rem;
+}
+
+.menu-list-chip strong {
+  color: #1f6a17;
+}
+
+.menu-list-chip.soft {
+  background: #f8fbf6;
+}
+
+.menu-list-chip.accent {
+  background: #eef8e9;
+  border-color: #cde4c5;
+}
+
+.menu-list-hero-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.menu-list-filter-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.menu-list-context-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.8rem;
+  align-items: center;
+  padding: 0.95rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid #d8e8d2;
+  background: #f8fcf6;
+  color: #4e5f51;
+}
+
+.menu-list-context-card strong {
+  color: #215f20;
+}
+
+.menu-list-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.menu-list-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+  padding: 1.1rem 1.1rem 1.05rem;
+  border-radius: 1.25rem;
+  border: 1px solid #dfebda;
+  background: #fff;
+  box-shadow: 0 16px 34px rgba(31, 47, 70, 0.05);
+}
+
+.menu-list-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.85rem;
+  align-items: flex-start;
+}
+
+.menu-list-card-head h2 {
+  margin: 0 0 0.55rem;
+  color: #193621;
+  font-size: 1.15rem;
+}
+
+.menu-list-items {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.menu-list-item {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.8rem 0.85rem;
+  border-radius: 1rem;
+  border: 1px solid #e4eee0;
+  background: #fbfdf9;
+}
+
+.menu-list-item.is-match {
+  border-color: #cde4c5;
+  background: linear-gradient(135deg, rgba(84, 174, 67, 0.08), rgba(255, 255, 255, 0.98));
+}
+
+.menu-list-item-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #5f6d63;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.menu-list-item-kind i {
+  color: #54ae43;
+}
+
+.menu-list-item-food {
+  color: #213327;
+  line-height: 1.45;
+}
+
+.menu-list-empty,
+.menu-list-empty-state {
+  color: #657266;
+}
+
+.menu-list-empty {
+  padding: 1rem;
+  border-radius: 1rem;
+  border: 1px dashed #d6e7cf;
+  background: #fafcf9;
+}
+
+.menu-list-empty-state {
+  display: grid;
+  gap: 0.35rem;
+  padding: 2.5rem 1.5rem;
+  border-radius: 1.4rem;
+  border: 1px dashed #d7e6d2;
+  background: #fff;
+  text-align: center;
+}
+
+.menu-list-empty-state strong {
+  color: #28422e;
+  font-size: 1.05rem;
+}
+
+@media (max-width: 1100px) {
+  .menu-list-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .menu-list-hero-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .menu-list-filter-grid,
+  .menu-list-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .menu-list-card-head {
+    flex-direction: column;
+  }
+
+  .menu-list-hero,
+  .menu-list-card {
+    padding: 1rem;
+  }
+
+  .menu-list-hero h1 {
+    font-size: 1.65rem;
+  }
+}

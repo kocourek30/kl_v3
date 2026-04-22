@@ -623,11 +623,15 @@ class PolozkaJidelnickuInline(admin.StackedInline):
 @admin.register(Jidelnicek)
 class JidelnicekAdmin(admin.ModelAdmin):
     change_form_template = "admin/jidelnicek/jidelnicek/change_form.html"
+    change_list_template = "admin/jidelnicek/jidelnicek/change_list.html"
     list_display = ('platnost_od', 'platnost_do', 'obsah_jidelnicku')
+    search_fields = ("polozky__jidlo__nazev", "polozky__druh_jidla__nazev")
+    ordering = ("-platnost_od", "-platnost_do")
+    list_per_page = 20
     inlines = [PolozkaJidelnickuInline]
 
     class Media:
-        css = {"all": ("jidelnicek/css/menu_builder_admin.css",)}
+        css = {"all": ("jidelnicek/css/menu_builder_admin.css", "jidelnicek/css/menu_list_admin.css")}
         js = ("jidelnicek/js/menu_builder_admin.js",)
 
     @admin.display(description='Obsah jídelníčku')
@@ -656,6 +660,75 @@ class JidelnicekAdmin(admin.ModelAdmin):
         </table>
         """
         return format_html(table_html)
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request).prefetch_related(
+            "polozky__druh_jidla",
+            "polozky__jidlo",
+        )
+        food_lookup = request.GET.get("food_lookup", "").strip()
+        if food_lookup:
+            queryset = queryset.filter(polozky__jidlo__nazev__icontains=food_lookup).distinct()
+        return queryset
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        response = super().changelist_view(request, extra_context=extra_context)
+        if not hasattr(response, "context_data"):
+            return response
+
+        cl = response.context_data["cl"]
+        food_lookup = request.GET.get("food_lookup", "").strip()
+        menus = []
+        total_items = 0
+        matched_occurrences = 0
+
+        for menu in cl.result_list:
+            grouped_items = []
+            for item in menu.polozky.all():
+                is_match = bool(food_lookup and food_lookup.lower() in item.jidlo.nazev.lower())
+                if is_match:
+                    matched_occurrences += 1
+                grouped_items.append(
+                    {
+                        "kind": item.druh_jidla.nazev,
+                        "kind_icon": item.druh_jidla.ikona,
+                        "food": item.jidlo.nazev,
+                        "is_match": is_match,
+                    }
+                )
+
+            total_items += len(grouped_items)
+            menus.append(
+                {
+                    "obj": menu,
+                    "edit_url": reverse("admin:jidelnicek_jidelnicek_change", args=[menu.pk]),
+                    "items": grouped_items,
+                    "items_count": len(grouped_items),
+                    "kind_count": len({entry["kind"] for entry in grouped_items}),
+                    "matched_count": sum(1 for entry in grouped_items if entry["is_match"]),
+                    "day_label": menu.platnost_od.strftime("%d.%m.%Y"),
+                    "range_label": (
+                        menu.platnost_od.strftime("%d.%m.%Y")
+                        if menu.platnost_od == menu.platnost_do
+                        else f"{menu.platnost_od.strftime('%d.%m.%Y')} - {menu.platnost_do.strftime('%d.%m.%Y')}"
+                    ),
+                }
+            )
+
+        response.context_data.update(
+            {
+                "food_lookup": food_lookup,
+                "menu_cards": menus,
+                "menu_total_count": cl.result_count,
+                "menu_total_items": total_items,
+                "menu_matched_occurrences": matched_occurrences,
+                "menu_active_filters": {
+                    "food_lookup": food_lookup,
+                },
+            }
+        )
+        return response
 
     def get_urls(self):
         urls = super().get_urls()

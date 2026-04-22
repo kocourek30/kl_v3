@@ -241,7 +241,7 @@
                         rfidStatusEl.textContent = `✅ Vítej ${resp.data.username}! Přihlášen...`;
                         rfidStatusEl.className = 'rfid-status rfid-success';
                         rfidStatusEl.style.display = 'block';
-                        messageEl.textContent = 'Přesměrovávám na dashboard...';
+                        messageEl.textContent = 'Přesměrovávám do jídelníčku...';
 
                         setTimeout(() => {
                             window.location.href = "{% url 'jidelnicek:dashboard' %}";

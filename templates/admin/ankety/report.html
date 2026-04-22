@@ -45,11 +45,11 @@
   <div class="survey-head">
     <div>
       <h1>{{ title }}</h1>
-      <div class="survey-sub">Přehled spokojenosti, objednanosti a návratnosti hodnocení.</div>
+      <div class="survey-sub">Přehled spokojenosti strávníků, objednanosti jídel a návratnosti hodnocení.</div>
     </div>
 
     <form class="survey-filter" method="get">
-      <label>Typ období
+      <label>Období
         <select name="typ">
           <option value="month" {% if typ == "month" %}selected{% endif %}>Měsíc</option>
           <option value="day" {% if typ == "day" %}selected{% endif %}>Den</option>
@@ -137,7 +137,7 @@
           </tbody>
         </table>
       {% else %}
-        <div class="survey-empty">Zatím není co vyhodnocovat.</div>
+        <div class="survey-empty">Zatím tu nejsou data, která by vyžadovala pozornost.</div>
       {% endif %}
     </section>
 
@@ -213,7 +213,7 @@
           </div>
         {% endfor %}
       {% else %}
-        <div class="survey-empty">Bez textových poznámek.</div>
+        <div class="survey-empty">Ve vybraném období nejsou žádné textové poznámky.</div>
       {% endif %}
     </section>
   </div>

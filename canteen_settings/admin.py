@@ -104,4 +104,4 @@ class OperatingExceptionsAdmin(admin.ModelAdmin):
         if obj.exception_type == 'open':
             return format_html('<span style="color: green; font-size: 16px;">✅ Otevřeno</span>')
         return format_html('<span style="color: red; font-size: 16px;">❌ Zavřeno</span>')
-    status_icon.short_description = 'Status'
+    status_icon.short_description = 'Stav'

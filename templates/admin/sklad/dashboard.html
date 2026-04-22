@@ -2,61 +2,81 @@
 {% load i18n %}
 
 {% block content_title %}
-  
-    <i class="fas fa-warehouse"></i>
-    Sklad – přehled spotřeby
-  
+  <i class="fas fa-warehouse"></i>
+  Sklad – přehled spotřeby
 {% endblock %}
 
 {% block search %}
-<div class="col-12">
-<div class="card mb-3">
-  <div class="card-body">
-    <form method="get" class="form-inline">
-      <div class="form-group mr-2">
-        <label for="id_date" class="mr-2 mb-0">
-          <i class="fas fa-calendar-alt"></i> Datum:
-        </label>
-        <input
-          id="id_date"
-          type="date"
-          name="date"
-          class="form-control"
-          value="{{ target_date|date:'Y-m-d' }}"
-        >
+<div class="sklad-shell">
+  <section class="sklad-hero">
+    <div>
+      <div class="admin-kicker">Sklad jídelny</div>
+      <h1>Denní přehled spotřeby a kontrol</h1>
+      <p>
+        Na jednom místě vidíš kondici skladu, otevřené doklady, suroviny s blížícím se datem spotřeby
+        i rozdíly mezi skladem a šaržemi. Cílem je rychlá orientace před uzávěrkou.
+      </p>
+    </div>
+    <div class="sklad-status">
+      <div class="admin-stat-card">
+        <span class="admin-stat-label">Skóre skladu</span>
+        <span class="admin-stat-value">{{ zdravi_skladu.skore }} %</span>
+        <span class="admin-stat-note">Připravenost na denní uzávěrku</span>
       </div>
-      <button type="submit" class="btn btn-primary">
-        <i class="fas fa-filter"></i> Filtrovat
-      </button>
+      <div class="admin-stat-card">
+        <span class="admin-stat-label">Hodnota skladu</span>
+        <span class="admin-stat-value">{{ zdravi_skladu.hodnota_skladu|floatformat:-2 }} Kč</span>
+        <span class="admin-stat-note">Ocenění aktivního stavu zásob</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="admin-filter-panel">
+    <form method="get" class="admin-filter-form">
+      <div class="admin-filter-grid">
+        <div class="admin-field">
+          <label for="id_date"><i class="fas fa-calendar-alt"></i> Datum</label>
+          <input
+            id="id_date"
+            type="date"
+            name="date"
+            value="{{ target_date|date:'Y-m-d' }}"
+          >
+        </div>
+      </div>
+      <div class="admin-filter-actions">
+        <button type="submit" class="admin-btn admin-btn--primary">
+          <i class="fas fa-filter"></i> Filtrovat
+        </button>
+      </div>
     </form>
   </div>
-</div>
-</div>
 {% endblock %}
 
 {% block result_list %}
-<div class="card mb-3">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <span>
+<div class="sklad-shell">
+<section class="sklad-section">
+  <div class="sklad-section-head">
+    <h3>
       <i class="fas fa-clipboard-check"></i>
       Denní skladový checklist
-    </span>
-    <div>
-      <a class="btn btn-sm btn-outline-danger" href="{{ zdravi_skladu_pdf_url }}">
+    </h3>
+    <div class="admin-actions-row">
+      <a class="admin-btn admin-btn--danger admin-btn--small" href="{{ zdravi_skladu_pdf_url }}">
         <i class="fas fa-file-pdf"></i> PDF zdraví skladu
       </a>
-      <a class="btn btn-sm btn-info" href="{{ zdravi_skladu_url }}?date={{ target_date|date:'Y-m-d' }}">
+      <a class="admin-btn admin-btn--light admin-btn--small" href="{{ zdravi_skladu_url }}?date={{ target_date|date:'Y-m-d' }}">
         <i class="fas fa-heartbeat"></i> Zdraví skladu
       </a>
-      <a class="btn btn-sm btn-warning" href="{{ doklady_k_oprave_url }}">
+      <a class="admin-btn admin-btn--accent admin-btn--small" href="{{ doklady_k_oprave_url }}">
         <i class="fas fa-triangle-exclamation"></i> Doklady k opravě
       </a>
-      <a class="btn btn-sm btn-success" href="{{ navrh_nakupu_url }}">
+      <a class="admin-btn admin-btn--primary admin-btn--small" href="{{ navrh_nakupu_url }}">
         <i class="fas fa-cart-plus"></i> Návrh nákupu
       </a>
     </div>
   </div>
-  <div class="card-body">
+  <div class="sklad-section-body">
     <div class="row mb-3">
       <div class="col-md-4">
         <strong>Skóre skladu:</strong>
@@ -104,30 +124,30 @@
       </div>
     </div>
     {% if denni_checklist.expirovane_sarze or denni_checklist.rozdily_stav_sarze or denni_checklist.minimum_alerty %}
-      <div class="alert alert-warning mt-3 mb-0">
+      <div class="sklad-alert sklad-alert--warning mt-3 mb-0">
         Před koncem dne zkontroluj expirace, minima a případné rozdíly mezi stavem skladu a šaržemi.
       </div>
     {% else %}
-      <div class="alert alert-success mt-3 mb-0">
+      <div class="sklad-alert sklad-alert--success mt-3 mb-0">
         Denní kontroly jsou bez kritických upozornění.
       </div>
     {% endif %}
   </div>
-</div>
+</section>
 
 <div class="row">
   <div class="col-lg-6">
-    <div class="card mb-3">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <span>
+    <section class="sklad-section mb-3">
+      <div class="sklad-section-head">
+        <h3>
           <i class="fas fa-hourglass-half"></i>
           Suroviny s končícím datem spotřeby
-        </span>
+        </h3>
         <small class="text-muted">do {{ expirace_do|date:"d.m.Y" }}</small>
       </div>
-      <div class="card-body p-0">
+      <div class="sklad-section-body p-0">
         <div class="table-responsive">
-          <table class="table table-sm table-striped mb-0">
+          <table class="table table-sm table-striped mb-0 sklad-table">
             <thead class="thead-light">
               <tr>
                 <th>Surovina</th>
@@ -183,18 +203,20 @@
           </table>
         </div>
       </div>
-    </div>
+    </section>
   </div>
 
   <div class="col-lg-6">
-    <div class="card mb-3">
-      <div class="card-header">
+    <section class="sklad-section mb-3">
+      <div class="sklad-section-head">
+        <h3>
         <i class="fas fa-bell"></i>
         Upozornění na minimální zásobu
+        </h3>
       </div>
-      <div class="card-body p-0">
+      <div class="sklad-section-body p-0">
         <div class="table-responsive">
-          <table class="table table-sm table-striped mb-0">
+          <table class="table table-sm table-striped mb-0 sklad-table">
             <thead class="thead-light">
               <tr>
                 <th>Surovina</th>
@@ -232,18 +254,20 @@
           </table>
         </div>
       </div>
-    </div>
+    </section>
   </div>
 </div>
 
-<div class="card mb-3">
-  <div class="card-header">
+<section class="sklad-section mb-3">
+  <div class="sklad-section-head">
+    <h3>
     <i class="fas fa-scale-balanced"></i>
     Kontrola skladu proti šaržím
+    </h3>
   </div>
-  <div class="card-body p-0">
+  <div class="sklad-section-body p-0">
     <div class="table-responsive">
-      <table class="table table-sm table-striped mb-0">
+      <table class="table table-sm table-striped mb-0 sklad-table">
         <thead class="thead-light">
           <tr>
             <th>Surovina</th>
@@ -272,21 +296,21 @@
       </table>
     </div>
   </div>
-</div>
+</section>
 
-<div class="card">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <span>
+<section class="sklad-section">
+  <div class="sklad-section-head">
+    <h3>
       <i class="fas fa-list"></i>
       Přehled surovin
-    </span>
+    </h3>
     <small class="text-muted">
       Datum: {{ target_date|date:"d.m.Y" }}
     </small>
   </div>
-  <div class="card-body p-0">
+  <div class="sklad-section-body p-0">
     <div class="table-responsive">
-      <table class="table table-sm table-striped mb-0">
+      <table class="table table-sm table-striped mb-0 sklad-table">
         <thead class="thead-light">
           <tr>
             <th><i class="fas fa-carrot"></i> Surovina</th>
@@ -343,5 +367,6 @@
       </table>
     </div>
   </div>
+</section>
 </div>
 {% endblock %}

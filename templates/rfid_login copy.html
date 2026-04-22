@@ -135,7 +135,7 @@
                 .then(resp => {
                     if (resp.data.success) {
                         statusEl.textContent = 'Uživatel ' + resp.data.username + ' přihlášen.';
-                        messageEl.textContent = 'Přesměrovávám na dashboard...';
+                        messageEl.textContent = 'Přesměrovávám do jídelníčku...';
                         setTimeout(() => {
                             window.location.href = "{% url 'dashboard' %}";
                         }, 1000);

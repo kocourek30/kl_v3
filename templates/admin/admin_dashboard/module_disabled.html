@@ -17,7 +17,7 @@
         Oblast <strong>{{ module_name }}</strong> je dostupná jen pro vybrané Django skupiny.
       </p>
       <p class="ops-muted">
-        Pokud do ní potřebujete vstup, upravte přímé členství uživatele v Django skupinách v Admin dashboardu.
+        Pokud do ní potřebujete vstup, upravte přímé členství uživatele v Django skupinách v Admin přehledu.
       </p>
     {% else %}
       <p>
@@ -29,7 +29,7 @@
     {% endif %}
     <div style="margin-top: 18px;">
       <a class="button default" href="{% url 'admin:admin_dashboard_dashboardtask_changelist' %}">
-        Otevřít Admin dashboard
+        Otevřít Admin přehled
       </a>
     </div>
   </section>
