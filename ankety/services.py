@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.db.models import Avg, Count, Sum
 from django.utils import timezone
 
+from jidelnicek.models import DruhJidla
 from objednavky.models import OrderItem
 
 from .models import AnketniOtazka, HodnoceniJidla, OdpovedHodnoceni
@@ -78,6 +79,7 @@ def anketni_report_obdobi(date_from, date_to, *, min_hodnoceni=1):
     jidla = []
     jidla_map = defaultdict(lambda: {
         "jidlo": "",
+        "druh_jidla": "Bez druhu",
         "hodnoceni": 0,
         "odpovedi": 0,
         "soucet": 0,
@@ -88,7 +90,9 @@ def anketni_report_obdobi(date_from, date_to, *, min_hodnoceni=1):
 
     for item in objednane_qs:
         nazev = item.menu_item.jidlo.nazev if item.menu_item_id and item.menu_item.jidlo_id else str(item.menu_item)
+        druh = getattr(getattr(item, "menu_item", None), "druh_jidla", None)
         jidla_map[nazev]["jidlo"] = nazev
+        jidla_map[nazev]["druh_jidla"] = getattr(druh, "nazev", None) or jidla_map[nazev]["druh_jidla"]
         jidla_map[nazev]["objednano"] += item.quantity or 0
         if item.vydano:
             jidla_map[nazev]["vydano"] += item.quantity or 0
@@ -96,6 +100,8 @@ def anketni_report_obdobi(date_from, date_to, *, min_hodnoceni=1):
     for hodnoceni in hodnoceni_qs:
         row = jidla_map[hodnoceni.jidlo_nazev]
         row["jidlo"] = hodnoceni.jidlo_nazev
+        druh = getattr(getattr(getattr(hodnoceni, "order_item", None), "menu_item", None), "druh_jidla", None)
+        row["druh_jidla"] = getattr(druh, "nazev", None) or row["druh_jidla"]
         row["hodnoceni"] += 1
         if hodnoceni.poznamka:
             row["poznamek"] += 1
@@ -113,6 +119,45 @@ def anketni_report_obdobi(date_from, date_to, *, min_hodnoceni=1):
     nejslabsi = sorted(hodnocena_jidla, key=lambda row: (row["prumer"], -row["hodnoceni"]))[:10]
     nejobjednavanejsi = sorted(jidla, key=lambda row: (row["objednano"], row["hodnoceni"]), reverse=True)[:12]
     nejvice_poznamek = sorted([row for row in jidla if row["poznamek"]], key=lambda row: row["poznamek"], reverse=True)[:8]
+
+    hodnocena_podle_druhu = defaultdict(list)
+    for row in hodnocena_jidla:
+        hodnocena_podle_druhu[row["druh_jidla"]].append(row)
+
+    vsechny_druhy = list(DruhJidla.objects.order_by("poradi", "nazev").values_list("nazev", flat=True))
+    if "Bez druhu" in hodnocena_podle_druhu and "Bez druhu" not in vsechny_druhy:
+        vsechny_druhy.append("Bez druhu")
+
+    nejlepsi_podle_druhu = []
+    nejslabsi_podle_druhu = []
+    for druh_nazev in vsechny_druhy:
+        rows = hodnocena_podle_druhu.get(druh_nazev, [])
+        nejlepsi_rows = sorted(rows, key=lambda row: (row["prumer"], row["hodnoceni"]), reverse=True)[:5]
+        nejslabsi_rows = sorted(rows, key=lambda row: (row["prumer"], -row["hodnoceni"]))[:5]
+        prumer_druhu = _fmt_avg(sum(row["soucet"] for row in rows) / sum(row["odpovedi"] for row in rows)) if sum(row["odpovedi"] for row in rows) else None
+        nejlepsi_podle_druhu.append({
+            "druh_jidla": druh_nazev,
+            "prumer": prumer_druhu,
+            "count": len(rows),
+            "rows": nejlepsi_rows,
+        })
+        nejslabsi_podle_druhu.append({
+            "druh_jidla": druh_nazev,
+            "prumer": prumer_druhu,
+            "count": len(rows),
+            "rows": nejslabsi_rows,
+        })
+
+    druhy_graf = []
+    max_hodnoceni_v_druhu = max((group["count"] for group in nejlepsi_podle_druhu), default=0)
+    for group in nejlepsi_podle_druhu:
+        width = int((group["count"] / max_hodnoceni_v_druhu) * 100) if max_hodnoceni_v_druhu else 0
+        druhy_graf.append({
+            "druh_jidla": group["druh_jidla"],
+            "prumer": group["prumer"],
+            "count": group["count"],
+            "width": width,
+        })
 
     otazky = [
         {
@@ -139,9 +184,10 @@ def anketni_report_obdobi(date_from, date_to, *, min_hodnoceni=1):
         row["prumer"] = _fmt_avg(Decimal(row["soucet"]) / Decimal(row["odpovedi"])) if row["odpovedi"] else None
         trendy.append(row)
 
-    poznamky = [
+    poznamky_all = [
         {
             "jidlo": h.jidlo_nazev,
+            "druh_jidla": getattr(getattr(getattr(h, "order_item", None), "menu_item", None), "druh_jidla", None),
             "stravnik": h.user.get_full_name() or h.user.username,
             "datum": h.datum_vydeje,
             "poznamka": h.poznamka,
@@ -149,7 +195,7 @@ def anketni_report_obdobi(date_from, date_to, *, min_hodnoceni=1):
         }
         for h in hodnoceni_qs
         if h.poznamka
-    ][:20]
+    ]
 
     return {
         "date_from": date_from,
@@ -160,12 +206,18 @@ def anketni_report_obdobi(date_from, date_to, *, min_hodnoceni=1):
         "objednane_count": objednane_qs.aggregate(total=Sum("quantity"))["total"] or 0,
         "navratnost_pct": hodnotitelnost_pct,
         "prumer": prumer,
-        "jidla_count": len(jidla),
+        "jidla_count": len(hodnocena_jidla),
+        "jidla": jidla,
+        "hodnocena_jidla": hodnocena_jidla,
         "nejlepsi": nejlepsi,
         "nejslabsi": nejslabsi,
         "nejobjednavanejsi": nejobjednavanejsi,
+        "nejlepsi_podle_druhu": nejlepsi_podle_druhu,
+        "nejslabsi_podle_druhu": nejslabsi_podle_druhu,
+        "druhy_graf": druhy_graf,
         "nejvice_poznamek": nejvice_poznamek,
         "otazky": otazky,
         "trendy": trendy,
-        "poznamky": poznamky,
+        "poznamky": poznamky_all[:20],
+        "poznamky_all": poznamky_all,
     }

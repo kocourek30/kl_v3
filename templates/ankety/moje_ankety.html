@@ -1,28 +1,35 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Hodnocení jídel{% endblock %}
 
-{% block content %}
-<style>
-  .survey-page { max-width: 1100px; margin: 0 auto; display: grid; gap: 18px; }
-  .survey-hero { background: #ffffff; border: 1px solid #dbe1e8; border-top: 5px solid #f28f28; border-radius: 8px; padding: 22px; box-shadow: 0 10px 28px rgba(23,32,42,.06); }
-  .survey-title { margin: 0; font-size: 1.8rem; font-weight: 900; color: #17202a; }
-  .survey-subtitle { color: #607080; margin-top: 6px; }
-  .survey-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
-  .survey-card { background: #fff; border: 1px solid #dbe1e8; border-radius: 8px; padding: 16px; display: grid; gap: 8px; box-shadow: 0 8px 22px rgba(23,32,42,.05); }
-  .survey-card-done { background: #f8fafc; }
-  .survey-meal { font-size: 1.1rem; font-weight: 900; color: #17202a; }
-  .survey-meta { color: #607080; font-size: .92rem; }
-  .survey-btn { border-radius: 8px; min-height: 40px; padding: 9px 14px; background: #18a046; color: #fff; text-decoration: none; font-weight: 900; display: inline-flex; align-items: center; justify-content: center; width: fit-content; }
-  .survey-btn:hover { color: #fff; background: #12823a; }
-  .survey-empty { background: #fff8f0; border: 1px solid #f6c896; border-radius: 8px; padding: 16px; color: #754a00; font-weight: 800; }
-</style>
+{% block head %}
+<link rel="stylesheet" href="{% static 'ankety/css/ankety_frontend.css' %}">
+{% endblock %}
 
+{% block content %}
 <div class="survey-page">
   <section class="survey-hero">
-    <h1 class="survey-title">Hodnocení dnešních jídel</h1>
-    <div class="survey-subtitle">
-      Ohodnotit můžeš jen jídlo, které máš dnes skutečně odebrané. Každé vydané jídlo lze hodnotit jednou.
+    <div class="survey-hero-copy">
+      <span class="rate-eyebrow"><i class="fas fa-star-half-stroke"></i> Hodnocení jídel</span>
+      <h1 class="survey-title">Hodnocení dnešních jídel</h1>
+      <div class="survey-subtitle">
+        Ohodnotit můžeš jen jídlo, které máš dnes skutečně odebrané. Každé vydané jídlo lze hodnotit jen jednou.
+      </div>
+    </div>
+    <div class="survey-summary">
+      <div class="survey-summary-card">
+        <strong>Čeká na hodnocení</strong>
+        <span>{{ hodnotit|length }}</span>
+      </div>
+      <div class="survey-summary-card">
+        <strong>Už ohodnoceno</strong>
+        <span>{{ hotovo|length }}</span>
+      </div>
+      <div class="survey-summary-card">
+        <strong>Aktivní otázky</strong>
+        <span>{{ otazky_count }}</span>
+      </div>
     </div>
   </section>
 
@@ -42,9 +49,17 @@
       <div class="survey-grid">
         {% for item in hodnotit %}
           <article class="survey-card">
-            <div class="survey-meal">{{ item.menu_item.jidlo.nazev }}</div>
+            <div class="survey-card-top">
+              <div class="survey-meal">{{ item.menu_item.jidlo.nazev }}</div>
+              <span class="survey-badge">Čeká</span>
+            </div>
             <div class="survey-meta">{{ item.menu_item.druh_jidla.nazev }} · vydáno {{ item.datum_vydani|date:"d.m.Y H:i" }} · {{ item.quantity }}×</div>
-            <a class="survey-btn" href="{% url 'ankety:hodnotit_jidlo' item.id %}">Ohodnotit jídlo</a>
+            <div class="survey-card-footer">
+              <div class="survey-stars-preview" aria-hidden="true">
+                <i class="far fa-star"></i><i class="far fa-star"></i><i class="far fa-star"></i><i class="far fa-star"></i><i class="far fa-star"></i>
+              </div>
+              <a class="survey-btn" href="{% url 'ankety:hodnotit_jidlo' item.id %}">Ohodnotit jídlo</a>
+            </div>
           </article>
         {% endfor %}
       </div>
@@ -59,8 +74,17 @@
       <div class="survey-grid">
         {% for item in hotovo %}
           <article class="survey-card survey-card-done">
-            <div class="survey-meal">{{ item.menu_item.jidlo.nazev }}</div>
-            <div class="survey-meta">Děkujeme za zpětnou vazbu.</div>
+            <div class="survey-card-top">
+              <div class="survey-meal">{{ item.menu_item.jidlo.nazev }}</div>
+              <span class="survey-badge survey-badge-done">Hotovo</span>
+            </div>
+            <div class="survey-meta">{{ item.menu_item.druh_jidla.nazev }}</div>
+            <div class="survey-card-footer survey-card-footer--done">
+              <div class="survey-stars-preview survey-stars-preview--done" aria-hidden="true">
+                <i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i>
+              </div>
+              <span class="survey-done-copy">Děkujeme za zpětnou vazbu.</span>
+            </div>
           </article>
         {% endfor %}
       </div>

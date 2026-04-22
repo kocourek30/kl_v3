@@ -666,7 +666,7 @@ class JidelnicekAdmin(admin.ModelAdmin):
             "polozky__druh_jidla",
             "polozky__jidlo",
         )
-        food_lookup = request.GET.get("food_lookup", "").strip()
+        food_lookup = request.GET.get("q", "").strip() or request.GET.get("food_lookup", "").strip()
         if food_lookup:
             queryset = queryset.filter(polozky__jidlo__nazev__icontains=food_lookup).distinct()
         return queryset
@@ -678,7 +678,7 @@ class JidelnicekAdmin(admin.ModelAdmin):
             return response
 
         cl = response.context_data["cl"]
-        food_lookup = request.GET.get("food_lookup", "").strip()
+        food_lookup = request.GET.get("q", "").strip() or request.GET.get("food_lookup", "").strip()
         menus = []
         total_items = 0
         matched_occurrences = 0
@@ -698,12 +698,17 @@ class JidelnicekAdmin(admin.ModelAdmin):
                     }
                 )
 
+            visible_items = grouped_items
+            if food_lookup:
+                visible_items = [entry for entry in grouped_items if entry["is_match"]]
+
             total_items += len(grouped_items)
             menus.append(
                 {
                     "obj": menu,
                     "edit_url": reverse("admin:jidelnicek_jidelnicek_change", args=[menu.pk]),
-                    "items": grouped_items,
+                    "items": visible_items,
+                    "all_items_count": len(grouped_items),
                     "items_count": len(grouped_items),
                     "kind_count": len({entry["kind"] for entry in grouped_items}),
                     "matched_count": sum(1 for entry in grouped_items if entry["is_match"]),
@@ -719,6 +724,7 @@ class JidelnicekAdmin(admin.ModelAdmin):
         response.context_data.update(
             {
                 "food_lookup": food_lookup,
+                "search_query": food_lookup,
                 "menu_cards": menus,
                 "menu_total_count": cl.result_count,
                 "menu_total_items": total_items,

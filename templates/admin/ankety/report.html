@@ -1,221 +1,535 @@
 {% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'ankety/css/ankety_admin.css' %}">
+{% endblock %}
 
 {% block content %}
-<style>
-  .survey-page { display: grid; gap: 16px; }
-  .survey-head { display: flex; justify-content: space-between; gap: 16px; align-items: end; flex-wrap: wrap; }
-  .survey-head h1 { margin: 0; font-size: 2rem; font-weight: 950; color: #17202a; }
-  .survey-sub { color: #64748b; margin-top: 4px; font-weight: 700; }
-  .survey-filter { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; background: #fff; border: 1px solid #dce4ea; border-radius: 8px; padding: 12px; }
-  .survey-filter label { display: grid; gap: 4px; font-weight: 850; color: #4f5d66; }
-  .survey-filter input, .survey-filter select { min-height: 38px; border: 1px solid #cad5dd; border-radius: 8px; padding: 6px 8px; }
-  .survey-btn { min-height: 38px; border: 0; border-radius: 8px; padding: 8px 14px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-weight: 950; text-decoration: none; background: #14933b; color: #fff !important; }
-  .survey-btn-light { background: #eef3f6; color: #1f2d36 !important; }
-  .survey-btn-accent { background: #f28f28; }
-  .survey-grid { display: grid; grid-template-columns: repeat(5, minmax(145px, 1fr)); gap: 12px; }
-  .survey-card { background: #fff; border: 1px solid #dce4ea; border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgba(20,40,60,.04); }
-  .survey-card strong { display: block; color: #64748b; font-size: .84rem; text-transform: uppercase; letter-spacing: .02em; }
-  .survey-value { margin-top: 6px; font-size: 1.55rem; font-weight: 950; color: #17202a; }
-  .survey-value.green { color: #14933b; }
-  .survey-value.orange { color: #d96f00; }
-  .survey-panels { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
-  .survey-panel { background: #fff; border: 1px solid #dce4ea; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(20,40,60,.04); }
-  .survey-panel h2 { margin: 0; padding: 13px 14px; border-bottom: 1px solid #edf1f4; font-size: 1rem; font-weight: 950; color: #17202a; }
-  .survey-table { width: 100%; border-collapse: collapse; }
-  .survey-table th { background: #f6f8fa; color: #5f6f7a; text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8ee; white-space: nowrap; }
-  .survey-table td { padding: 10px 12px; border-bottom: 1px solid #edf1f4; vertical-align: top; }
-  .survey-num { text-align: right; white-space: nowrap; font-weight: 900; }
-  .survey-rank { width: 34px; height: 34px; border-radius: 8px; display: inline-grid; place-items: center; font-weight: 950; background: #eef8f0; color: #166534; }
-  .survey-rank.bad { background: #fff7ed; color: #9a3412; }
-  .survey-score { display: inline-flex; align-items: center; gap: 6px; font-weight: 950; color: #17202a; }
-  .survey-bar { min-width: 70px; height: 8px; border-radius: 999px; background: #e5e7eb; overflow: hidden; display: inline-block; vertical-align: middle; }
-  .survey-bar span { display: block; height: 100%; background: #14933b; }
-  .survey-note { color: #64748b; font-size: .9rem; }
-  .survey-comment { display: grid; gap: 4px; padding: 12px 14px; border-bottom: 1px solid #edf1f4; }
-  .survey-comment:last-child { border-bottom: 0; }
-  .survey-comment strong { color: #17202a; }
-  .survey-empty { padding: 16px; color: #64748b; font-weight: 700; }
-  @media (max-width: 1250px) {
-    .survey-grid { grid-template-columns: repeat(2, minmax(145px, 1fr)); }
-    .survey-panels { grid-template-columns: 1fr; }
-  }
-</style>
+<div class="report-page ankety-page">
+  <div class="report-shell ankety-shell">
+    <section class="report-hero ankety-hero">
+      <div>
+        <span class="report-eyebrow"><i class="fas fa-star-half-stroke"></i> Anketní přehled</span>
+        <h1>{{ title }}</h1>
+        <p>Přehled spokojenosti strávníků, objednanosti jídel a návratnosti hodnocení v jednom kompaktním místě.</p>
+        <div class="admin-chip-row ankety-chip-row">
+          <span class="admin-chip"><strong>Období:</strong> {{ period_label }}</span>
+          <span class="admin-chip"><strong>Od:</strong> {{ date_from|date:"d.m.Y" }}</span>
+          <span class="admin-chip"><strong>Do:</strong> {{ date_to|date:"d.m.Y" }}</span>
+        </div>
+      </div>
+      <div class="report-meta-grid ankety-meta-grid">
+        <div class="report-meta-card">
+          <strong>Průměrné hodnocení</strong>
+          <span>{{ data.prumer|default:"-" }}</span>
+          <small>Souhrn napříč odpověďmi</small>
+        </div>
+        <div class="report-meta-card">
+          <strong>Vyplněná hodnocení</strong>
+          <span>{{ data.hodnoceni_count }}</span>
+          <small>Skutečně odeslané ankety</small>
+        </div>
+        <div class="report-meta-card">
+          <strong>Návratnost</strong>
+          <span>{{ data.navratnost_pct }} %</span>
+          <small>Poměr vůči objednaným porcím</small>
+        </div>
+        <div class="report-meta-card">
+          <strong>Objednáno porcí</strong>
+          <span>{{ data.objednane_count }}</span>
+          <small>Relevantní základ pro porovnání</small>
+        </div>
+      </div>
+    </section>
 
-<div class="survey-page">
-  <div class="survey-head">
-    <div>
-      <h1>{{ title }}</h1>
-      <div class="survey-sub">Přehled spokojenosti strávníků, objednanosti jídel a návratnosti hodnocení.</div>
+    <section class="admin-filter-panel ankety-period-panel">
+      <div class="ankety-period-bar">
+        <span class="ankety-period-bar__label">Období reportu</span>
+        <div class="ankety-period-pills">
+          {% for value, label in period_choices %}
+              <a
+                class="ankety-period-pill {% if typ == value %}is-active{% endif %}"
+                href="?typ={{ value }}"
+              >
+                {{ label }}
+              </a>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <form method="get" class="admin-filter-form">
+        <div class="admin-filter-panel ankety-filter-panel" {% if typ != "custom" %}hidden{% endif %}>
+          <div class="ankety-custom-period-panel" {% if typ != "custom" %}hidden{% endif %}>
+            <input type="hidden" name="typ" value="custom">
+            <div class="ankety-custom-period-panel__intro">
+              Vyber vlastní období a zobraz přehled hodnocení za zadané datumy.
+            </div>
+            <div class="admin-filter-grid ankety-filter-grid">
+              <div class="admin-field ankety-custom-period-field">
+                <label>Datum od</label>
+                <input type="date" name="od" value="{{ date_from|date:'Y-m-d' }}">
+              </div>
+              <div class="admin-field ankety-custom-period-field">
+                <label>Datum do</label>
+                <input type="date" name="do" value="{{ date_to|date:'Y-m-d' }}">
+              </div>
+          </div>
+
+          <div class="admin-filter-actions">
+            <button class="admin-btn admin-btn--primary" type="submit">
+              <i class="fas fa-chart-line"></i>
+              Zobrazit přehled
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="admin-export-bar">
+        <strong>Export dat:</strong>
+        <a class="admin-btn admin-btn--light admin-btn--small" href="?{{ query_string }}&export=xls">Stáhnout XLS</a>
+        <a class="admin-btn admin-btn--danger admin-btn--small" href="?{{ query_string }}&export=pdf">Stáhnout PDF</a>
+      </div>
+    </form>
+
+    <div class="ankety-kpi-grid">
+      <div class="matrix-total-card">
+        <strong>{{ data.prumer|default:"-" }}</strong>
+        <span>průměrné hodnocení</span>
+      </div>
+      <div class="matrix-total-card">
+        <strong>{{ data.hodnoceni_count }}</strong>
+        <span>odeslaných hodnocení</span>
+      </div>
+      <div class="matrix-total-card">
+        <strong>{{ data.navratnost_pct }} %</strong>
+        <span>návratnost anket</span>
+      </div>
+      <div class="matrix-total-card">
+        <strong>{{ data.objednane_count }}</strong>
+        <span>objednaných porcí</span>
+      </div>
+      <div class="matrix-total-card">
+        <strong>{{ data.jidla_count }}</strong>
+        <span>hodnocených jídel</span>
+      </div>
     </div>
 
-    <form class="survey-filter" method="get">
-      <label>Období
-        <select name="typ">
-          <option value="month" {% if typ == "month" %}selected{% endif %}>Měsíc</option>
-          <option value="day" {% if typ == "day" %}selected{% endif %}>Den</option>
-          <option value="custom" {% if typ == "custom" %}selected{% endif %}>Vlastní období</option>
-        </select>
-      </label>
-      <label>Rok
-        <select name="rok">
-          {% for y in roky %}
-            <option value="{{ y }}" {% if y == rok %}selected{% endif %}>{{ y }}</option>
+    <section class="admin-panel ankety-panel">
+      <div class="admin-panel-head">
+        <div>
+          <h3>Přehled podle druhu jídla</h3>
+          <div class="admin-muted">Rychlé srovnání, kde se daří snídaním, svačinám, obědům nebo večeřím nejlépe.</div>
+        </div>
+      </div>
+      <div class="admin-panel-body">
+        <div class="ankety-type-bars">
+          {% for row in data.druhy_graf %}
+            <article class="ankety-type-bar-card">
+              <div class="ankety-type-bar-head">
+                <strong>{{ row.druh_jidla }}</strong>
+                <span>{{ row.prumer|default:"-" }} / 5 · {{ row.count }} jídel</span>
+              </div>
+              <div class="ankety-type-bar-track">
+                <div class="ankety-type-bar-fill" style="width: {{ row.width }}%;"></div>
+              </div>
+            </article>
+          {% empty %}
+            <div class="ankety-empty">Ve vybraném období zatím nejsou data podle druhů jídel.</div>
           {% endfor %}
-        </select>
-      </label>
-      <label>Měsíc
-        <select name="mesic">
-          {% for value, label in mesice %}
-            <option value="{{ value }}" {% if value == mesic %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Den
-        <input type="date" name="den" value="{{ den|date:'Y-m-d' }}">
-      </label>
-      <label>Od
-        <input type="date" name="od" value="{{ date_from|date:'Y-m-d' }}">
-      </label>
-      <label>Do
-        <input type="date" name="do" value="{{ date_to|date:'Y-m-d' }}">
-      </label>
-      <label>Min. hodnocení
-        <input type="number" name="min_hodnoceni" min="1" max="50" value="{{ min_hodnoceni }}">
-      </label>
-      <button class="survey-btn" type="submit">Spočítat</button>
-      <a class="survey-btn survey-btn-light" href="?{{ query_string }}&export=xls">XLS</a>
-      <a class="survey-btn survey-btn-accent" href="?{{ query_string }}&export=pdf">PDF</a>
-    </form>
-  </div>
-
-  <div class="survey-grid">
-    <div class="survey-card"><strong>Průměrné hodnocení</strong><div class="survey-value green">{{ data.prumer|default:"-" }}</div></div>
-    <div class="survey-card"><strong>Vyplněná hodnocení</strong><div class="survey-value">{{ data.hodnoceni_count }}</div></div>
-    <div class="survey-card"><strong>Návratnost</strong><div class="survey-value orange">{{ data.navratnost_pct }} %</div></div>
-    <div class="survey-card"><strong>Objednáno porcí</strong><div class="survey-value">{{ data.objednane_count }}</div></div>
-    <div class="survey-card"><strong>Hodnocená jídla</strong><div class="survey-value">{{ data.jidla_count }}</div></div>
-  </div>
-
-  <div class="survey-panels">
-    <section class="survey-panel">
-      <h2>Nejlepší jídla</h2>
-      {% if data.nejlepsi %}
-        <table class="survey-table">
-          <thead><tr><th></th><th>Jídlo</th><th class="survey-num">Průměr</th><th class="survey-num">Hodnocení</th><th class="survey-num">Návratnost</th></tr></thead>
-          <tbody>
-          {% for row in data.nejlepsi %}
-            <tr>
-              <td><span class="survey-rank">{{ forloop.counter }}</span></td>
-              <td><strong>{{ row.jidlo }}</strong><div class="survey-note">Objednáno {{ row.objednano }} porcí</div></td>
-              <td class="survey-num"><span class="survey-score">{{ row.prumer }}</span></td>
-              <td class="survey-num">{{ row.hodnoceni }}</td>
-              <td class="survey-num">{{ row.navratnost }} %</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <div class="survey-empty">Pro vybrané období nejsou žádná hodnocení.</div>
-      {% endif %}
+        </div>
+      </div>
     </section>
 
-    <section class="survey-panel">
-      <h2>Jídla k pozornosti</h2>
-      {% if data.nejslabsi %}
-        <table class="survey-table">
-          <thead><tr><th></th><th>Jídlo</th><th class="survey-num">Průměr</th><th class="survey-num">Hodnocení</th><th class="survey-num">Poznámky</th></tr></thead>
-          <tbody>
-          {% for row in data.nejslabsi %}
-            <tr>
-              <td><span class="survey-rank bad">{{ forloop.counter }}</span></td>
-              <td><strong>{{ row.jidlo }}</strong><div class="survey-note">Objednáno {{ row.objednano }} porcí</div></td>
-              <td class="survey-num">{{ row.prumer }}</td>
-              <td class="survey-num">{{ row.hodnoceni }}</td>
-              <td class="survey-num">{{ row.poznamek }}</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <div class="survey-empty">Zatím tu nejsou data, která by vyžadovala pozornost.</div>
-      {% endif %}
-    </section>
-
-    <section class="survey-panel">
-      <h2>Nejčastěji objednávaná jídla</h2>
-      {% if data.nejobjednavanejsi %}
-        <table class="survey-table">
-          <thead><tr><th>Jídlo</th><th class="survey-num">Objednáno</th><th class="survey-num">Vydáno</th><th class="survey-num">Hodnocení</th><th class="survey-num">Průměr</th></tr></thead>
-          <tbody>
-          {% for row in data.nejobjednavanejsi %}
-            <tr>
-              <td><strong>{{ row.jidlo }}</strong></td>
-              <td class="survey-num">{{ row.objednano }}</td>
-              <td class="survey-num">{{ row.vydano }}</td>
-              <td class="survey-num">{{ row.hodnoceni }}</td>
-              <td class="survey-num">{{ row.prumer|default:"-" }}</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <div class="survey-empty">Žádné objednávky ve vybraném období.</div>
-      {% endif %}
-    </section>
-
-    <section class="survey-panel">
-      <h2>Otázky v anketě</h2>
-      {% if data.otazky %}
-        <table class="survey-table">
-          <thead><tr><th>Otázka</th><th class="survey-num">Počet</th><th class="survey-num">Průměr</th></tr></thead>
-          <tbody>
-          {% for row in data.otazky %}
-            <tr>
-              <td><strong>{{ row.otazka }}</strong></td>
-              <td class="survey-num">{{ row.pocet }}</td>
-              <td class="survey-num">
-                <span class="survey-bar"><span style="width: {% widthratio row.prumer 5 100 %}%"></span></span>
-                {{ row.prumer }}
-              </td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <div class="survey-empty">Zatím nejsou odpovědi na otázky.</div>
-      {% endif %}
-    </section>
-
-    <section class="survey-panel">
-      <h2>Vývoj podle dní</h2>
-      {% if data.trendy %}
-        <table class="survey-table">
-          <thead><tr><th>Datum</th><th class="survey-num">Hodnocení</th><th class="survey-num">Průměr</th></tr></thead>
-          <tbody>
-          {% for row in data.trendy %}
-            <tr><td>{{ row.datum|date:"d.m.Y" }}</td><td class="survey-num">{{ row.hodnoceni }}</td><td class="survey-num">{{ row.prumer|default:"-" }}</td></tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <div class="survey-empty">Ve vybraném období nejsou trendová data.</div>
-      {% endif %}
-    </section>
-
-    <section class="survey-panel">
-      <h2>Poslední poznámky strávníků</h2>
-      {% if data.poznamky %}
-        {% for row in data.poznamky %}
-          <div class="survey-comment">
-            <strong>{{ row.jidlo }}</strong>
-            <span class="survey-note">{{ row.datum|date:"d.m.Y" }} · {{ row.stravnik }} · průměr {{ row.prumer|default:"-" }}</span>
-            <span>{{ row.poznamka }}</span>
+    <div class="ankety-panels">
+      <section class="admin-panel ankety-panel">
+        <div class="admin-panel-head">
+          <div>
+            <h3>Nejlépe hodnocená jídla</h3>
+            <div class="admin-muted">Silná jídla s dobrým skóre i solidní návratností.</div>
           </div>
-        {% endfor %}
-      {% else %}
-        <div class="survey-empty">Ve vybraném období nejsou žádné textové poznámky.</div>
-      {% endif %}
-    </section>
+          <a class="admin-btn admin-btn--light admin-btn--small" href="{% url 'admin:ankety_report_detail' %}?{{ query_string }}&section=nejlepsi">Detail</a>
+        </div>
+        <div class="admin-panel-body">
+          {% if data.nejlepsi %}
+            <div class="report-table report-table--standard ankety-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th class="ankety-col-rank">#</th>
+                    <th class="ankety-col-meal">Jídlo</th>
+                    <th class="text-right">Hodnocení</th>
+                    <th class="text-right">Odpovědí</th>
+                    <th class="text-right ankety-col-action">Akce</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in data.nejlepsi %}
+                    <tr>
+                      <td><span class="ankety-rank">{{ forloop.counter }}</span></td>
+                      <td class="text-wrap">
+                        <strong class="ankety-meal-name">{{ row.jidlo }}</strong>
+                        <div class="report-field-note">Objednáno {{ row.objednano }} porcí</div>
+                      </td>
+                      <td class="text-right">
+                        <div class="ankety-score-stack">
+                          <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
+                          <strong>{{ row.prumer }}</strong>
+                        </div>
+                      </td>
+                      <td class="text-right">{{ row.hodnoceni }}</td>
+                      <td class="text-right ankety-col-action">
+                        <a class="admin-btn admin-btn--light admin-btn--small" href="{% url 'admin:ankety_report_detail' %}?{{ query_string }}&section=nejlepsi&meal={{ row.jidlo|urlencode }}">Detail jídla</a>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="ankety-empty">Pro vybrané období nejsou žádná hodnocení.</div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="admin-panel ankety-panel">
+        <div class="admin-panel-head">
+          <div>
+            <h3>Jídla k pozornosti</h3>
+            <div class="admin-muted">Místa, kde se hodí podívat na kvalitu nebo komentáře strávníků.</div>
+          </div>
+          <a class="admin-btn admin-btn--light admin-btn--small" href="{% url 'admin:ankety_report_detail' %}?{{ query_string }}&section=nejslabsi">Detail</a>
+        </div>
+        <div class="admin-panel-body">
+          {% if data.nejslabsi %}
+            <div class="report-table report-table--standard ankety-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th class="ankety-col-rank">#</th>
+                    <th class="ankety-col-meal">Jídlo</th>
+                    <th class="text-right">Hodnocení</th>
+                    <th class="text-right">Odpovědí</th>
+                    <th class="text-right">Poznámky</th>
+                    <th class="text-right ankety-col-action">Akce</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in data.nejslabsi %}
+                    <tr>
+                      <td><span class="ankety-rank ankety-rank--warn">{{ forloop.counter }}</span></td>
+                      <td class="text-wrap">
+                        <strong class="ankety-meal-name">{{ row.jidlo }}</strong>
+                        <div class="report-field-note">Objednáno {{ row.objednano }} porcí</div>
+                      </td>
+                      <td class="text-right">
+                        <div class="ankety-score-stack">
+                          <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
+                          <strong>{{ row.prumer }}</strong>
+                        </div>
+                      </td>
+                      <td class="text-right">{{ row.hodnoceni }}</td>
+                      <td class="text-right">{{ row.poznamek }}</td>
+                      <td class="text-right ankety-col-action">
+                        <a class="admin-btn admin-btn--light admin-btn--small" href="{% url 'admin:ankety_report_detail' %}?{{ query_string }}&section=nejslabsi&meal={{ row.jidlo|urlencode }}">Detail jídla</a>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="ankety-empty">Zatím tu nejsou data, která by vyžadovala pozornost.</div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="admin-panel ankety-panel">
+        <div class="admin-panel-head">
+          <div>
+            <h3>Nejlépe podle druhu jídla</h3>
+            <div class="admin-muted">Top 5 jídel zvlášť pro snídaně, svačiny, obědy i další sloty.</div>
+          </div>
+          <a class="admin-btn admin-btn--light admin-btn--small" href="{% url 'admin:ankety_report_detail' %}?{{ query_string }}&section=nejlepsi_druhy">Detail</a>
+        </div>
+        <div class="admin-panel-body">
+          {% if data.nejlepsi_podle_druhu %}
+            <div class="ankety-type-group-list">
+              {% for group in data.nejlepsi_podle_druhu %}
+                <article class="ankety-type-group-card">
+                  <div class="ankety-type-group-head">
+                    <div>
+                      <h4>{{ group.druh_jidla }}</h4>
+                      <span>{{ group.prumer|default:"-" }} / 5 · {{ group.count }} hodnocených jídel</span>
+                    </div>
+                    <a class="admin-btn admin-btn--light admin-btn--small" href="{% url 'admin:ankety_report_detail' %}?{{ query_string }}&section=nejlepsi_druhy&meal_type={{ group.druh_jidla|urlencode }}">Detail druhu</a>
+                  </div>
+                  <div class="report-table report-table--standard ankety-table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th class="ankety-col-rank">#</th>
+                          <th class="ankety-col-meal">Jídlo</th>
+                          <th class="text-right">Hodnocení</th>
+                          <th class="text-right">Odpovědí</th>
+                          <th class="text-right ankety-col-action">Akce</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for row in group.rows %}
+                          <tr>
+                            <td><span class="ankety-rank">{{ forloop.counter }}</span></td>
+                            <td class="text-wrap"><strong class="ankety-meal-name">{{ row.jidlo }}</strong></td>
+                            <td class="text-right">
+                              <div class="ankety-score-stack">
+                                <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
+                                <strong>{{ row.prumer }}</strong>
+                              </div>
+                            </td>
+                            <td class="text-right">{{ row.hodnoceni }}</td>
+                            <td class="text-right ankety-col-action">
+                              <a class="admin-btn admin-btn--light admin-btn--small" href="{% url 'admin:ankety_report_detail' %}?{{ query_string }}&section=nejlepsi_druhy&meal={{ row.jidlo|urlencode }}">Detail jídla</a>
+                            </td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="ankety-empty">Zatím nejsou data pro rozpad podle druhu jídla.</div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="admin-panel ankety-panel">
+        <div class="admin-panel-head">
+          <div>
+            <h3>Nejslabší podle druhu jídla</h3>
+            <div class="admin-muted">Top 5 jídel k pozornosti zvlášť pro jednotlivé druhy jídel.</div>
+          </div>
+          <a class="admin-btn admin-btn--light admin-btn--small" href="{% url 'admin:ankety_report_detail' %}?{{ query_string }}&section=nejslabsi_druhy">Detail</a>
+        </div>
+        <div class="admin-panel-body">
+          {% if data.nejslabsi_podle_druhu %}
+            <div class="ankety-type-group-list">
+              {% for group in data.nejslabsi_podle_druhu %}
+                <article class="ankety-type-group-card">
+                  <div class="ankety-type-group-head">
+                    <div>
+                      <h4>{{ group.druh_jidla }}</h4>
+                      <span>{{ group.prumer|default:"-" }} / 5 · {{ group.count }} hodnocených jídel</span>
+                    </div>
+                    <a class="admin-btn admin-btn--light admin-btn--small" href="{% url 'admin:ankety_report_detail' %}?{{ query_string }}&section=nejslabsi_druhy&meal_type={{ group.druh_jidla|urlencode }}">Detail druhu</a>
+                  </div>
+                  <div class="report-table report-table--standard ankety-table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th class="ankety-col-rank">#</th>
+                          <th class="ankety-col-meal">Jídlo</th>
+                          <th class="text-right">Hodnocení</th>
+                          <th class="text-right">Odpovědí</th>
+                          <th class="text-right">Poznámky</th>
+                          <th class="text-right ankety-col-action">Akce</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for row in group.rows %}
+                          <tr>
+                            <td><span class="ankety-rank ankety-rank--warn">{{ forloop.counter }}</span></td>
+                            <td class="text-wrap"><strong class="ankety-meal-name">{{ row.jidlo }}</strong></td>
+                            <td class="text-right">
+                              <div class="ankety-score-stack">
+                                <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
+                                <strong>{{ row.prumer }}</strong>
+                              </div>
+                            </td>
+                            <td class="text-right">{{ row.hodnoceni }}</td>
+                            <td class="text-right">{{ row.poznamek }}</td>
+                            <td class="text-right ankety-col-action">
+                              <a class="admin-btn admin-btn--light admin-btn--small" href="{% url 'admin:ankety_report_detail' %}?{{ query_string }}&section=nejslabsi_druhy&meal={{ row.jidlo|urlencode }}">Detail jídla</a>
+                            </td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="ankety-empty">Zatím nejsou data pro rozpad slabších jídel podle druhu.</div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="admin-panel ankety-panel">
+        <div class="admin-panel-head">
+          <div>
+            <h3>Nejčastěji objednávaná jídla</h3>
+            <div class="admin-muted">Objednanost, výdej a kvalita v jednom rychlém přehledu.</div>
+          </div>
+          <a class="admin-btn admin-btn--light admin-btn--small" href="{% url 'admin:ankety_report_detail' %}?{{ query_string }}&section=nejobjednavanejsi">Detail</a>
+        </div>
+        <div class="admin-panel-body">
+          {% if data.nejobjednavanejsi %}
+            <div class="report-table report-table--standard ankety-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Jídlo</th>
+                    <th class="text-right">Objednáno</th>
+                    <th class="text-right">Vydáno</th>
+                    <th class="text-right">Hodnocení</th>
+                    <th class="text-right">Průměr</th>
+                    <th class="text-right ankety-col-action">Akce</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in data.nejobjednavanejsi %}
+                    <tr>
+                      <td class="text-wrap"><strong class="ankety-meal-name">{{ row.jidlo }}</strong></td>
+                      <td class="text-right">{{ row.objednano }}</td>
+                      <td class="text-right">{{ row.vydano }}</td>
+                      <td class="text-right">{{ row.hodnoceni }}</td>
+                      <td class="text-right">
+                        {% if row.prumer %}
+                          <div class="ankety-score-stack">
+                            <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
+                            <strong>{{ row.prumer|default:"-" }}</strong>
+                          </div>
+                        {% else %}
+                          <strong>{{ row.prumer|default:"-" }}</strong>
+                        {% endif %}
+                      </td>
+                      <td class="text-right ankety-col-action">
+                        <a class="admin-btn admin-btn--light admin-btn--small" href="{% url 'admin:ankety_report_detail' %}?{{ query_string }}&section=nejobjednavanejsi&meal={{ row.jidlo|urlencode }}">Detail jídla</a>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="ankety-empty">Žádné objednávky ve vybraném období.</div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="admin-panel ankety-panel">
+        <div class="admin-panel-head">
+          <div>
+            <h3>Otázky v anketě</h3>
+            <div class="admin-muted">Jak si vedou jednotlivé otázky a jaké mají skóre.</div>
+          </div>
+          <a class="admin-btn admin-btn--light admin-btn--small" href="{% url 'admin:ankety_report_detail' %}?{{ query_string }}&section=otazky">Detail</a>
+        </div>
+        <div class="admin-panel-body">
+          {% if data.otazky %}
+            <div class="report-table report-table--standard ankety-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Otázka</th>
+                    <th class="text-right">Počet</th>
+                    <th class="text-right">Průměr</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in data.otazky %}
+                    <tr>
+                      <td class="text-wrap"><strong>{{ row.otazka }}</strong></td>
+                      <td class="text-right">{{ row.pocet }}</td>
+                      <td class="text-right">
+                        <div class="ankety-score-stack">
+                          <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
+                          <strong>{{ row.prumer }}</strong>
+                        </div>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="ankety-empty">Zatím nejsou odpovědi na otázky.</div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="admin-panel ankety-panel">
+        <div class="admin-panel-head">
+          <div>
+            <h3>Vývoj podle dní</h3>
+            <div class="admin-muted">Rychlý přehled trendu počtu hodnocení a průměrného dojmu.</div>
+          </div>
+          <a class="admin-btn admin-btn--light admin-btn--small" href="{% url 'admin:ankety_report_detail' %}?{{ query_string }}&section=trendy">Detail</a>
+        </div>
+        <div class="admin-panel-body">
+          {% if data.trendy %}
+            <div class="report-table report-table--standard ankety-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Datum</th>
+                    <th class="text-right">Hodnocení</th>
+                    <th class="text-right">Průměr</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in data.trendy %}
+                    <tr>
+                      <td>{{ row.datum|date:"d.m.Y" }}</td>
+                      <td class="text-right">{{ row.hodnoceni }}</td>
+                      <td class="text-right">
+                        {% if row.prumer %}
+                          <div class="ankety-score-stack">
+                            <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
+                            <strong>{{ row.prumer|default:"-" }}</strong>
+                          </div>
+                        {% else %}
+                          <strong>{{ row.prumer|default:"-" }}</strong>
+                        {% endif %}
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="ankety-empty">Ve vybraném období nejsou trendová data.</div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="admin-panel ankety-panel">
+        <div class="admin-panel-head">
+          <div>
+            <h3>Poslední poznámky strávníků</h3>
+            <div class="admin-muted">Slovní zpětná vazba, která pomáhá pochopit čísla v kontextu.</div>
+          </div>
+          <a class="admin-btn admin-btn--light admin-btn--small" href="{% url 'admin:ankety_report_detail' %}?{{ query_string }}&section=poznamky">Detail</a>
+        </div>
+        <div class="admin-panel-body ankety-comments">
+          {% if data.poznamky %}
+            {% for row in data.poznamky %}
+              <article class="ankety-comment">
+                <strong>{{ row.jidlo }}</strong>
+                <span class="report-field-note">{{ row.datum|date:"d.m.Y" }} · {{ row.stravnik }} · průměr {{ row.prumer|default:"-" }}</span>
+                <p>{{ row.poznamka }}</p>
+              </article>
+            {% endfor %}
+          {% else %}
+            <div class="ankety-empty">Ve vybraném období nejsou žádné textové poznámky.</div>
+          {% endif %}
+        </div>
+      </section>
+    </div>
   </div>
 </div>
 {% endblock %}

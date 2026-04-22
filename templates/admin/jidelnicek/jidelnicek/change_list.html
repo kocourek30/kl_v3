@@ -45,8 +45,8 @@
           <input
             type="text"
             id="id_food_lookup"
-            name="food_lookup"
-            value="{{ food_lookup }}"
+            name="q"
+            value="{{ search_query|default:food_lookup }}"
             placeholder="Např. kuřecí řízek, guláš, jogurt…"
           >
         </div>
@@ -85,7 +85,7 @@
               <span class="menu-list-chip soft">{{ menu.items_count }} položek</span>
               <span class="menu-list-chip soft">{{ menu.kind_count }} druhů jídel</span>
               {% if menu.matched_count %}
-                <span class="menu-list-chip accent">{{ menu.matched_count }} shod</span>
+                <span class="menu-list-chip accent">{{ menu.matched_count }} nalezeno</span>
               {% endif %}
             </div>
           </div>
@@ -95,7 +95,12 @@
           </a>
         </div>
 
-        <div class="menu-list-items">
+        <div class="menu-list-items menu-list-items--row">
+          {% if food_lookup %}
+            <div class="menu-list-inline-note">
+              Zobrazené jsou jen nalezené položky. Celkem tento jídelníček obsahuje {{ menu.all_items_count }} položek.
+            </div>
+          {% endif %}
           {% for item in menu.items %}
             <div class="menu-list-item {% if item.is_match %}is-match{% endif %}">
               <div class="menu-list-item-kind">
