@@ -1,0 +1,93 @@
+<div class="overview-grid overview-grid--primary">
+  <section class="panel-card">
+    <div class="panel-card__head">
+      <h2>Dnes vyrobit a vydat</h2>
+      <span class="ops-muted">Souhrn po druzích jídel pro kuchyň i obsluhu</span>
+    </div>
+    <div class="canteen-production-grid">
+      {% for group in dashboard.production_groups %}
+        <article class="canteen-production-card">
+          <div class="canteen-production-card__top">
+            <strong>{{ group.label }}</strong>
+            <span class="dash-badge good">{{ group.order_count }} objednávek</span>
+          </div>
+          <div class="canteen-production-card__count">{{ group.portions }} porcí</div>
+          <div class="canteen-production-card__meta">{{ group.meal_count }} jídel v dnešní nabídce</div>
+          <div class="canteen-production-card__list">
+            {% for meal_name in group.meal_names %}
+              <span>{{ meal_name }}</span>
+            {% endfor %}
+          </div>
+        </article>
+      {% empty %}
+        <div class="admin-empty-state">Na dnešek nejsou připravené žádné nevydané porce.</div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel-card">
+    <div class="panel-card__head">
+      <h2>Přehled výdeje</h2>
+      <span class="ops-muted">Za jak dlouho začíná výdej a kolik porcí je potřeba vydat</span>
+    </div>
+    <div class="canteen-window-list">
+      {% for window in dashboard.meal_windows %}
+        <article class="canteen-window canteen-window--{{ window.state }}">
+          <div class="canteen-window__main">
+            <strong>{{ window.label }}</strong>
+            <div class="ops-muted">{{ window.time_range }}</div>
+          </div>
+          <div class="canteen-window__status">
+            <span class="dash-badge {% if window.state == 'active' %}good{% elif window.state == 'upcoming' %}warning{% else %}neutral{% endif %}">{{ window.badge }}</span>
+            <span class="canteen-window__count">{{ window.queue_count }} porcí</span>
+            <span class="ops-muted">{{ window.countdown }}</span>
+          </div>
+        </article>
+      {% empty %}
+        <div class="admin-empty-state">Výdejní časy jídel zatím nejsou nastavené.</div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+
+<div class="overview-grid overview-grid--secondary">
+  <section class="panel-card panel-card--wide">
+    <div class="panel-card__head">
+      <h2>Aktuální výdej</h2>
+      <span class="ops-muted">Poslední vydané objednávky bez nutnosti otevírat účtenky zvlášť</span>
+    </div>
+    <div class="canteen-live-list">
+      {% for issue in dashboard.current_issue_feed %}
+        <article class="canteen-live-item">
+          <div class="canteen-live-item__time">{{ issue.time }}</div>
+          <div class="canteen-live-item__content">
+            <strong>{{ issue.user_label }}</strong>
+            <div class="ops-muted">{{ issue.items_summary }}</div>
+          </div>
+          <div class="canteen-live-item__meta">
+            <span>{{ issue.portions }} porcí</span>
+            <span>{{ issue.amount }} Kč</span>
+            <small>Vydal: {{ issue.operator_label }}</small>
+          </div>
+        </article>
+      {% empty %}
+        <div class="admin-empty-state">Zatím dnes nebyla vydána žádná objednávka.</div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel-card">
+    <div class="panel-card__head">
+      <h2>Provozní upozornění</h2>
+      <span class="ops-muted">Jen to, co je potřeba během směny pohlídat</span>
+    </div>
+    <div class="canteen-notice-list">
+      {% for notice in dashboard.notices %}
+        <article class="canteen-notice canteen-notice--{{ notice.tone }}">
+          <strong>{{ notice.title }}</strong>
+          <p>{{ notice.text }}</p>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+</div>

@@ -61,7 +61,7 @@
 }
 
 .survey-summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
 }
 
 .survey-summary-card,
@@ -205,6 +205,85 @@
     font-weight: 800;
 }
 
+.survey-vote-banner {
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid #dde6eb;
+    border-radius: 1.5rem;
+    box-shadow: 0 18px 36px rgba(22, 40, 34, 0.08);
+    padding: 1.25rem 1.4rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1rem;
+    align-items: center;
+}
+
+.survey-vote-banner h2 {
+    margin: 0.6rem 0 0;
+    font-size: 1.5rem;
+    font-weight: 900;
+    color: #17311f;
+}
+
+.survey-vote-banner p {
+    margin: 0.55rem 0 0;
+    color: #607080;
+}
+
+.survey-vote-banner__actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+.survey-vote-card {
+    display: grid;
+    gap: 1rem;
+}
+
+.survey-vote-head h2 {
+    margin: 0;
+    font-size: 1.55rem;
+    font-weight: 900;
+    color: #17311f;
+}
+
+.survey-vote-options {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.survey-vote-option {
+    border: 1px solid #d9e4ec;
+    background: #fbfcfd;
+    border-radius: 1rem;
+    padding: 0.8rem 0.9rem;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.8rem;
+    align-items: start;
+}
+
+.survey-vote-option.is-selected {
+    border-color: rgba(24, 160, 70, 0.42);
+    background: rgba(84, 174, 67, 0.08);
+}
+
+.survey-vote-option input[type="radio"] {
+    margin-top: 0.3rem;
+    transform: scale(1.2);
+}
+
+.survey-vote-option__content strong {
+    display: block;
+    color: #1a3123;
+    font-weight: 900;
+}
+
+.survey-vote-option__content p {
+    margin: 0.35rem 0 0;
+    color: #5f7080;
+}
+
 .rate-question {
     border-top: 1px solid #edf2f5;
     padding-top: 1.2rem;
@@ -315,6 +394,14 @@
 
     .survey-summary {
         grid-template-columns: 1fr;
+    }
+
+    .survey-vote-banner {
+        grid-template-columns: 1fr;
+    }
+
+    .survey-vote-banner__actions {
+        justify-content: stretch;
     }
 }
 

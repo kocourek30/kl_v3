@@ -1,113 +1,88 @@
 {% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'sklad/css/sklad_admin_views.css' %}">
+{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-      <h1 class="mb-1">{{ title }}</h1>
-      <p class="text-muted mb-0">Období {{ data.date_from|date:"d.m.Y" }} - {{ data.date_to|date:"d.m.Y" }}</p>
+<div class="admin-shell admin-shell--wide sklad-page">
+  <section class="admin-hero">
+    <div class="admin-hero-grid">
+      <div>
+        <div class="admin-kicker">Karta suroviny</div>
+        <h1>{{ title }}</h1>
+        <p>Období {{ data.date_from|date:"d.m.Y" }} - {{ data.date_to|date:"d.m.Y" }}.</p>
+      </div>
+      <div class="sklad-actions" style="justify-content:flex-end;align-content:flex-start;">
+        <a class="admin-btn admin-btn--light" href="xlsx/?date_from={{ data.date_from|date:'Y-m-d' }}&date_to={{ data.date_to|date:'Y-m-d' }}">
+          <i class="fas fa-file-excel"></i> XLSX
+        </a>
+        <a class="admin-btn admin-btn--danger" href="pdf/?date_from={{ data.date_from|date:'Y-m-d' }}&date_to={{ data.date_to|date:'Y-m-d' }}">
+          <i class="fas fa-file-pdf"></i> PDF
+        </a>
+      </div>
     </div>
-    <div>
-      <a class="btn btn-outline-success" href="xlsx/?date_from={{ data.date_from|date:'Y-m-d' }}&date_to={{ data.date_to|date:'Y-m-d' }}">
-        <i class="fas fa-file-excel"></i> Stáhnout XLSX
-      </a>
-      <a class="btn btn-outline-danger" href="pdf/?date_from={{ data.date_from|date:'Y-m-d' }}&date_to={{ data.date_to|date:'Y-m-d' }}">
-        <i class="fas fa-file-pdf"></i> Stáhnout PDF
-      </a>
+    <div class="sklad-kpi-grid">
+      <article class="sklad-kpi"><strong>Aktuální stav</strong><span>{{ data.stav_display }}</span></article>
+      <article class="sklad-kpi"><strong>Minimum</strong><span>{{ data.minimum_display }}</span></article>
+      <article class="sklad-kpi"><strong>Hodnota stavu</strong><span>{{ data.hodnota_stavu|floatformat:-2 }} Kč</span></article>
+      <article class="sklad-kpi"><strong>Spotřeba období</strong><span>{{ data.spotreba_obdobi_display }}</span></article>
+      <article class="sklad-kpi"><strong>Náklady spotřeby</strong><span>{{ data.naklady_spotreby|floatformat:-2 }} Kč</span></article>
+      <article class="sklad-kpi"><strong>Odpisy / inventury</strong><span>{{ data.odpisy|floatformat:-2 }} / {{ data.inventurni_rozdily|floatformat:-2 }} Kč</span></article>
     </div>
+  </section>
+
+  <div class="admin-grid admin-grid--split">
+    <section class="admin-panel">
+      <div class="admin-panel-head"><strong>Aktivní šarže</strong></div>
+      <div class="admin-panel-body p-0">
+        <table class="sklad-table">
+          <thead><tr><th>Šarže</th><th>Datum spotřeby</th><th>Zbývá</th><th>Cena</th><th>Stav</th></tr></thead>
+          <tbody>
+            {% for sarze in data.sarze %}
+              <tr>
+                <td>{{ sarze.sarze|default:"–" }}</td>
+                <td>{{ sarze.datum_spotreby|date:"d.m.Y"|default:"–" }}</td>
+                <td>{{ sarze.mnozstvi_zbyva }} {{ data.surovina.jednotka }}</td>
+                <td>{{ sarze.cena_za_jednotku|floatformat:-2 }} Kč</td>
+                <td>{{ sarze.get_stav_display }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="5" class="sklad-empty">Žádné aktivní šarže.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="admin-panel">
+      <div class="admin-panel-head"><strong>Cenová historie</strong></div>
+      <div class="admin-panel-body p-0">
+        <table class="sklad-table">
+          <thead><tr><th>Datum</th><th>Dodavatel</th><th>Množství</th><th>Cena</th></tr></thead>
+          <tbody>
+            {% for pol in data.cenova_historie %}
+              <tr>
+                <td>{{ pol.prijem.datum|date:"d.m.Y" }}</td>
+                <td>{{ pol.prijem.dodavatel|default:"–" }}</td>
+                <td>{{ pol.mnozstvi }} {{ data.surovina.jednotka }}</td>
+                <td>{{ pol.jednotkova_cena|floatformat:-2 }} Kč</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="4" class="sklad-empty">Zatím bez nákupní historie.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
   </div>
 
-  <div class="row mb-3">
-    <div class="col-md-3">
-      <div class="card">
-        <div class="card-header"><strong>Aktuální stav</strong></div>
-        <div class="card-body">
-          <p><strong>{{ data.stav_display }}</strong></p>
-          <p class="mb-0">Minimum: {{ data.minimum_display }}</p>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="card">
-        <div class="card-header"><strong>Hodnota stavu</strong></div>
-        <div class="card-body">
-          <p class="mb-0"><strong>{{ data.hodnota_stavu|floatformat:-2 }} Kč</strong></p>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="card">
-        <div class="card-header"><strong>Spotřeba období</strong></div>
-        <div class="card-body">
-          <p><strong>{{ data.spotreba_obdobi_display }}</strong></p>
-          <p class="mb-0">{{ data.naklady_spotreby|floatformat:-2 }} Kč</p>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="card">
-        <div class="card-header"><strong>Odpisy a inventury</strong></div>
-        <div class="card-body">
-          <p>Odpisy: {{ data.odpisy|floatformat:-2 }} Kč</p>
-          <p class="mb-0">Inventury: {{ data.inventurni_rozdily|floatformat:-2 }} Kč</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="row">
-    <div class="col-lg-6">
-      <div class="card mb-3">
-        <div class="card-header"><strong>Aktivní šarže</strong></div>
-        <div class="card-body p-0">
-          <table class="table table-sm table-striped mb-0">
-            <thead><tr><th>Šarže</th><th>Datum spotřeby</th><th>Zbývá</th><th>Cena</th><th>Stav</th></tr></thead>
-            <tbody>
-              {% for sarze in data.sarze %}
-                <tr>
-                  <td>{{ sarze.sarze|default:"–" }}</td>
-                  <td>{{ sarze.datum_spotreby|date:"d.m.Y"|default:"–" }}</td>
-                  <td>{{ sarze.mnozstvi_zbyva }} {{ data.surovina.jednotka }}</td>
-                  <td>{{ sarze.cena_za_jednotku|floatformat:-2 }} Kč</td>
-                  <td>{{ sarze.get_stav_display }}</td>
-                </tr>
-              {% empty %}
-                <tr><td colspan="5" class="text-center text-muted py-3">Žádné aktivní šarže.</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-lg-6">
-      <div class="card mb-3">
-        <div class="card-header"><strong>Cenová historie</strong></div>
-        <div class="card-body p-0">
-          <table class="table table-sm table-striped mb-0">
-            <thead><tr><th>Datum</th><th>Dodavatel</th><th>Množství</th><th>Cena</th></tr></thead>
-            <tbody>
-              {% for pol in data.cenova_historie %}
-                <tr>
-                  <td>{{ pol.prijem.datum|date:"d.m.Y" }}</td>
-                  <td>{{ pol.prijem.dodavatel|default:"–" }}</td>
-                  <td>{{ pol.mnozstvi }} {{ data.surovina.jednotka }}</td>
-                  <td>{{ pol.jednotkova_cena|floatformat:-2 }} Kč</td>
-                </tr>
-              {% empty %}
-                <tr><td colspan="4" class="text-center text-muted py-3">Zatím bez nákupní historie.</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-header"><strong>Poslední pohyby</strong></div>
-    <div class="card-body p-0">
-      <table class="table table-sm table-striped mb-0">
+  <section class="admin-panel">
+    <div class="admin-panel-head"><strong>Poslední pohyby</strong></div>
+    <div class="admin-panel-body p-0">
+      <table class="sklad-table">
         <thead><tr><th>Datum</th><th>Typ</th><th>Množství</th><th>Cena</th><th>Doklad</th><th>Poznámka</th></tr></thead>
         <tbody>
           {% for pohyb in data.pohyby %}
@@ -125,11 +100,11 @@
               <td>{{ pohyb.poznamka }}</td>
             </tr>
           {% empty %}
-            <tr><td colspan="6" class="text-center text-muted py-3">Bez pohybů ve zvoleném období.</td></tr>
+            <tr><td colspan="6" class="sklad-empty">Bez pohybů ve zvoleném období.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-  </div>
+  </section>
 </div>
 {% endblock %}

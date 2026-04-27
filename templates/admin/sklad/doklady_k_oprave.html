@@ -1,49 +1,76 @@
 {% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'sklad/css/sklad_admin_views.css' %}">
+{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-  <h1>{{ title }}</h1>
-  <p class="text-muted">Období {{ data.date_from|date:"d.m.Y" }} - {{ data.date_to|date:"d.m.Y" }}</p>
-
-  {% for sekce in data.sekce %}
-    <div class="card mb-3">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <strong>{{ sekce.nazev }}</strong>
-        {% if sekce.pocet %}
-          <span class="badge badge-warning">{{ sekce.pocet }}</span>
-        {% else %}
-          <span class="badge badge-success">v pořádku</span>
-        {% endif %}
+<div class="admin-shell admin-shell--wide sklad-page">
+  <section class="admin-hero">
+    <div class="admin-hero-grid">
+      <div>
+        <div class="admin-kicker">Skladové audity</div>
+        <h1>{{ title }}</h1>
+        <p>Automatická kontrola problémových dokladů v období {{ data.date_from|date:"d.m.Y" }} - {{ data.date_to|date:"d.m.Y" }}.</p>
       </div>
-      <div class="card-body p-0">
-        <table class="table table-sm table-striped mb-0">
-          <thead>
-            <tr>
-              <th>Položka</th>
-              <th>Detail</th>
-              <th>Doporučená oprava</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in sekce.polozky %}
-              <tr>
-                <td><strong>{{ row.label }}</strong></td>
-                <td>{{ row.detail }}</td>
-                <td>{{ row.oprava }}</td>
-                <td class="text-right">
-                  <a class="btn btn-sm btn-primary" href="{{ row.url }}">Opravit</a>
-                </td>
-              </tr>
-            {% empty %}
-              <tr>
-                <td colspan="4" class="text-center text-muted py-3">Bez nálezů.</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+      <div class="sklad-hero-stats">
+        {% for sekce in data.sekce %}
+          <article class="sklad-mini-stat">
+            <span class="sklad-mini-stat__label">{{ sekce.nazev }}</span>
+            <span class="sklad-mini-stat__value">
+              {% if sekce.pocet %}{{ sekce.pocet }}{% else %}OK{% endif %}
+            </span>
+          </article>
+        {% endfor %}
       </div>
     </div>
+  </section>
+
+  {% for sekce in data.sekce %}
+    <section class="admin-panel">
+      <div class="admin-panel-head">
+        <strong>{{ sekce.nazev }}</strong>
+        {% if sekce.pocet %}
+          <span class="sklad-badge">{{ sekce.pocet }} k opravě</span>
+        {% else %}
+          <span class="sklad-badge">Bez nálezů</span>
+        {% endif %}
+      </div>
+      <div class="admin-panel-body p-0">
+        <div class="sklad-table-wrapper">
+          <table class="sklad-table">
+            <thead>
+              <tr>
+                <th>Položka</th>
+                <th>Detail</th>
+                <th>Doporučená oprava</th>
+                <th>Akce</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in sekce.polozky %}
+                <tr>
+                  <td><strong>{{ row.label }}</strong></td>
+                  <td>{{ row.detail }}</td>
+                  <td>{{ row.oprava }}</td>
+                  <td>
+                    <a class="admin-btn admin-btn--small admin-btn--light" href="{{ row.url }}">
+                      <i class="fas fa-pen"></i> Opravit
+                    </a>
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="4" class="sklad-empty">Bez nálezů.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   {% endfor %}
 </div>
 {% endblock %}

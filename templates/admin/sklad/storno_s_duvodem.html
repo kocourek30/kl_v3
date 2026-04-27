@@ -1,18 +1,24 @@
 {% extends "admin/base_site.html" %}
+{% load static %}
 {% load form_tags %}
 
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'sklad/css/sklad_admin_views.css' %}">
+{% endblock %}
+
 {% block content %}
-<div class="container-fluid">
-  <h1>{{ title }}</h1>
+<div class="admin-shell admin-shell--wide sklad-page">
+  <section class="admin-hero">
+    <div class="admin-kicker">Storno dokladů</div>
+    <h1>{{ title }}</h1>
+    <p>Storno vytvoří opačné skladové pohyby a uloží důvod k dokladu. Pokračuj jen pokud je storno věcně správné.</p>
+  </section>
 
-  <div class="alert alert-warning">
-    Storno vytvoří opačné skladové pohyby a uloží důvod k dokladu. Pokračuj pouze tehdy, pokud je storno věcně správné.
-  </div>
-
-  <div class="card mb-3">
-    <div class="card-header"><strong>Vybrané doklady</strong></div>
-    <div class="card-body p-0">
-      <table class="table table-sm table-striped mb-0">
+  <section class="admin-panel">
+    <div class="admin-panel-head"><strong>Vybrané doklady</strong></div>
+    <div class="admin-panel-body p-0">
+      <table class="sklad-table">
         <thead>
           <tr>
             <th>Doklad</th>
@@ -27,12 +33,12 @@
               <td>{{ obj.datum|date:"d.m.Y" }}</td>
               <td>
                 {% if obj.uzavreny %}
-                  <span class="badge badge-success">Uzavřený</span>
+                  <span class="sklad-badge">Uzavřený</span>
                 {% else %}
-                  <span class="badge badge-secondary">Otevřený</span>
+                  <span class="sklad-badge">Otevřený</span>
                 {% endif %}
                 {% if obj.stornovano %}
-                  <span class="badge badge-danger">Stornovaný</span>
+                  <span class="sklad-badge">Stornovaný</span>
                 {% endif %}
               </td>
             </tr>
@@ -40,7 +46,7 @@
         </tbody>
       </table>
     </div>
-  </div>
+  </section>
 
   <form method="post">
     {% csrf_token %}
@@ -50,21 +56,23 @@
       <input type="hidden" name="_selected_action" value="{{ pk }}">
     {% endfor %}
 
-    <div class="card">
-      <div class="card-header"><strong>Důvod storna</strong></div>
-      <div class="card-body">
-        <div class="form-group">
+    <section class="admin-panel">
+      <div class="admin-panel-head"><strong>Důvod storna</strong></div>
+      <div class="admin-panel-body">
+        <div class="admin-field">
           <label for="{{ form.duvod.id_for_label }}">{{ form.duvod.label }}</label>
           {{ form.duvod|add_class:"form-control" }}
-          <small class="form-text text-muted">{{ form.duvod.help_text }}</small>
+          <div class="sklad-note">{{ form.duvod.help_text }}</div>
           {% if form.duvod.errors %}
-            <div class="text-danger">{{ form.duvod.errors }}</div>
+            <div class="text-danger mt-2">{{ form.duvod.errors }}</div>
           {% endif %}
         </div>
-        <button type="submit" class="btn btn-danger">Potvrdit storno</button>
-        <a href="." class="btn btn-secondary">Zpět</a>
+        <div class="sklad-actions mt-3">
+          <button type="submit" class="admin-btn admin-btn--danger">Potvrdit storno</button>
+          <a href="." class="admin-btn admin-btn--light">Zpět</a>
+        </div>
       </div>
-    </div>
+    </section>
   </form>
 </div>
 {% endblock %}

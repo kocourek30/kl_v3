@@ -28,17 +28,16 @@
             <div class="sidebar">
                 <div class="user-panel mt-3 pb-3 mb-3 d-flex">
                     <div class="image">
-                        {% if jazzmin_settings|has_jazzmin_setting:"user_avatar" %}
-                            <img src="{% get_user_avatar request.user %}" width="160px" class="img-circle elevation-2" alt="User Image">
-                        {% else %}
-                            <i class="fas fa-inverse user-profile fa-user-circle"></i>
-                        {% endif %}
+                        <i class="fas fa-inverse user-profile fa-user-circle"></i>
                     </div>
                     <div class="info">
                         {% if perms|can_view_self %}
-                            <a href="{% jazzy_admin_url request.user request.current_app|default:"admin" %}" class="d-block">{{ request.user }}</a>
+                            <a href="{% jazzy_admin_url request.user request.current_app|default:"admin" %}" class="d-block admin-user-name">{{ admin_user_display_name }}</a>
                         {% else %}
-                            <span class="d-block" style="color: white;">{{ request.user }}</span>
+                            <span class="d-block admin-user-name">{{ admin_user_display_name }}</span>
+                        {% endif %}
+                        {% if admin_user_role_label %}
+                            <span class="admin-user-role">{{ admin_user_role_label }}</span>
                         {% endif %}
                     </div>
                 </div>

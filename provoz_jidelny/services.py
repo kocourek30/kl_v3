@@ -1,279 +1,287 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
-from django.db.models import Sum
+from django.db.models import Count, Sum
 from django.urls import reverse
 from django.utils import timezone
 
 from canteen_settings.models import MealPickupTime
 from objednavky.models import Order, OrderItem
-from vydej.models import StornovaneObjednavky, VydejSettings, VydejniUctenka
+from vydej.models import VydejSettings, VydejniUctenka
 
 
 PENDING_STATUSES = ["objednano", "zalozena-obsluhou", "castecne-vydano"]
 CANCELLED_STATUSES = ["zruseno-uzivatelem", "zruseno-obsluhou", "nevyzvednuto"]
 
 
-def _meal_window_state(pickup, now_time):
-    if pickup.pickup_from <= now_time <= pickup.pickup_to:
-        return "active", "Probíhá právě teď"
-    if now_time < pickup.pickup_from:
-        return "upcoming", "Nadcházející výdej"
-    return "past", "Už proběhlo"
+def _humanize_delta(delta):
+    total_seconds = max(int(delta.total_seconds()), 0)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes = remainder // 60
+    if hours and minutes:
+        return f"{hours} h {minutes} min"
+    if hours:
+        return f"{hours} h"
+    return f"{minutes} min"
 
 
-def _build_recent_activity(today):
-    recent_activity = []
+def _window_status(today, pickup, now):
+    start_dt = timezone.make_aware(
+        datetime.combine(today, pickup.pickup_from),
+        timezone.get_current_timezone(),
+    )
+    end_dt = timezone.make_aware(
+        datetime.combine(today, pickup.pickup_to),
+        timezone.get_current_timezone(),
+    )
+    if start_dt <= now <= end_dt:
+        return {
+            "state": "active",
+            "badge": "Právě běží",
+            "countdown": f"končí za {_humanize_delta(end_dt - now)}",
+        }
+    if now < start_dt:
+        return {
+            "state": "upcoming",
+            "badge": "Začíná brzy",
+            "countdown": f"za {_humanize_delta(start_dt - now)}",
+        }
+    return {
+        "state": "finished",
+        "badge": "Proběhlo",
+        "countdown": f"skončilo před {_humanize_delta(now - end_dt)}",
+    }
 
-    for receipt in (
-        VydejniUctenka.objects.filter(datum_vydeje__date=today)
-        .select_related("order__user", "vydal")
-        .order_by("-datum_vydeje")[:6]
-    ):
-        recent_activity.append(
-            {
-                "tone": "success",
-                "title": receipt.order.user.get_full_name() or receipt.order.user.username,
-                "meta": receipt.datum_vydeje.strftime("%d.%m.%Y %H:%M"),
-                "detail": f"Vydáno {receipt.polozky.aggregate(total=Sum('mnozstvi'))['total'] or 0} porcí",
-                "sort_value": receipt.datum_vydeje,
-            }
-        )
 
-    for storno in (
-        StornovaneObjednavky.objects.filter(datum_vydeje=today, status__in=CANCELLED_STATUSES)
-        .select_related("user", "storno_user")
-        .order_by("-updated_at")[:4]
-    ):
-        recent_activity.append(
-            {
-                "tone": "danger" if storno.status == "nevyzvednuto" else "warning",
-                "title": storno.user.get_full_name() or storno.user.username,
-                "meta": storno.updated_at.strftime("%d.%m.%Y %H:%M"),
-                "detail": storno.get_status_display(),
-                "sort_value": storno.updated_at,
-            }
-        )
-
-    recent_activity.sort(key=lambda item: item["sort_value"], reverse=True)
-    return recent_activity[:8]
+def _format_user_label(user):
+    if not user:
+        return "Neznámý strávník"
+    full_name = user.get_full_name().strip()
+    return full_name or getattr(user, "username", "Bez jména")
 
 
 def _build_quick_links(today):
     return [
         {
             "label": "Živý výdej",
-            "description": "Hlavní provozní obrazovka obsluhy pro vydávání jídel a RFID.",
+            "description": "Okamžitý vstup do vydávání přes terminál obsluhy.",
+            "icon": "fas fa-cash-register",
             "url": reverse("vydej_frontend:dashboard"),
-            "icon": "fas fa-concierge-bell",
             "tone": "primary",
             "new_window": True,
         },
         {
             "label": "Přehled pro kuchyni",
-            "description": "Denní přehled výroby a výdeje pro kuchyň a koordinaci směny.",
-            "url": f"{reverse('admin:vydej_prehledprokuchyni_changelist')}?datum={today.isoformat()}",
+            "description": "Kuchyňský pohled na dnešní výrobu a čekající porce.",
             "icon": "fas fa-kitchen-set",
+            "url": f"{reverse('admin:vydej_prehledprokuchyni_changelist')}?datum={today.isoformat()}",
             "tone": "light",
             "new_window": True,
         },
         {
             "label": "Fronta objednávek",
-            "description": "Rozpracované objednávky připravené k výdeji nebo dovýdeji.",
-            "url": reverse("admin:vydej_vydejorder_changelist"),
+            "description": "Kontrola čekajících objednávek a ruční zásahy při směně.",
             "icon": "fas fa-list-check",
+            "url": reverse("admin:vydej_vydejorder_changelist"),
             "tone": "light",
             "new_window": True,
         },
         {
             "label": "Vydané účtenky",
-            "description": "Dohledání již vydaných objednávek a kontrola účtenek.",
-            "url": reverse("admin:vydej_vydejniuctenka_changelist"),
+            "description": "Poslední vydané objednávky a detail výdeje za dnešek.",
             "icon": "fas fa-receipt",
+            "url": reverse("admin:vydej_vydejniuctenka_changelist"),
             "tone": "light",
             "new_window": True,
         },
-        {
-            "label": "Storna a nevyzvednuté",
-            "description": "Problematické případy, které vyžadují zásah nebo kontrolu.",
-            "url": reverse("admin:vydej_stornovaneobjednavky_changelist"),
-            "icon": "fas fa-triangle-exclamation",
-            "tone": "danger",
-            "new_window": True,
-        },
     ]
 
 
-def _build_settings_links():
-    return [
-        {
-            "label": "Výdejní časy jídel",
-            "description": "Správa časových oken výdeje podle druhu jídla.",
-            "url": reverse("admin:canteen_settings_mealpickuptime_changelist"),
-            "new_window": True,
-        },
-        {
-            "label": "Uzávěrky objednávek",
-            "description": "Kontrola uzávěrek a pravidel pro objednávání a rušení jídel.",
-            "url": reverse("admin:canteen_settings_orderclosingtime_changelist"),
-            "new_window": True,
-        },
-        {
-            "label": "Provozní výjimky",
-            "description": "Mimořádné dny, výluky a výjimky v běžném provozu jídelny.",
-            "url": reverse("admin:canteen_settings_operatingexceptions_changelist"),
-            "new_window": True,
-        },
-        {
-            "label": "Timeout výdeje",
-            "description": "Za kolik sekund se nalezená objednávka automaticky dokončí.",
-            "url": reverse("admin:provoz_jidelny_nastavenivydaje_changelist"),
-            "new_window": False,
-        },
-    ]
+def _build_production_groups(pending_items_qs):
+    grouped = list(
+        pending_items_qs.values(
+            "menu_item__druh_jidla",
+            "menu_item__druh_jidla__nazev",
+            "menu_item__druh_jidla__ikona",
+            "menu_item__druh_jidla__poradi",
+        )
+        .annotate(
+            portions=Sum("quantity"),
+            order_count=Count("order", distinct=True),
+            meal_count=Count("menu_item__jidlo", distinct=True),
+        )
+        .order_by("menu_item__druh_jidla__poradi", "menu_item__druh_jidla__nazev")
+    )
+
+    meal_names_by_type = {}
+    for item in (
+        pending_items_qs.values(
+            "menu_item__druh_jidla",
+            "menu_item__jidlo__nazev",
+        )
+        .annotate(portions=Sum("quantity"))
+        .order_by("menu_item__druh_jidla", "-portions", "menu_item__jidlo__nazev")
+    ):
+        meal_names_by_type.setdefault(item["menu_item__druh_jidla"], [])
+        if len(meal_names_by_type[item["menu_item__druh_jidla"]]) < 3:
+            meal_names_by_type[item["menu_item__druh_jidla"]].append(item["menu_item__jidlo__nazev"])
+
+    production_groups = []
+    for group in grouped:
+        meal_names = meal_names_by_type.get(group["menu_item__druh_jidla"], [])
+        production_groups.append(
+            {
+                "id": group["menu_item__druh_jidla"],
+                "label": group["menu_item__druh_jidla__nazev"] or "Bez druhu",
+                "portions": group["portions"] or 0,
+                "order_count": group["order_count"] or 0,
+                "meal_count": group["meal_count"] or 0,
+                "meal_names": meal_names,
+            }
+        )
+    return production_groups
+
+
+def _build_windows(today, now, pickup_times, counts_by_type):
+    windows = []
+    for pickup in pickup_times:
+        counts = counts_by_type.get(pickup.druh_jidla_id, {"portions": 0, "order_count": 0})
+        status = _window_status(today, pickup, now)
+        windows.append(
+            {
+                "label": pickup.druh_jidla.nazev,
+                "time_range": f"{pickup.pickup_from:%H:%M} - {pickup.pickup_to:%H:%M}",
+                "queue_count": counts["portions"],
+                "order_count": counts["order_count"],
+                "state": status["state"],
+                "badge": status["badge"],
+                "countdown": status["countdown"],
+            }
+        )
+    return windows
+
+
+def _build_live_issue_feed(today):
+    receipts = (
+        VydejniUctenka.objects.filter(datum_vydeje__date=today)
+        .select_related("order__user", "vydal")
+        .prefetch_related("polozky")
+        .order_by("-datum_vydeje")[:10]
+    )
+
+    feed = []
+    for receipt in receipts:
+        items = list(receipt.polozky.all())
+        portions = sum(item.mnozstvi for item in items)
+        item_names = [f"{item.nazev_jidla} ({item.mnozstvi}x)" for item in items[:2]]
+        if len(items) > 2:
+            item_names.append(f"+ {len(items) - 2} další")
+        feed.append(
+            {
+                "time": timezone.localtime(receipt.datum_vydeje).strftime("%H:%M"),
+                "user_label": _format_user_label(receipt.order.user),
+                "operator_label": _format_user_label(receipt.vydal) if receipt.vydal else "Systém / terminál",
+                "portions": portions,
+                "items_summary": " • ".join(item_names) if item_names else "Bez položek",
+                "amount": receipt.celkova_cena,
+            }
+        )
+    return feed
+
+
+def _build_notices(total_pending_portions, windows, current_issue_feed):
+    notices = []
+    if total_pending_portions == 0:
+        notices.append(
+            {
+                "tone": "success",
+                "title": "Dnešní fronta je čistá",
+                "text": "Zatím nejsou žádné nevydané porce. Dashboard bude dál hlídat nové objednávky.",
+            }
+        )
+    active_windows = [window for window in windows if window["state"] == "active"]
+    if active_windows:
+        current = active_windows[0]
+        notices.append(
+            {
+                "tone": "warning",
+                "title": f"Běží výdej: {current['label']}",
+                "text": f"Aktuálně je potřeba odbavit {current['queue_count']} porcí. Okno {current['countdown']}.",
+            }
+        )
+    upcoming = [window for window in windows if window["state"] == "upcoming"]
+    if upcoming:
+        next_window = upcoming[0]
+        notices.append(
+            {
+                "tone": "neutral",
+                "title": f"Další vlna: {next_window['label']}",
+                "text": f"Začne {next_window['countdown']} a čeká v ní {next_window['queue_count']} porcí.",
+            }
+        )
+    if not current_issue_feed:
+        notices.append(
+            {
+                "tone": "neutral",
+                "title": "Zatím nic nebylo vydáno",
+                "text": "Jakmile obsluha začne vydávat, poslední výdeje se budou zobrazovat průběžně tady.",
+            }
+        )
+    return notices[:3]
 
 
 def build_canteen_staff_dashboard():
     today = timezone.localdate()
     now = timezone.localtime()
-    now_time = now.time()
-
     settings_obj, _ = VydejSettings.objects.get_or_create()
 
-    pending_orders_qs = Order.objects.filter(
-        datum_vydeje=today,
-        status__in=PENDING_STATUSES,
-    ).select_related("user")
-
-    pending_items_qs = OrderItem.objects.filter(
-        order__datum_vydeje=today,
-        order__status__in=PENDING_STATUSES,
-        vydano=False,
-    ).select_related("menu_item__jidlo", "menu_item__druh_jidla")
+    pending_orders_qs = Order.objects.filter(datum_vydeje=today, status__in=PENDING_STATUSES)
+    pending_items_qs = (
+        OrderItem.objects.filter(
+            order__datum_vydeje=today,
+            order__status__in=PENDING_STATUSES,
+            vydano=False,
+        )
+        .select_related("order__user", "menu_item__jidlo", "menu_item__druh_jidla")
+    )
 
     pending_orders_count = pending_orders_qs.count()
-    pending_users_count = pending_orders_qs.values("user_id").distinct().count()
-    pending_portions = pending_items_qs.aggregate(total=Sum("quantity"))["total"] or 0
+    pending_users_count = pending_orders_qs.values("user").distinct().count()
+    total_pending_portions = pending_items_qs.aggregate(total=Sum("quantity"))["total"] or 0
 
     issued_receipts_qs = VydejniUctenka.objects.filter(datum_vydeje__date=today)
     issued_receipts_count = issued_receipts_qs.count()
-    issued_portions = issued_receipts_qs.aggregate(total=Sum("polozky__mnozstvi"))["total"] or 0
-
-    cancelled_today_count = Order.objects.filter(
-        datum_vydeje=today,
-        status__in=CANCELLED_STATUSES,
-    ).count()
-
-    stale_pending_count = Order.objects.filter(
-        datum_vydeje__lt=today,
-        status__in=PENDING_STATUSES,
-    ).count()
-
-    pickup_times = list(
-        MealPickupTime.objects.select_related("druh_jidla").order_by(
-            "pickup_from",
-            "druh_jidla__poradi",
-            "druh_jidla__nazev",
-        )
-    )
-    counts_by_type = {
-        item["menu_item__druh_jidla"]: item["total"]
-        for item in pending_items_qs.values("menu_item__druh_jidla").annotate(total=Sum("quantity"))
-    }
-
-    meal_windows = []
-    for pickup in pickup_times:
-        state, note = _meal_window_state(pickup, now_time)
-        meal_windows.append(
-            {
-                "label": pickup.druh_jidla.nazev,
-                "time_range": f"{pickup.pickup_from.strftime('%H:%M')}–{pickup.pickup_to.strftime('%H:%M')}",
-                "queue_count": counts_by_type.get(pickup.druh_jidla_id, 0),
-                "state": state,
-                "note": note,
-            }
-        )
-
-    active_windows = [window for window in meal_windows if window["state"] == "active"]
-    upcoming_windows = [window for window in meal_windows if window["state"] == "upcoming"]
-
-    top_meals = list(
-        pending_items_qs.values("menu_item__jidlo__nazev", "menu_item__druh_jidla__nazev")
-        .annotate(total=Sum("quantity"))
-        .order_by("-total", "menu_item__druh_jidla__nazev", "menu_item__jidlo__nazev")[:6]
+    issued_portions = (
+        issued_receipts_qs.values("polozky__id").aggregate(total=Sum("polozky__mnozstvi"))["total"] or 0
     )
 
-    notices = []
-    if not pickup_times:
-        notices.append(
-            {
-                "tone": "danger",
-                "title": "Chybí výdejní časy jídel",
-                "text": "Bez nich obsluha a kuchyň nevidí správný rytmus dne a provozní kontext.",
-            }
-        )
-    elif active_windows:
-        labels = ", ".join(window["label"] for window in active_windows)
-        notices.append(
-            {
-                "tone": "success",
-                "title": "Výdej právě běží",
-                "text": f"Aktivní okna: {labels}. Obsluha může pracovat bez přepínání kontextu.",
-            }
-        )
-    elif upcoming_windows:
-        notices.append(
-            {
-                "tone": "warning",
-                "title": "Další výdejní vlna teprve přijde",
-                "text": f"Nejbližší okno začne v {upcoming_windows[0]['time_range']} pro {upcoming_windows[0]['label'].lower()}.",
-            }
-        )
+    cancelled_today_count = Order.objects.filter(datum_vydeje=today, status__in=CANCELLED_STATUSES).count()
 
-    if stale_pending_count:
-        notices.append(
-            {
-                "tone": "danger",
-                "title": "Zůstaly starší rozpracované objednávky",
-                "text": f"{stale_pending_count} objednávek má datum výdeje v minulosti a stále nejsou uzavřené.",
-            }
-        )
+    production_groups = _build_production_groups(pending_items_qs)
+    counts_by_type = {group["id"]: group for group in production_groups}
 
-    if pending_portions >= 120:
-        notices.append(
-            {
-                "tone": "warning",
-                "title": "Silnější provoz",
-                "text": f"Dnes čeká {pending_portions} porcí k výdeji. Doporučujeme mít otevřený i kuchyňský přehled.",
-            }
-        )
-
-    if not notices:
-        notices.append(
-            {
-                "tone": "neutral",
-                "title": "Provoz bez výstrah",
-                "text": "Momentálně nejsou detekované žádné zásadní provozní odchylky.",
-            }
-        )
+    pickup_times = MealPickupTime.objects.select_related("druh_jidla").order_by(
+        "pickup_from",
+        "druh_jidla__poradi",
+        "druh_jidla__nazev",
+    )
+    windows = _build_windows(today, now, pickup_times, counts_by_type)
+    current_issue_feed = _build_live_issue_feed(today)
+    notices = _build_notices(total_pending_portions, windows, current_issue_feed)
 
     return {
         "today": today,
         "now": now,
+        "last_updated": now,
         "settings_obj": settings_obj,
         "pending_orders_count": pending_orders_count,
         "pending_users_count": pending_users_count,
-        "pending_portions": pending_portions,
+        "pending_portions": total_pending_portions,
         "issued_receipts_count": issued_receipts_count,
         "issued_portions": issued_portions,
         "cancelled_today_count": cancelled_today_count,
-        "active_window_count": len(active_windows),
-        "meal_windows": meal_windows,
-        "upcoming_windows": upcoming_windows[:3],
-        "top_meals": top_meals,
-        "notices": notices,
-        "recent_activity": _build_recent_activity(today),
+        "production_groups": production_groups,
+        "meal_windows": windows,
+        "current_issue_feed": current_issue_feed,
         "quick_links": _build_quick_links(today),
-        "settings_links": _build_settings_links(),
-        "stale_pending_count": stale_pending_count,
+        "notices": notices,
     }
-

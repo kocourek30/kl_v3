@@ -1,295 +1,191 @@
-
 {% extends "admin/base_site.html" %}
-{% load form_tags %}
+{% load static form_tags %}
 
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'sklad/css/sklad_admin_views.css' %}">
+{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-  <div class="row mb-3">
-    <div class="col">
-      <h1 class="mb-3">{{ title }}</h1>
-    </div>
-  </div>
+<div class="admin-shell admin-shell--wide sklad-page">
+  <section class="admin-hero">
+    <div class="admin-kicker">Nákladový reporting</div>
+    <h1>{{ title }}</h1>
+    <p>Manažerský přehled nákladů skladu včetně porcí, uzávěrky a top položek podle hodnoty.</p>
+  </section>
 
-  <!-- Filtr / formulář -->
-  <div class="row mb-4">
-    <div class="col-lg-6 col-xl-5">
-      <div class="card shadow-sm">
-        <div class="card-header bg-light">
-          <strong>Filtr období</strong>
+  <section class="admin-filter-panel">
+    <form method="get" class="admin-filter-form">
+      <div class="sklad-form-inline">
+        <div class="admin-field">
+          <label for="{{ form.rok.id_for_label }}">Rok</label>
+          {{ form.rok|add_class:"form-control" }}
         </div>
-        <div class="card-body">
-          <form method="get" class="form-horizontal">
-            <div class="form-row">
-              <div class="form-group col-md-4">
-                <label for="{{ form.rok.id_for_label }}">Rok</label>
-                {{ form.rok|add_class:"form-control" }}
-              </div>
-              <div class="form-group col-md-3">
-                <label for="{{ form.mesic.id_for_label }}">Měsíc</label>
-                {{ form.mesic|add_class:"form-control" }}
-              </div>
-              <div class="form-group col-md-12 mt-2">
-                <label for="{{ form.stravovaci_skupina.id_for_label }}">Stravovací skupina</label>
-                {{ form.stravovaci_skupina|add_class:"form-control" }}
-                <small class="form-text text-muted">
-                  Volitelné – bez výběru se počítají náklady za všechny skupiny.
-                </small>
-              </div>
-            </div>
-            <button type="submit" class="btn btn-success mt-3">
-              <i class="fas fa-chart-line"></i> Zobrazit report
-            </button>
-          </form>
+        <div class="admin-field">
+          <label for="{{ form.mesic.id_for_label }}">Měsíc</label>
+          {{ form.mesic|add_class:"form-control" }}
+        </div>
+        <div class="admin-field">
+          <label for="{{ form.stravovaci_skupina.id_for_label }}">Stravovací skupina</label>
+          {{ form.stravovaci_skupina|add_class:"form-control" }}
+          <div class="sklad-note">Volitelné – bez výběru se počítají náklady za všechny skupiny.</div>
+        </div>
+        <div class="admin-field">
+          <button type="submit" class="admin-btn admin-btn--primary">
+            <i class="fas fa-chart-line"></i> Zobrazit report
+          </button>
         </div>
       </div>
-    </div>
-  </div>
+    </form>
+  </section>
 
   {% if souhrnne_naklady %}
-
-  <div class="row">
-    <!-- Souhrn nákladů -->
-    <div class="col-lg-6">
-      <div class="card shadow-sm mb-4">
-        <div class="card-header bg-primary text-white">
-          <strong>Souhrn nákladů za období</strong>
-        </div>
-        <div class="card-body p-0">
-          <table class="table mb-0">
-            <thead class="thead-light">
-              <tr>
-                <th>Ukazatel</th>
-                <th class="text-right">Hodnota [Kč]</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Příjmy surovin (nákupy)</td>
-                <td class="text-right">
-                  {{ souhrnne_naklady.prijmy|floatformat:-2 }} Kč
-                </td>
-              </tr>
-              <tr>
-                <td>Výdeje surovin (spotřeba)</td>
-                <td class="text-right">
-                  {{ souhrnne_naklady.vydeje|floatformat:-2 }} Kč
-                </td>
-              </tr>
-              <tr>
-                <td>Odpisy expirací</td>
-                <td class="text-right">
-                  {{ souhrnne_naklady.odpisy_expirace|floatformat:-2 }} Kč
-                </td>
-              </tr>
-              <tr class="table-warning font-weight-bold">
-                <td>Náklady celkem včetně odpisů</td>
-                <td class="text-right">
-                  {{ souhrnne_naklady.naklady_celkem|floatformat:-2 }} Kč
-                </td>
-              </tr>
-              <tr>
-                <td>Počet porcí (strávníkoden)</td>
-                <td class="text-right">
-                  {{ souhrnne_naklady.pocet_porci|floatformat:0 }} porcí
-                </td>
-              </tr>
-              <tr class="table-info font-weight-bold">
-                <td>Náklady na 1 porci</td>
-                <td class="text-right">
-                  {{ souhrnne_naklady.cena_na_porci|floatformat:-2 }} Kč
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+    <div class="sklad-kpi-grid">
+      <article class="sklad-kpi"><strong>Náklady celkem</strong><span>{{ souhrnne_naklady.naklady_celkem|floatformat:-2 }} Kč</span></article>
+      <article class="sklad-kpi"><strong>Počet porcí</strong><span>{{ souhrnne_naklady.pocet_porci|floatformat:0 }}</span></article>
+      <article class="sklad-kpi"><strong>Cena na porci</strong><span>{{ souhrnne_naklady.cena_na_porci|floatformat:-2 }} Kč</span></article>
+      <article class="sklad-kpi"><strong>Odpisy expirace</strong><span>{{ souhrnne_naklady.odpisy_expirace|floatformat:-2 }} Kč</span></article>
     </div>
 
-    <div class="col-lg-6">
+    <div class="admin-grid admin-grid--split">
+      <section class="admin-panel">
+        <div class="admin-panel-head"><strong>Souhrn nákladů</strong></div>
+        <div class="admin-panel-body p-0">
+          <div class="sklad-table-wrapper">
+            <table class="sklad-table">
+              <thead>
+                <tr><th>Ukazatel</th><th>Hodnota</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Příjmy surovin (nákupy)</td><td>{{ souhrnne_naklady.prijmy|floatformat:-2 }} Kč</td></tr>
+                <tr><td>Výdeje surovin (spotřeba)</td><td>{{ souhrnne_naklady.vydeje|floatformat:-2 }} Kč</td></tr>
+                <tr><td>Odpisy expirací</td><td>{{ souhrnne_naklady.odpisy_expirace|floatformat:-2 }} Kč</td></tr>
+                <tr class="sklad-row-soft-warning"><td><strong>Náklady celkem včetně odpisů</strong></td><td><strong>{{ souhrnne_naklady.naklady_celkem|floatformat:-2 }} Kč</strong></td></tr>
+                <tr><td>Počet porcí (strávníkoden)</td><td>{{ souhrnne_naklady.pocet_porci|floatformat:0 }} porcí</td></tr>
+                <tr class="sklad-row-soft-success"><td><strong>Náklady na 1 porci</strong></td><td><strong>{{ souhrnne_naklady.cena_na_porci|floatformat:-2 }} Kč</strong></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       {% if skladova_uzaverka %}
-      <div class="card shadow-sm mb-4">
-        <div class="card-header bg-dark text-white">
-          <strong>Skladová uzávěrka v Kč</strong>
+      <section class="admin-panel">
+        <div class="admin-panel-head"><strong>Skladová uzávěrka v Kč</strong></div>
+        <div class="admin-panel-body p-0">
+          <div class="sklad-table-wrapper">
+            <table class="sklad-table">
+              <thead><tr><th>Položka</th><th>Hodnota</th></tr></thead>
+              <tbody>
+                <tr><td>Počáteční hodnota skladu</td><td>{{ skladova_uzaverka.pocatecni_stav|floatformat:-2 }} Kč</td></tr>
+                <tr><td>+ Příjmy</td><td>{{ skladova_uzaverka.prijmy|floatformat:-2 }} Kč</td></tr>
+                <tr><td>- Storna příjmů</td><td>{{ skladova_uzaverka.storna_prijmu|floatformat:-2 }} Kč</td></tr>
+                <tr><td>- Výdeje do spotřeby</td><td>{{ skladova_uzaverka.vydeje|floatformat:-2 }} Kč</td></tr>
+                <tr><td>+ Storna výdejek</td><td>{{ skladova_uzaverka.storna_vydeju|floatformat:-2 }} Kč</td></tr>
+                <tr><td>- Odpisy expirací</td><td>{{ skladova_uzaverka.odpisy_expirace|floatformat:-2 }} Kč</td></tr>
+                <tr><td>+ Inventurní přebytky</td><td>{{ skladova_uzaverka.inventura_plus|floatformat:-2 }} Kč</td></tr>
+                <tr><td>- Inventurní manka</td><td>{{ skladova_uzaverka.inventura_minus|floatformat:-2 }} Kč</td></tr>
+                <tr class="sklad-row-soft-warning"><td><strong>Vypočtená konečná hodnota</strong></td><td><strong>{{ skladova_uzaverka.vypocet_konecneho_stavu|floatformat:-2 }} Kč</strong></td></tr>
+                <tr class="sklad-row-soft-warning"><td><strong>Skutečná konečná hodnota z pohybů</strong></td><td><strong>{{ skladova_uzaverka.konecny_stav|floatformat:-2 }} Kč</strong></td></tr>
+                <tr class="{% if skladova_uzaverka.kontrola_ok %}sklad-row-soft-success{% else %}sklad-row-soft-danger{% endif %}">
+                  <td><strong>Kontrolní rozdíl</strong></td>
+                  <td><strong>{{ skladova_uzaverka.rozdil_kontroly|floatformat:-2 }} Kč</strong></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div class="card-body p-0">
-          <table class="table mb-0">
-            <tbody>
-              <tr>
-                <td>Počáteční hodnota skladu</td>
-                <td class="text-right">{{ skladova_uzaverka.pocatecni_stav|floatformat:-2 }} Kč</td>
-              </tr>
-              <tr>
-                <td>+ Příjmy</td>
-                <td class="text-right">{{ skladova_uzaverka.prijmy|floatformat:-2 }} Kč</td>
-              </tr>
-              <tr>
-                <td>- Storna příjmů</td>
-                <td class="text-right">{{ skladova_uzaverka.storna_prijmu|floatformat:-2 }} Kč</td>
-              </tr>
-              <tr>
-                <td>- Výdeje do spotřeby</td>
-                <td class="text-right">{{ skladova_uzaverka.vydeje|floatformat:-2 }} Kč</td>
-              </tr>
-              <tr>
-                <td>+ Storna výdejek</td>
-                <td class="text-right">{{ skladova_uzaverka.storna_vydeju|floatformat:-2 }} Kč</td>
-              </tr>
-              <tr>
-                <td>- Odpisy expirací</td>
-                <td class="text-right">{{ skladova_uzaverka.odpisy_expirace|floatformat:-2 }} Kč</td>
-              </tr>
-              <tr>
-                <td>+ Inventurní přebytky</td>
-                <td class="text-right">{{ skladova_uzaverka.inventura_plus|floatformat:-2 }} Kč</td>
-              </tr>
-              <tr>
-                <td>- Inventurní manka</td>
-                <td class="text-right">{{ skladova_uzaverka.inventura_minus|floatformat:-2 }} Kč</td>
-              </tr>
-              <tr class="table-secondary font-weight-bold">
-                <td>Vypočtená konečná hodnota</td>
-                <td class="text-right">{{ skladova_uzaverka.vypocet_konecneho_stavu|floatformat:-2 }} Kč</td>
-              </tr>
-              <tr class="table-secondary font-weight-bold">
-                <td>Skutečná konečná hodnota z pohybů</td>
-                <td class="text-right">{{ skladova_uzaverka.konecny_stav|floatformat:-2 }} Kč</td>
-              </tr>
-              <tr class="{% if skladova_uzaverka.kontrola_ok %}table-success{% else %}table-danger{% endif %} font-weight-bold">
-                <td>Kontrolní rozdíl</td>
-                <td class="text-right">{{ skladova_uzaverka.rozdil_kontroly|floatformat:-2 }} Kč</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+      </section>
       {% endif %}
     </div>
 
-    <!-- Náklady podle SK -->
-    <div class="col-lg-6">
-      {% if naklady_podle_sk %}
-      <div class="card shadow-sm mb-4">
-        <div class="card-header bg-light">
-          <strong>Náklady podle skupin spotřebního koše</strong>
-        </div>
-        <div class="card-body p-0">
-          <table class="table mb-0 table-striped">
-            <thead class="thead-light">
-              <tr>
-                <th>Skupina SK</th>
-                <th class="text-right">Náklady [Kč]</th>
-                <th class="text-right">Podíl [%]</th>
-              </tr>
+    {% if naklady_podle_sk %}
+    <section class="admin-panel">
+      <div class="admin-panel-head"><strong>Náklady podle skupin spotřebního koše</strong></div>
+      <div class="admin-panel-body p-0">
+        <div class="sklad-table-wrapper">
+          <table class="sklad-table">
+            <thead>
+              <tr><th>Skupina SK</th><th>Náklady</th><th>Podíl</th></tr>
             </thead>
             <tbody>
               {% for radek in naklady_podle_sk %}
-              <tr>
-                <td>
-                  <strong>{{ radek.skupina_kod }}</strong>
-                  <span class="text-muted">– {{ radek.skupina_nazev }}</span>
-                </td>
-                <td class="text-right">
-                  {{ radek.naklady|floatformat:-2 }} Kč
-                </td>
-                <td class="text-right">
-                  {% if souhrnne_naklady.vydeje > 0 %}
-                    {% widthratio radek.naklady souhrnne_naklady.vydeje 100 %}%
-                  {% else %}
-                    0%
-                  {% endif %}
-                </td>
-              </tr>
+                <tr>
+                  <td><strong>{{ radek.skupina_kod }}</strong> – {{ radek.skupina_nazev }}</td>
+                  <td>{{ radek.naklady|floatformat:-2 }} Kč</td>
+                  <td>
+                    {% if souhrnne_naklady.vydeje > 0 %}
+                      {% widthratio radek.naklady souhrnne_naklady.vydeje 100 %}%
+                    {% else %}
+                      0 %
+                    {% endif %}
+                  </td>
+                </tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
       </div>
-      {% endif %}
-    </div>
-  </div>
+    </section>
+    {% endif %}
 
-  {% if managersky_report %}
-  <div class="row">
-    <div class="col-lg-4">
-      <div class="card shadow-sm mb-4">
-        <div class="card-header bg-light">
-          <strong>Top spotřeba podle hodnoty</strong>
-        </div>
-        <div class="card-body p-0">
-          <table class="table table-sm table-striped mb-0">
-            <thead><tr><th>Surovina</th><th class="text-right">Hodnota</th></tr></thead>
-            <tbody>
-              {% for row in managersky_report.top_spotreba %}
-              <tr>
-                <td>{{ row.surovina.nazev }}</td>
-                <td class="text-right">{{ row.hodnota|floatformat:-2 }} Kč</td>
-              </tr>
-              {% empty %}
-              <tr><td colspan="2" class="text-center text-muted py-3">Bez výdejů.</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+    {% if managersky_report %}
+      <div class="admin-grid admin-grid--split">
+        <section class="admin-panel">
+          <div class="admin-panel-head"><strong>Top spotřeba podle hodnoty</strong></div>
+          <div class="admin-panel-body p-0">
+            <table class="sklad-table">
+              <thead><tr><th>Surovina</th><th>Hodnota</th></tr></thead>
+              <tbody>
+                {% for row in managersky_report.top_spotreba %}
+                  <tr><td>{{ row.surovina.nazev }}</td><td>{{ row.hodnota|floatformat:-2 }} Kč</td></tr>
+                {% empty %}
+                  <tr><td colspan="2" class="sklad-empty">Bez výdejů.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="admin-panel">
+          <div class="admin-panel-head"><strong>Top odpisy expirací</strong></div>
+          <div class="admin-panel-body p-0">
+            <table class="sklad-table">
+              <thead><tr><th>Surovina</th><th>Hodnota</th></tr></thead>
+              <tbody>
+                {% for row in managersky_report.top_odpisy %}
+                  <tr><td>{{ row.surovina.nazev }}</td><td>{{ row.hodnota|floatformat:-2 }} Kč</td></tr>
+                {% empty %}
+                  <tr><td colspan="2" class="sklad-empty">Bez odpisů.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
-    </div>
 
-    <div class="col-lg-4">
-      <div class="card shadow-sm mb-4">
-        <div class="card-header bg-light">
-          <strong>Top odpisy expirací</strong>
-        </div>
-        <div class="card-body p-0">
-          <table class="table table-sm table-striped mb-0">
-            <thead><tr><th>Surovina</th><th class="text-right">Hodnota</th></tr></thead>
-            <tbody>
-              {% for row in managersky_report.top_odpisy %}
-              <tr>
-                <td>{{ row.surovina.nazev }}</td>
-                <td class="text-right">{{ row.hodnota|floatformat:-2 }} Kč</td>
-              </tr>
-              {% empty %}
-              <tr><td colspan="2" class="text-center text-muted py-3">Bez odpisů.</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-lg-4">
-      <div class="card shadow-sm mb-4">
-        <div class="card-header bg-light">
-          <strong>Top inventurní rozdíly</strong>
-        </div>
-        <div class="card-body p-0">
-          <table class="table table-sm table-striped mb-0">
-            <thead><tr><th>Surovina</th><th class="text-right">Hodnota</th></tr></thead>
+      <section class="admin-panel">
+        <div class="admin-panel-head"><strong>Top inventurní rozdíly</strong></div>
+        <div class="admin-panel-body p-0">
+          <table class="sklad-table">
+            <thead><tr><th>Surovina</th><th>Hodnota</th></tr></thead>
             <tbody>
               {% for row in managersky_report.top_inventury %}
-              <tr>
-                <td>{{ row.surovina.nazev }}</td>
-                <td class="text-right">{{ row.hodnota|floatformat:-2 }} Kč</td>
-              </tr>
+                <tr><td>{{ row.surovina.nazev }}</td><td>{{ row.hodnota|floatformat:-2 }} Kč</td></tr>
               {% empty %}
-              <tr><td colspan="2" class="text-center text-muted py-3">Bez inventurních rozdílů.</td></tr>
+                <tr><td colspan="2" class="sklad-empty">Bez inventurních rozdílů.</td></tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
-      </div>
-    </div>
-  </div>
-  {% endif %}
-
+      </section>
+    {% endif %}
   {% else %}
-  <div class="row">
-    <div class="col-lg-6">
-      <div class="alert alert-info mt-3">
-        Vyplňte formulář výše a klikněte na <strong>Zobrazit report</strong>, aby se načetla data.
+    <section class="admin-panel">
+      <div class="admin-panel-body">
+        <div class="sklad-empty">Vyplň filtr a klikni na <strong>Zobrazit report</strong>.</div>
       </div>
-    </div>
-  </div>
+    </section>
   {% endif %}
 </div>
 {% endblock %}

@@ -8,8 +8,8 @@ from django.utils import timezone
 from jidelnicek.models import DruhJidla, Jidelnicek, Jidlo, PolozkaJidelnicku
 from objednavky.models import Order, OrderItem
 
-from .models import AnketniOtazka, HodnoceniJidla, OdpovedHodnoceni
-from .services import anketni_report_obdobi
+from .models import AnketniOtazka, HodnoceniJidla, MesicniAnketa, MesicniAnketaVarianta, OdpovedHodnoceni
+from .services import anketni_report_obdobi, mesicni_anketa_kontext
 
 
 class AnketyViewsTests(TestCase):
@@ -66,6 +66,28 @@ class AnketyViewsTests(TestCase):
         response = self.client.get(reverse("ankety:hodnotit_jidlo", args=[self.order_item.id]))
 
         self.assertRedirects(response, reverse("ankety:moje_ankety"))
+
+    def test_mesicni_hlasovani_lze_odeslat_jen_jednou(self):
+        anketa = MesicniAnketa.objects.create(
+            nazev="Volba menu na květen",
+            rok=timezone.localdate().year,
+            mesic=timezone.localdate().month,
+            hlasovani_od=timezone.localdate() - timedelta(days=1),
+            hlasovani_do=timezone.localdate() + timedelta(days=1),
+            aktivni=True,
+        )
+        varianta_a = MesicniAnketaVarianta.objects.create(anketa=anketa, nazev="Varianta A", poradi=1)
+        varianta_b = MesicniAnketaVarianta.objects.create(anketa=anketa, nazev="Varianta B", poradi=2)
+
+        first = self.client.post(reverse("ankety:mesicni_volba"), {"varianta": varianta_a.id})
+        self.assertRedirects(first, reverse("ankety:mesicni_volba"))
+
+        second = self.client.post(reverse("ankety:mesicni_volba"), {"varianta": varianta_b.id})
+        self.assertRedirects(second, reverse("ankety:mesicni_volba"))
+
+        context = mesicni_anketa_kontext(self.user, timezone.localdate())
+        self.assertTrue(context["already_voted"])
+        self.assertEqual(context["my_vote"].varianta_id, varianta_a.id)
 
 
 class AnketyReportTests(TestCase):

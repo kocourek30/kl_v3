@@ -1,0 +1,428 @@
+.food-form-page {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.food-form-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.7fr);
+  gap: 1rem;
+  padding: 1.5rem;
+  border: 1px solid #d8e8d2;
+  border-radius: 1.5rem;
+  background:
+    radial-gradient(circle at top left, rgba(84, 174, 67, 0.14), transparent 34%),
+    radial-gradient(circle at top right, rgba(255, 187, 66, 0.16), transparent 28%),
+    #fff;
+  box-shadow: 0 18px 40px rgba(31, 47, 70, 0.06);
+}
+
+.food-form-kicker {
+  display: inline-flex;
+  margin-bottom: 0.75rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  background: #eef8e9;
+  color: #2a761d;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.food-form-hero h1 {
+  margin: 0 0 0.5rem;
+  color: #193621;
+  font-size: 2rem;
+  line-height: 1.1;
+}
+
+.food-form-hero p {
+  margin: 0;
+  max-width: 760px;
+  color: #627163;
+  line-height: 1.65;
+}
+
+.food-form-hero__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.food-form-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid #d7e6d1;
+  background: #fff;
+  color: #36503c;
+  font-size: 0.88rem;
+}
+
+.food-form-hero__actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.food-form-errors {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.95rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid #f1c4c4;
+  background: #fff3f3;
+  color: #903c3c;
+}
+
+.food-form-card {
+  display: grid;
+  gap: 1.3rem;
+  padding: 1.25rem;
+}
+
+.food-form-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.food-form-summary__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.95rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid #d9e7d4;
+  background: linear-gradient(135deg, rgba(84, 174, 67, 0.08), rgba(255, 255, 255, 0.98));
+}
+
+.food-form-summary__item > div:nth-child(2) {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.food-form-summary__action {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.food-form-summary__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.85rem;
+  background: #fff;
+  color: #3f8f31;
+  box-shadow: 0 8px 20px rgba(31, 47, 70, 0.08);
+  flex: 0 0 auto;
+}
+
+.food-form-summary__item strong {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: #1f4128;
+  font-size: 0.95rem;
+}
+
+.food-form-summary__item span:last-child {
+  color: #647165;
+  line-height: 1.55;
+}
+
+.food-form-card__toolbar,
+.food-form-card__footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.food-form-card__toolbar h2 {
+  margin: 0 0 0.35rem;
+  color: #193621;
+  font-size: 1.3rem;
+}
+
+.food-form-card__toolbar p {
+  margin: 0;
+  color: #647165;
+}
+
+.food-form-card__submit .submit-row,
+.food-form-card__footer .submit-row {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.food-form-section {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.food-form-section__header h3 {
+  margin: 0 0 0.3rem;
+  color: #1f4128;
+  font-size: 1.02rem;
+}
+
+.food-form-section__header p {
+  margin: 0;
+  color: #6a786d;
+  line-height: 1.55;
+}
+
+.food-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem 1rem;
+}
+
+.food-form-grid--compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem 0.75rem;
+}
+
+.food-form-field {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid #e1ecdd;
+  background: #fbfdf9;
+}
+
+.food-form-field--compact {
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.85rem;
+}
+
+.food-form-field--checkbox {
+  display: block;
+}
+
+.food-form-checkbox {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 0.65rem;
+  margin: 0;
+  cursor: pointer;
+}
+
+.food-form-checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  margin-top: 0.15rem;
+  padding: 0;
+}
+
+.food-form-checkbox__body {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.food-form-field--primary {
+  background: linear-gradient(135deg, rgba(84, 174, 67, 0.06), rgba(255, 255, 255, 0.98));
+  border-color: #d4e6cf;
+}
+
+.food-form-field__label {
+  margin: 0;
+  color: #405243;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.food-form-field input,
+.food-form-field select,
+.food-form-field textarea {
+  width: 100%;
+  min-height: 46px;
+  padding: 0.72rem 0.85rem;
+  border-radius: 0.9rem;
+  border: 1px solid #d1dde4;
+  background: #fff;
+  color: #223126;
+}
+
+.food-form-field textarea {
+  min-height: 120px;
+}
+
+.food-form-field .related-widget-wrapper {
+  display: block;
+}
+
+.food-form-field .related-widget-wrapper select {
+  width: calc(100% - 140px);
+  min-width: 240px;
+}
+
+.food-form-field .related-widget-wrapper-link {
+  margin-left: 0.35rem;
+}
+
+.food-form-field__help {
+  color: #6f7d72;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.food-form-field__errors {
+  color: #b03b3b;
+  font-size: 0.84rem;
+}
+
+.food-form-field__readonly {
+  min-height: 46px;
+  padding: 0.72rem 0.85rem;
+  border-radius: 0.9rem;
+  border: 1px solid #e0e8ec;
+  background: #fff;
+  color: #213327;
+}
+
+.food-form-inline-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.food-form-inline-card {
+  display: grid;
+  gap: 0;
+  border-radius: 1rem;
+  border: 1px solid #dbe7d7;
+  overflow: hidden;
+  box-shadow: 0 12px 28px rgba(31, 47, 70, 0.05);
+  background: #fff;
+}
+
+.food-form-inline-card__header {
+  padding: 1rem 1rem 0.9rem;
+  background: linear-gradient(90deg, rgba(84, 174, 67, 0.12), rgba(84, 174, 67, 0.03));
+  border-bottom: 1px solid #e3ece0;
+}
+
+.food-form-inline-card__header h4 {
+  margin: 0 0 0.25rem;
+  color: #1f4128;
+  font-size: 1rem;
+}
+
+.food-form-inline-card__header p {
+  margin: 0;
+  color: #68766c;
+  line-height: 1.5;
+}
+
+.food-form-inline-stack .inline-group,
+.food-form-inline-stack .module {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  box-shadow: none;
+}
+
+.food-form-inline-stack .inline-group h2,
+.food-form-inline-stack .inline-group h3,
+.food-form-inline-stack .module h2,
+.food-form-inline-stack .module h3 {
+  display: none;
+}
+
+.food-form-inline-stack .inline-related {
+  padding: 0 1rem 1rem;
+}
+
+.food-form-inline-stack .tabular.inline-related table {
+  margin: 0;
+}
+
+.food-form-inline-stack .tabular thead th {
+  background: #f4f8f1;
+  color: #4b5a4d;
+}
+
+.food-form-inline-stack .tabular td,
+.food-form-inline-stack .tabular th {
+  padding-top: 0.7rem;
+  padding-bottom: 0.7rem;
+}
+
+.food-form-inline-stack .add-row {
+  padding: 0 1rem 1rem;
+}
+
+.food-form-inline-stack .add-row a {
+  color: #27811b;
+  font-weight: 700;
+}
+
+@media (max-width: 1100px) {
+  .food-form-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .food-form-hero__actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .food-form-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .food-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .food-form-hero,
+  .food-form-card {
+    padding: 1rem;
+  }
+
+  .food-form-card__toolbar,
+  .food-form-card__footer {
+    flex-direction: column;
+  }
+
+  .food-form-grid--compact,
+  .food-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .food-form-field .related-widget-wrapper select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .food-form-summary__item {
+    grid-template-columns: 1fr;
+  }
+
+  .food-form-summary__action {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .food-form-summary__action .admin-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}

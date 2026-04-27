@@ -4,6 +4,8 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.urls import reverse
+from django.utils import timezone
 
 from jidelnicek.models import DruhJidla, Jidelnicek, Jidlo, PolozkaJidelnicku
 
@@ -176,3 +178,46 @@ class BulkOrderPlanTests(TestCase):
         self.assertEqual(result["replaced"], 1)
         self.assertEqual(order.items.count(), 1)
         self.assertEqual(order.items.get().menu_item, self.menu_item)
+
+
+class BulkOrderAdminApiTests(TestCase):
+    def setUp(self):
+        self.admin_user = get_user_model().objects.create_superuser(
+            username="bulk-admin",
+            password="testpass123",
+            email="bulk@example.com",
+        )
+        self.client.force_login(self.admin_user)
+        self.druh = DruhJidla.objects.create(nazev="Oběd")
+        self.jidlo = Jidlo.objects.create(
+            nazev="Testovací oběd",
+            cena=Decimal("89.00"),
+            druh=self.druh,
+        )
+        today = timezone.localdate()
+        self.today = today
+        self.past_menu = Jidelnicek.objects.create(
+            platnost_od=today.replace(month=1, day=1),
+            platnost_do=today.replace(month=1, day=1),
+        )
+        self.current_menu = Jidelnicek.objects.create(
+            platnost_od=today,
+            platnost_do=today,
+        )
+        PolozkaJidelnicku.objects.create(
+            jidelnicek=self.past_menu,
+            druh_jidla=self.druh,
+            jidlo=self.jidlo,
+        )
+        PolozkaJidelnicku.objects.create(
+            jidelnicek=self.current_menu,
+            druh_jidla=self.druh,
+            jidlo=self.jidlo,
+        )
+
+    def test_jidelnicek_days_api_returns_only_today_and_future(self):
+        response = self.client.get(reverse("admin:jidelnicek_days_api"))
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn(self.today.isoformat(), payload)
+        self.assertNotIn(self.today.replace(month=1, day=1).isoformat(), payload)

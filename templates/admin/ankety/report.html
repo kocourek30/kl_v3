@@ -1,5 +1,5 @@
 {% extends "admin/base_site.html" %}
-{% load static %}
+{% load static l10n %}
 
 {% block extrahead %}
 {{ block.super }}
@@ -49,50 +49,48 @@
         <span class="ankety-period-bar__label">Období reportu</span>
         <div class="ankety-period-pills">
           {% for value, label in period_choices %}
-              <a
-                class="ankety-period-pill {% if typ == value %}is-active{% endif %}"
-                href="?typ={{ value }}"
-              >
-                {{ label }}
-              </a>
+            <a
+              class="ankety-period-pill {% if typ == value %}is-active{% endif %}"
+              href="?typ={{ value }}"
+            >
+              {{ label }}
+            </a>
           {% endfor %}
         </div>
       </div>
-    </section>
-
-    <form method="get" class="admin-filter-form">
-        <div class="admin-filter-panel ankety-filter-panel" {% if typ != "custom" %}hidden{% endif %}>
-          <div class="ankety-custom-period-panel" {% if typ != "custom" %}hidden{% endif %}>
-            <input type="hidden" name="typ" value="custom">
+      {% if typ == "custom" %}
+        <form method="get" class="admin-filter-form ankety-custom-form">
+          <input type="hidden" name="typ" value="custom">
+          <div class="ankety-custom-period-panel">
             <div class="ankety-custom-period-panel__intro">
-              Vyber vlastní období a zobraz přehled hodnocení za zadané datumy.
+              Vyber vlastní období a zobraz přehled hodnocení přesně pro zadané datumy.
             </div>
             <div class="admin-filter-grid ankety-filter-grid">
               <div class="admin-field ankety-custom-period-field">
-                <label>Datum od</label>
-                <input type="date" name="od" value="{{ date_from|date:'Y-m-d' }}">
+                <label for="ankety-od">Datum od</label>
+                <input id="ankety-od" type="date" name="od" value="{{ date_from|date:'Y-m-d' }}">
               </div>
               <div class="admin-field ankety-custom-period-field">
-                <label>Datum do</label>
-                <input type="date" name="do" value="{{ date_to|date:'Y-m-d' }}">
+                <label for="ankety-do">Datum do</label>
+                <input id="ankety-do" type="date" name="do" value="{{ date_to|date:'Y-m-d' }}">
               </div>
+            </div>
+            <div class="admin-filter-actions">
+              <button class="admin-btn admin-btn--primary" type="submit">
+                <i class="fas fa-chart-line"></i>
+                Zobrazit přehled
+              </button>
+            </div>
           </div>
+        </form>
+      {% endif %}
+    </section>
 
-          <div class="admin-filter-actions">
-            <button class="admin-btn admin-btn--primary" type="submit">
-              <i class="fas fa-chart-line"></i>
-              Zobrazit přehled
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="admin-export-bar">
-        <strong>Export dat:</strong>
-        <a class="admin-btn admin-btn--light admin-btn--small" href="?{{ query_string }}&export=xls">Stáhnout XLS</a>
-        <a class="admin-btn admin-btn--danger admin-btn--small" href="?{{ query_string }}&export=pdf">Stáhnout PDF</a>
-      </div>
-    </form>
+    <div class="admin-export-bar">
+      <strong>Export dat:</strong>
+      <a class="admin-btn admin-btn--light admin-btn--small" href="?{{ query_string }}&export=xls">Stáhnout XLS</a>
+      <a class="admin-btn admin-btn--danger admin-btn--small" href="?{{ query_string }}&export=pdf">Stáhnout PDF</a>
+    </div>
 
     <div class="ankety-kpi-grid">
       <div class="matrix-total-card">
@@ -175,7 +173,7 @@
                       </td>
                       <td class="text-right">
                         <div class="ankety-score-stack">
-                          <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
+                          <div class="ankety-rating" style="--rating: {{ row.prumer|default:0|unlocalize }};"></div>
                           <strong>{{ row.prumer }}</strong>
                         </div>
                       </td>
@@ -226,7 +224,7 @@
                       </td>
                       <td class="text-right">
                         <div class="ankety-score-stack">
-                          <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
+                          <div class="ankety-rating" style="--rating: {{ row.prumer|default:0|unlocalize }};"></div>
                           <strong>{{ row.prumer }}</strong>
                         </div>
                       </td>
@@ -284,7 +282,7 @@
                             <td class="text-wrap"><strong class="ankety-meal-name">{{ row.jidlo }}</strong></td>
                             <td class="text-right">
                               <div class="ankety-score-stack">
-                                <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
+                                <div class="ankety-rating" style="--rating: {{ row.prumer|default:0|unlocalize }};"></div>
                                 <strong>{{ row.prumer }}</strong>
                               </div>
                             </td>
@@ -345,7 +343,7 @@
                             <td class="text-wrap"><strong class="ankety-meal-name">{{ row.jidlo }}</strong></td>
                             <td class="text-right">
                               <div class="ankety-score-stack">
-                                <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
+                                <div class="ankety-rating" style="--rating: {{ row.prumer|default:0|unlocalize }};"></div>
                                 <strong>{{ row.prumer }}</strong>
                               </div>
                             </td>
@@ -400,7 +398,7 @@
                       <td class="text-right">
                         {% if row.prumer %}
                           <div class="ankety-score-stack">
-                            <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
+                            <div class="ankety-rating" style="--rating: {{ row.prumer|default:0|unlocalize }};"></div>
                             <strong>{{ row.prumer|default:"-" }}</strong>
                           </div>
                         {% else %}
@@ -447,7 +445,7 @@
                       <td class="text-right">{{ row.pocet }}</td>
                       <td class="text-right">
                         <div class="ankety-score-stack">
-                          <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
+                          <div class="ankety-rating" style="--rating: {{ row.prumer|default:0|unlocalize }};"></div>
                           <strong>{{ row.prumer }}</strong>
                         </div>
                       </td>
@@ -489,8 +487,8 @@
                       <td class="text-right">
                         {% if row.prumer %}
                           <div class="ankety-score-stack">
-                            <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
-                            <strong>{{ row.prumer|default:"-" }}</strong>
+                          <div class="ankety-rating" style="--rating: {{ row.prumer|default:0|unlocalize }};"></div>
+                          <strong>{{ row.prumer|default:"-" }}</strong>
                           </div>
                         {% else %}
                           <strong>{{ row.prumer|default:"-" }}</strong>

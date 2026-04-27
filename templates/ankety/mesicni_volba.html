@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Měsíční volba jídel{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{% static 'ankety/css/ankety_frontend.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="survey-page">
+  <section class="survey-hero">
+    <div class="survey-hero-copy">
+      <span class="rate-eyebrow"><i class="fas fa-ballot-check"></i> Měsíční anketa menu</span>
+      <h1 class="survey-title">Hlasování o menu</h1>
+      <div class="survey-subtitle">
+        Každý strávník hlasuje jen jednou. Varianta s nejvyšším počtem hlasů bude podkladem pro finální rozhodnutí jídelny.
+      </div>
+    </div>
+    <div class="survey-summary">
+      <div class="survey-summary-card">
+        <strong>Stav hlasování</strong>
+        <span>
+          {% if mesicni_anketa.exists and mesicni_anketa.is_open %}Otevřeno{% else %}Uzavřeno{% endif %}
+        </span>
+      </div>
+      <div class="survey-summary-card">
+        <strong>Můj hlas</strong>
+        <span>{% if mesicni_anketa.already_voted %}Odeslán{% else %}Neodeslán{% endif %}</span>
+      </div>
+      <div class="survey-summary-card">
+        <strong>Celkem hlasů</strong>
+        <span>{{ mesicni_anketa.total_votes|default:0 }}</span>
+      </div>
+    </div>
+  </section>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} mb-0">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+
+  {% if not mesicni_anketa.exists %}
+    <div class="survey-empty">Aktuálně není vypsaná žádná měsíční anketa.</div>
+  {% else %}
+    <section class="rate-card survey-vote-card">
+      <div class="survey-vote-head">
+        <h2>{{ mesicni_anketa.anketa.nazev }}</h2>
+        <div class="survey-meta">
+          {{ mesicni_anketa.anketa.get_mesic_display }} {{ mesicni_anketa.anketa.rok }}
+          · od {{ mesicni_anketa.anketa.hlasovani_od|date:"d.m.Y" }} do {{ mesicni_anketa.anketa.hlasovani_do|date:"d.m.Y" }}
+        </div>
+      </div>
+
+      {% if mesicni_anketa.anketa.popis %}
+        <p class="survey-subtitle">{{ mesicni_anketa.anketa.popis }}</p>
+      {% endif %}
+
+      {% if mesicni_anketa.anketa.navrhujici_trida %}
+        <div class="survey-badge survey-badge-done">Navrhující třída: {{ mesicni_anketa.anketa.navrhujici_trida }}</div>
+      {% endif %}
+
+      <form method="post">
+        {% csrf_token %}
+        <div class="survey-vote-options">
+          {% for varianta in mesicni_anketa.varianty %}
+            <label class="survey-vote-option {% if varianta.is_selected %}is-selected{% endif %}">
+              <input
+                type="radio"
+                name="varianta"
+                value="{{ varianta.obj.id }}"
+                {% if varianta.is_selected %}checked{% endif %}
+                {% if mesicni_anketa.already_voted or not mesicni_anketa.is_open %}disabled{% endif %}
+              >
+              <div class="survey-vote-option__content">
+                <strong>{{ varianta.obj.nazev }}</strong>
+                {% if varianta.obj.popis %}<p>{{ varianta.obj.popis }}</p>{% endif %}
+                <div class="survey-meta">{{ varianta.count }} hlasů ({{ varianta.pct }} %)</div>
+              </div>
+            </label>
+          {% empty %}
+            <div class="survey-empty">Anketa zatím nemá žádné varianty.</div>
+          {% endfor %}
+        </div>
+
+        <div class="rate-actions">
+          <a class="rate-btn rate-btn-light" href="{% url 'ankety:moje_ankety' %}">Zpět na ankety</a>
+          {% if mesicni_anketa.is_open and not mesicni_anketa.already_voted and mesicni_anketa.varianty %}
+            <button class="rate-btn rate-btn-primary" type="submit">Odeslat hlas</button>
+          {% endif %}
+        </div>
+      </form>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}

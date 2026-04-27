@@ -1,13 +1,21 @@
 from collections import defaultdict
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import Avg, Count, Sum
 from django.utils import timezone
 
 from jidelnicek.models import DruhJidla
 from objednavky.models import OrderItem
 
-from .models import AnketniOtazka, HodnoceniJidla, OdpovedHodnoceni
+from .models import (
+    AnketniOtazka,
+    HodnoceniJidla,
+    MesicniAnketa,
+    MesicniAnketaHlas,
+    MesicniAnketaVarianta,
+    OdpovedHodnoceni,
+)
 
 
 def vydane_polozky_k_hodnoceni(user, target_date=None):
@@ -33,7 +41,86 @@ def anketni_prehled_uzivatele(user, target_date=None):
         "hodnotit": hodnotit,
         "hotovo": hotovo,
         "otazky_count": AnketniOtazka.objects.filter(aktivni=True).count(),
+        "mesicni_anketa": mesicni_anketa_kontext(user, target_date),
     }
+
+
+def _aktivni_mesicni_anketa(target_date=None):
+    target_date = target_date or timezone.localdate()
+    return (
+        MesicniAnketa.objects
+        .filter(aktivni=True, hlasovani_od__lte=target_date, hlasovani_do__gte=target_date)
+        .prefetch_related("varianty", "hlasy")
+        .order_by("-rok", "-mesic", "-vytvoreno")
+        .first()
+    )
+
+
+def mesicni_anketa_kontext(user, target_date=None):
+    anketa = _aktivni_mesicni_anketa(target_date)
+    if not anketa:
+        return {
+            "exists": False,
+            "is_open": False,
+            "already_voted": False,
+            "anketa": None,
+            "varianty": [],
+            "my_vote": None,
+            "total_votes": 0,
+        }
+
+    my_vote = MesicniAnketaHlas.objects.filter(anketa=anketa, user=user).select_related("varianta").first()
+    votes_per_option = (
+        anketa.hlasy.values("varianta_id")
+        .annotate(total=Count("id"))
+    )
+    vote_map = {row["varianta_id"]: row["total"] for row in votes_per_option}
+    total_votes = sum(vote_map.values())
+
+    varianty = []
+    for varianta in anketa.varianty.all().order_by("poradi", "id"):
+        count = vote_map.get(varianta.id, 0)
+        pct = round((count * 100 / total_votes), 1) if total_votes else 0
+        varianty.append(
+            {
+                "obj": varianta,
+                "count": count,
+                "pct": pct,
+                "is_selected": bool(my_vote and my_vote.varianta_id == varianta.id),
+            }
+        )
+
+    return {
+        "exists": True,
+        "is_open": anketa.is_open(target_date),
+        "already_voted": bool(my_vote),
+        "anketa": anketa,
+        "varianty": varianty,
+        "my_vote": my_vote,
+        "total_votes": total_votes,
+    }
+
+
+def odevzdat_hlas_v_mesicni_ankete(*, user, varianta_id, target_date=None):
+    anketa = _aktivni_mesicni_anketa(target_date)
+    if not anketa:
+        return {"ok": False, "error": "Aktuálně není otevřené žádné měsíční hlasování."}
+    if not anketa.is_open(target_date):
+        return {"ok": False, "error": "Hlasování není v tomto období otevřené."}
+    if MesicniAnketaHlas.objects.filter(anketa=anketa, user=user).exists():
+        return {"ok": False, "error": "Hlas už byl odeslaný. Každý může hlasovat jen jednou."}
+
+    varianta = MesicniAnketaVarianta.objects.filter(anketa=anketa, pk=varianta_id).first()
+    if not varianta:
+        return {"ok": False, "error": "Vybraná varianta není platná."}
+
+    with transaction.atomic():
+        MesicniAnketaHlas.objects.create(
+            anketa=anketa,
+            varianta=varianta,
+            user=user,
+        )
+    return {"ok": True, "anketa": anketa, "varianta": varianta}
 
 
 def _fmt_avg(value):

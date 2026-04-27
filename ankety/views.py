@@ -5,7 +5,12 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from .models import AnketniOtazka, HodnoceniJidla, OdpovedHodnoceni
-from .services import anketni_prehled_uzivatele, vydane_polozky_k_hodnoceni
+from .services import (
+    anketni_prehled_uzivatele,
+    mesicni_anketa_kontext,
+    odevzdat_hlas_v_mesicni_ankete,
+    vydane_polozky_k_hodnoceni,
+)
 
 
 @login_required
@@ -72,3 +77,32 @@ def hodnotit_jidlo(request, order_item_id):
         "order_item": order_item,
         "otazky": otazky,
     })
+
+
+@login_required
+def mesicni_volba(request):
+    today = timezone.localdate()
+    if request.method == "POST":
+        varianta_id = request.POST.get("varianta")
+        if not varianta_id:
+            messages.error(request, "Vyber prosím jednu variantu.")
+            return redirect("ankety:mesicni_volba")
+        result = odevzdat_hlas_v_mesicni_ankete(
+            user=request.user,
+            varianta_id=varianta_id,
+            target_date=today,
+        )
+        if not result["ok"]:
+            messages.warning(request, result["error"])
+        else:
+            messages.success(
+                request,
+                f"Hlas byl úspěšně odeslaný pro variantu: {result['varianta'].nazev}.",
+            )
+        return redirect("ankety:mesicni_volba")
+
+    return render(
+        request,
+        "ankety/mesicni_volba.html",
+        {"mesicni_anketa": mesicni_anketa_kontext(request.user, today)},
+    )

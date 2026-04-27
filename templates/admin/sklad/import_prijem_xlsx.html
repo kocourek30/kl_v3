@@ -1,55 +1,66 @@
 {% extends "admin/base_site.html" %}
+{% load static %}
 {% load form_tags %}
 
-{% block content %}
-<div class="container-fluid">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-      <h1 class="mb-1">{{ title }}</h1>
-      <p class="text-muted mb-0">Příjemka ze dne {{ prijem.datum|date:"d.m.Y" }}</p>
-    </div>
-    <a class="btn btn-outline-success" href="{{ vzor_url }}">
-      <i class="fas fa-file-excel"></i> Stáhnout vzor
-    </a>
-  </div>
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'sklad/css/sklad_admin_views.css' %}">
+{% endblock %}
 
-  <div class="row">
-    <div class="col-lg-7">
-      <div class="card">
-        <div class="card-header"><strong>Nahrát položky</strong></div>
-        <div class="card-body">
-          <form method="post" enctype="multipart/form-data">
-            {% csrf_token %}
-            <div class="form-group">
-              <label for="{{ form.soubor.id_for_label }}">{{ form.soubor.label }}</label>
-              {{ form.soubor|add_class:"form-control" }}
-              <small class="form-text text-muted">{{ form.soubor.help_text }}</small>
-              {% if form.soubor.errors %}
-                <div class="text-danger">{{ form.soubor.errors }}</div>
-              {% endif %}
-            </div>
-            <button type="submit" class="btn btn-success">
+{% block content %}
+<div class="admin-shell admin-shell--wide sklad-page">
+  <section class="admin-hero">
+    <div class="admin-hero-grid">
+      <div>
+        <div class="admin-kicker">Import příjemky</div>
+        <h1>{{ title }}</h1>
+        <p>Příjemka ze dne {{ prijem.datum|date:"d.m.Y" }}. Nahraj XLSX a zrychli zakládání položek bez ručního přepisu.</p>
+      </div>
+      <div class="sklad-actions" style="justify-content:flex-end;align-content:flex-start;">
+        <a class="admin-btn admin-btn--light" href="{{ vzor_url }}">
+          <i class="fas fa-file-excel"></i> Stáhnout vzor
+        </a>
+        <a class="admin-btn admin-btn--accent" href="../change/">
+          <i class="fas fa-arrow-left"></i> Zpět na příjemku
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <div class="admin-grid admin-grid--split">
+    <section class="admin-panel">
+      <div class="admin-panel-head"><strong>Nahrát položky</strong></div>
+      <div class="admin-panel-body">
+        <form method="post" enctype="multipart/form-data" class="admin-filter-form">
+          {% csrf_token %}
+          <div class="admin-field">
+            <label for="{{ form.soubor.id_for_label }}">{{ form.soubor.label }}</label>
+            {{ form.soubor|add_class:"form-control" }}
+            <div class="sklad-note">{{ form.soubor.help_text }}</div>
+            {% if form.soubor.errors %}
+              <div class="text-danger mt-2">{{ form.soubor.errors }}</div>
+            {% endif %}
+          </div>
+          <div class="admin-filter-actions mt-3">
+            <button type="submit" class="admin-btn admin-btn--primary">
               <i class="fas fa-upload"></i> Naimportovat položky
             </button>
-            <a class="btn btn-secondary" href="../change/">Zpět na příjemku</a>
-          </form>
-        </div>
+          </div>
+        </form>
       </div>
-    </div>
+    </section>
 
-    <div class="col-lg-5">
-      <div class="card">
-        <div class="card-header"><strong>Pravidla importu</strong></div>
-        <div class="card-body">
-          <ul class="mb-0">
-            <li>Surovina se páruje podle přesného názvu bez rozlišení velikosti písmen.</li>
-            <li>Neznámé suroviny se přeskočí a zobrazí se varování.</li>
-            <li>Importovat lze pouze do otevřené příjemky.</li>
-            <li>Po importu ještě příjemku zkontroluj a uzavři běžným tlačítkem.</li>
-          </ul>
-        </div>
+    <section class="admin-panel">
+      <div class="admin-panel-head"><strong>Pravidla importu</strong></div>
+      <div class="admin-panel-body">
+        <ul class="sklad-info-list">
+          <li>Surovina se páruje podle přesného názvu bez rozlišení velikosti písmen.</li>
+          <li>Neznámé suroviny se přeskočí a zobrazí se varování.</li>
+          <li>Importovat lze pouze do otevřené příjemky.</li>
+          <li>Po importu příjemku zkontroluj a uzavři běžným tlačítkem.</li>
+        </ul>
       </div>
-    </div>
+    </section>
   </div>
 </div>
 {% endblock %}

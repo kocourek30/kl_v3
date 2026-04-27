@@ -1,25 +1,23 @@
 from django.utils.html import format_html
 from django.contrib import admin
-from decimal import Decimal
-from django.db.models import Sum
+from decimal import Decimal, InvalidOperation
+from django.db.models import Count, Prefetch, Q, Sum
+from django.db.utils import OperationalError, ProgrammingError
 from django.core.exceptions import ValidationError
-from django.http import JsonResponse
+from django.http import HttpResponseRedirect, JsonResponse
 from django.urls import reverse
+from urllib.parse import urlencode
 
 from django import forms
 from django.urls import path
-from django.shortcuts import render, redirect
-from django.contrib import messages
 from django.forms.models import BaseInlineFormSet
-
-import re
-from datetime import datetime, date
 
 from .models import (
     Alergen,
     DruhJidla,
     Jidelnicek,
     Jidlo,
+    MenuImportRun,
     PolozkaJidelnicku,
     vychozi_ikona_druhu_jidla,
     vychozi_ikona_jidla,
@@ -27,204 +25,6 @@ from .models import (
 from dotace.models import DotacniPolitika, DotaceProJidelniskouSkupinu
 from sklad.admin import RecepturaPolozkaInline, JidloKomponentaInline
 from pokladna.models import PLUPolozka, DPHSkupina, PLUKategorie
-
-
-# ====== IMPORT TXT LOGIKA ======
-
-MEAL_TYPES = ["SNÍDANĚ", "PŘESNÍDÁVKA", "OBĚD", "SVAČINA", "VEČEŘE", "2.VEČEŘE"]
-
-# Výchozí ceny podle druhu jídla
-DEFAULT_PRICES = {
-    "Snídaně 1": Decimal("20"),
-    "Snídaně 2": Decimal("22"),
-    "Přesnídávka": Decimal("15"),
-    "Oběd": Decimal("45"),
-    "Svačina": Decimal("18"),
-    "Večeře": Decimal("35"),
-    "Pozdní večeře": Decimal("25"),
-}
-
-
-def _map_meal_to_druh_name(meal_type: str, chod_num: int | None) -> str:
-    """
-    Mapování typu z TXT na název existujícího DruhJidla.
-    """
-    if meal_type == "SNÍDANĚ":
-        if chod_num == 1:
-            return "Snídaně 1"
-        elif chod_num == 2:
-            return "Snídaně 2"
-    if meal_type == "2.VEČEŘE":
-        return "Pozdní večeře"
-
-    # PŘESNÍDÁVKA -> Přesnídávka, OBĚD -> Oběd, SVAČINA -> Svačina, VEČEŘE -> Večeře
-    return meal_type.capitalize()
-
-
-def parse_txt_to_structure(text: str) -> dict:
-    """
-    Vrátí strukturu jídelníčku podle dnů a druhů jídel.
-    """
-    text = text.split("PŘEJEME VÁM DOBROU CHUŤ")[0]
-
-    period = re.search(r"od:\s*(\d{2}\.\d{2}\.\d{4})\s*do:\s*(\d{2}\.\d{2}\.\d{4})", text)
-    if not period:
-        raise ValueError("Nelze najít řádek 'od: .. do: ..' v TXT.")
-
-    start_date = datetime.strptime(period.group(1), "%d.%m.%Y").date()
-    end_date = datetime.strptime(period.group(2), "%d.%m.%Y").date()
-
-    # Rozdělení po dnech
-    day_pattern = r"(Pondělí|Úterý|Středa|Čtvrtek|Pátek|Sobota|Neděle)\s+\d{2}\.\s+leden\s+\d{4}"
-    day_blocks = re.split(day_pattern, text)
-
-    menu_by_date: dict[date, dict] = {}
-    current_date = start_date
-    i = 1
-    while i < len(day_blocks):
-        day_name = day_blocks[i].strip()
-        content = day_blocks[i + 1]
-        i += 2
-
-        if current_date > end_date:
-            break
-
-        menu_by_date[current_date] = {}
-
-        parts = re.split("(" + "|".join(MEAL_TYPES) + ")", content)
-        current_meal = None
-        for part in parts:
-            part = part.strip()
-            if not part:
-                continue
-            if part in MEAL_TYPES:
-                current_meal = part
-                continue
-            if not current_meal:
-                continue
-
-            # chody
-            chody_raw = re.split(r"chod\s*\d*:", part)
-            chod_num = 0
-            for chod_content in chody_raw:
-                chod_content = chod_content.strip()
-                if not chod_content:
-                    continue
-                chod_num += 1
-
-                druh_name = _map_meal_to_druh_name(
-                    current_meal,
-                    chod_num if current_meal == "SNÍDANĚ" else None
-                )
-
-                items_raw = re.split(r"\s*-\s+", chod_content)
-                item_names = []
-                alerg_ids_set = set()
-
-                for raw in items_raw:
-                    raw = raw.strip()
-                    if not raw:
-                        continue
-                    m = re.match(r"(.+?)(?:\s*\(([\d\sB]+)\))?$", raw)
-                    if not m:
-                        continue
-                    name = m.group(1).strip()
-                    alerg_str = m.group(2) or ""
-                    if not name:
-                        continue
-                    item_names.append(name)
-                    for a in alerg_str.split():
-                        if a:
-                            alerg_ids_set.add(a)
-
-                if not item_names:
-                    continue
-
-                jidlo_nazev = ", ".join(item_names)
-                alerg_ids = sorted(alerg_ids_set, key=lambda x: (x.rstrip("B"), x.endswith("B")))
-
-                menu_by_date[current_date].setdefault(druh_name, [])
-                menu_by_date[current_date][druh_name].append((jidlo_nazev, alerg_ids))
-
-        current_date = date.fromordinal(current_date.toordinal() + 1)
-
-    return menu_by_date
-
-
-def import_menu_structure(menu_by_date: dict, logger=None):
-    """
-    Importuje strukturu do modelů Jidelnicek / Jidlo / PolozkaJidelnicku.
-    """
-    druh_cache = {}
-    alergen_cache = {}
-
-    def log_info(msg):
-        if logger and hasattr(logger, "stdout"):
-            logger.stdout.write(msg)
-
-    def log_error(msg):
-        if logger and hasattr(logger, "stderr"):
-            logger.stderr.write(msg)
-
-    for datum, druhy in menu_by_date.items():
-        jidelnicek, created = Jidelnicek.objects.get_or_create(
-            platnost_od=datum,
-            platnost_do=datum,
-            defaults={"ikona": ""},
-        )
-        if created:
-            log_info(f"Vytvořen nový Jídelníček pro {datum}.")
-
-        for druh_nazev, polozky in druhy.items():
-            if druh_nazev not in druh_cache:
-                try:
-                    druh = DruhJidla.objects.get(nazev=druh_nazev)
-                except DruhJidla.DoesNotExist:
-                    log_error(f"DruhJidla '{druh_nazev}' neexistuje, přeskočeno.")
-                    druh_cache[druh_nazev] = None
-                else:
-                    druh_cache[druh_nazev] = druh
-            else:
-                druh = druh_cache[druh_nazev]
-
-            if not druh:
-                continue
-
-            default_price = DEFAULT_PRICES.get(druh_nazev)
-
-            for jidlo_nazev, alleg_ids in polozky:
-                jidlo, created_jidlo = Jidlo.objects.get_or_create(
-                    nazev=jidlo_nazev,
-                    druh=druh,
-                    defaults={"cena": default_price or Decimal("0")},
-                )
-
-                if default_price is not None and not created_jidlo:
-                    if jidlo.cena != default_price:
-                        jidlo.cena = default_price
-                        jidlo.save(update_fields=["cena"])
-
-                for al_id in alleg_ids:
-                    if al_id not in alergen_cache:
-                        try:
-                            al = Alergen.objects.get(id=int(al_id))
-                        except (Alergen.DoesNotExist, ValueError):
-                            log_error(f"Neznámý alergen ID {al_id} pro {jidlo_nazev}, ignoruji.")
-                            continue
-                        alergen_cache[al_id] = al
-                    else:
-                        al = alergen_cache[al_id]
-                    jidlo.alergeny.add(al)
-
-                PolozkaJidelnicku.objects.get_or_create(
-                    jidelnicek=jidelnicek,
-                    druh_jidla=druh,
-                    jidlo=jidlo,
-                )
-
-
-class TxtImportForm(forms.Form):
-    soubor = forms.FileField(label="TXT jídelníček")
 
 
 class JidloAdminForm(forms.ModelForm):
@@ -387,6 +187,8 @@ class DruhJidlaAdmin(admin.ModelAdmin):
 @admin.register(Jidlo)
 class JidloAdmin(admin.ModelAdmin):
     form = JidloAdminForm
+    change_form_template = "admin/jidelnicek/jidlo/change_form.html"
+    change_list_template = "admin/jidelnicek/jidlo/change_list.html"
     list_display = ('nahled', 'nazev', 'druh', 'cena', 'alergeny_list', 'ceny_po_dotacich', 'ma_komponenty')
     search_fields = ('nazev',)
     list_filter = (
@@ -399,6 +201,7 @@ class JidloAdmin(admin.ModelAdmin):
     filter_horizontal = ('alergeny',)
     inlines = [JidloKomponentaInline, RecepturaPolozkaInline]
     actions = ["vygenerovat_plu_pro_jidla", "doplnit_ikony_jidel"]
+    list_per_page = 30
     fieldsets = (
         (
             "Základní údaje",
@@ -437,6 +240,65 @@ class JidloAdmin(admin.ModelAdmin):
         ),
     )
 
+    class Media:
+        css = {"all": ("jidelnicek/css/food_list_admin.css", "jidelnicek/css/food_form_admin.css")}
+
+    def get_urls(self):
+        urls = super().get_urls()
+        my_urls = [
+            path(
+                "bulk-apply/",
+                self.admin_site.admin_view(self.bulk_apply_view),
+                name="jidelnicek_jidlo_bulk_apply",
+            ),
+        ]
+        return my_urls + urls
+
+    def _parse_decimal_param(self, value):
+        raw = (value or "").strip().replace(",", ".")
+        if not raw:
+            return None
+        try:
+            return Decimal(raw)
+        except (InvalidOperation, TypeError):
+            return None
+
+    def bulk_apply_view(self, request):
+        changelist_url = reverse("admin:jidelnicek_jidlo_changelist")
+        query_string = request.GET.urlencode()
+
+        if request.method != "POST":
+            return HttpResponseRedirect(f"{changelist_url}?{query_string}" if query_string else changelist_url)
+
+        if not self.has_change_permission(request):
+            self.message_user(request, "Nemáš oprávnění pro hromadné operace.")
+            return HttpResponseRedirect(f"{changelist_url}?{query_string}" if query_string else changelist_url)
+
+        operation = request.POST.get("bulk_operation", "").strip()
+        queryset = self.get_queryset(request)
+
+        if operation == "sync_plu":
+            count = queryset.count()
+            for jidlo in queryset:
+                self._ensure_plu_for_jidlo(jidlo)
+            self.message_user(request, f"Hotovo: PLU synchronizováno u {count} jídel.")
+        elif operation == "fill_icons":
+            updated = 0
+            for jidlo in queryset.select_related("druh"):
+                if jidlo.ikona:
+                    continue
+                jidlo.ikona = vychozi_ikona_jidla(
+                    jidlo.nazev,
+                    jidlo.druh.nazev if jidlo.druh_id and jidlo.druh else "",
+                )
+                jidlo.save(update_fields=["ikona"])
+                updated += 1
+            self.message_user(request, f"Hotovo: doplněno ikon u {updated} jídel.")
+        else:
+            self.message_user(request, "Vyber hromadnou operaci, kterou chceš provést.")
+
+        return HttpResponseRedirect(f"{changelist_url}?{query_string}" if query_string else changelist_url)
+
     @admin.display(description="Náhled")
     def nahled(self, obj):
         if obj.foto:
@@ -446,10 +308,268 @@ class JidloAdmin(admin.ModelAdmin):
             )
         return format_html('<i class="{}" style="font-size:22px;color:#54ae43;"></i>', obj.vychozi_ikona)
 
+    def get_queryset(self, request):
+        queryset = (
+            super()
+            .get_queryset(request)
+            .select_related("druh")
+            .prefetch_related(
+                "alergeny",
+                "komponenty_jidla",
+                "receptura",
+                "komponenty_jidla__komponenta__suroviny",
+                Prefetch(
+                    "polozkajidelnicku_set",
+                    queryset=PolozkaJidelnicku.objects.select_related("jidelnicek", "druh_jidla").order_by(
+                        "-jidelnicek__platnost_od",
+                        "-jidelnicek__platnost_do",
+                    ),
+                ),
+            )
+            .annotate(
+                usage_count=Count("polozkajidelnicku", distinct=True),
+                allergens_count=Count("alergeny", distinct=True),
+            )
+        )
+
+        selected_kind = request.GET.get("druh", "").strip()
+        photo_state = request.GET.get("foto", "").strip()
+        usage_state = request.GET.get("pouziti", "").strip()
+        readiness_state = request.GET.get("pripravenost", "").strip()
+        allergen_state = request.GET.get("alergeny", "").strip()
+        min_price = self._parse_decimal_param(request.GET.get("cena_od", ""))
+        max_price = self._parse_decimal_param(request.GET.get("cena_do", ""))
+
+        if selected_kind:
+            try:
+                queryset = queryset.filter(druh_id=int(selected_kind))
+            except (TypeError, ValueError):
+                queryset = queryset.none()
+
+        if photo_state == "with":
+            queryset = queryset.exclude(Q(foto__isnull=True) | Q(foto=""))
+        elif photo_state == "without":
+            queryset = queryset.filter(Q(foto__isnull=True) | Q(foto=""))
+
+        if usage_state == "used":
+            queryset = queryset.filter(polozkajidelnicku__isnull=False).distinct()
+        elif usage_state == "unused":
+            queryset = queryset.filter(polozkajidelnicku__isnull=True)
+
+        if allergen_state == "with":
+            queryset = queryset.filter(alergeny__isnull=False)
+        elif allergen_state == "without":
+            queryset = queryset.filter(alergeny__isnull=True)
+
+        complete_q = (
+            ~Q(foto__isnull=True)
+            & ~Q(foto="")
+            & (Q(kcal__isnull=False) | Q(bílkoviny__isnull=False) | Q(tuky__isnull=False) | Q(sacharidy__isnull=False))
+            & Q(komponenty_jidla__isnull=False)
+            & (Q(receptura__isnull=False) | Q(komponenty_jidla__komponenta__suroviny__isnull=False))
+            & Q(alergeny__isnull=False)
+        )
+        if readiness_state == "ready":
+            queryset = queryset.filter(complete_q)
+        elif readiness_state == "incomplete":
+            queryset = queryset.exclude(complete_q)
+
+        if min_price is not None:
+            queryset = queryset.filter(cena__gte=min_price)
+        if max_price is not None:
+            queryset = queryset.filter(cena__lte=max_price)
+
+        queryset = queryset.distinct()
+        return queryset.distinct()
+
     def ma_komponenty(self, obj):
         return obj.komponenty_jidla.exists()
     ma_komponenty.boolean = True
     ma_komponenty.short_description = "Komponenty?"
+
+    def render_change_form(self, request, context, *args, **kwargs):
+        obj = context.get("original")
+        component_count = 0
+        ingredient_count = 0
+        has_components = False
+        has_ingredients = False
+
+        if obj and obj.pk:
+            obj = (
+                Jidlo.objects.filter(pk=obj.pk)
+                .prefetch_related(
+                    "receptura",
+                    "komponenty_jidla__komponenta__suroviny",
+                )
+                .first()
+            )
+            if obj:
+                components = list(obj.komponenty_jidla.all())
+                component_count = len(components)
+                component_ingredients_count = sum(
+                    len(list(component.komponenta.suroviny.all()))
+                    for component in components
+                    if getattr(component, "komponenta_id", None)
+                )
+                ingredient_count = len(list(obj.receptura.all())) + component_ingredients_count
+                has_components = component_count > 0
+                has_ingredients = ingredient_count > 0
+
+        context.update(
+            {
+                "food_form_summary": {
+                    "has_components": has_components,
+                    "components_count": component_count,
+                    "has_ingredients": has_ingredients,
+                    "ingredients_count": ingredient_count,
+                }
+            }
+        )
+        return super().render_change_form(request, context, *args, **kwargs)
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        response = super().changelist_view(request, extra_context=extra_context)
+        if not hasattr(response, "context_data"):
+            return response
+
+        cl = response.context_data["cl"]
+        search_query = request.GET.get("q", "").strip()
+        selected_kind = request.GET.get("druh", "").strip()
+        photo_state = request.GET.get("foto", "").strip()
+        usage_state = request.GET.get("pouziti", "").strip()
+        readiness_state = request.GET.get("pripravenost", "").strip()
+        allergen_state = request.GET.get("alergeny", "").strip()
+        min_price_raw = request.GET.get("cena_od", "").strip()
+        max_price_raw = request.GET.get("cena_do", "").strip()
+
+        food_cards = []
+        page_photo_total = 0
+        page_nutrition_total = 0
+        page_component_total = 0
+        page_ingredient_total = 0
+
+        for food in cl.result_list:
+            usages = list(food.polozkajidelnicku_set.all())
+            has_nutrition = any(
+                value is not None for value in (food.kcal, food.bílkoviny, food.tuky, food.sacharidy)
+            )
+            components = list(food.komponenty_jidla.all())
+            recipe_items = list(food.receptura.all())
+            component_names = []
+            ingredient_names = []
+            component_ingredients_count = sum(
+                len(list(component.komponenta.suroviny.all()))
+                for component in components
+                if getattr(component, "komponenta_id", None)
+            )
+            ingredients_count = len(recipe_items) + component_ingredients_count
+            for component in components:
+                if getattr(component, "komponenta", None):
+                    component_names.append(component.komponenta.nazev)
+                    for raw in component.komponenta.suroviny.all():
+                        if getattr(raw, "surovina", None):
+                            ingredient_names.append(raw.surovina.nazev)
+            for recipe_item in recipe_items:
+                if getattr(recipe_item, "surovina", None):
+                    ingredient_names.append(recipe_item.surovina.nazev)
+
+            unique_component_names = list(dict.fromkeys(component_names))
+            unique_ingredient_names = list(dict.fromkeys(ingredient_names))
+
+            page_photo_total += 1 if food.foto else 0
+            page_nutrition_total += 1 if has_nutrition else 0
+            page_component_total += 1 if components else 0
+            page_ingredient_total += 1 if ingredients_count else 0
+
+            allergens = list(food.alergeny.all())
+            visible_allergens = allergens[:6]
+            readiness_total = 5
+            readiness_filled = sum(
+                1
+                for ready in (
+                    bool(food.foto),
+                    has_nutrition,
+                    bool(components),
+                    ingredients_count > 0,
+                    bool(allergens),
+                )
+                if ready
+            )
+            readiness_percent = int((readiness_filled / readiness_total) * 100)
+            food_cards.append(
+                {
+                    "obj": food,
+                    "preview_icon": food.vychozi_ikona,
+                    "edit_url": reverse("admin:jidelnicek_jidlo_change", args=[food.pk]),
+                    "kind_name": food.druh.nazev if food.druh_id and food.druh else "Bez druhu",
+                    "kind_icon": food.druh.vychozi_ikona if food.druh_id and food.druh else "",
+                    "price_label": f"{food.cena:.2f} Kč",
+                    "allergens": visible_allergens,
+                    "allergens_count": food.allergens_count or len(allergens),
+                    "allergens_extra_count": max(len(allergens) - len(visible_allergens), 0),
+                    "usage_count": food.usage_count or 0,
+                    "has_photo": bool(food.foto),
+                    "has_nutrition": has_nutrition,
+                    "has_components": bool(components),
+                    "components_count": len(components),
+                    "components_preview": unique_component_names[:4],
+                    "components_extra_count": max(len(unique_component_names) - 4, 0),
+                    "has_ingredients": ingredients_count > 0,
+                    "ingredients_count": ingredients_count,
+                    "ingredients_preview": unique_ingredient_names[:7],
+                    "ingredients_extra_count": max(len(unique_ingredient_names) - 7, 0),
+                    "nutrition_label": self._nutrition_summary(food),
+                    "readiness_filled": readiness_filled,
+                    "readiness_total": readiness_total,
+                    "readiness_percent": readiness_percent,
+                }
+            )
+
+        response.context_data.update(
+            {
+                "food_cards": food_cards,
+                "food_total_count": cl.result_count,
+                "food_cards_on_page": len(food_cards),
+                "food_page_photo_total": page_photo_total,
+                "food_page_nutrition_total": page_nutrition_total,
+                "food_page_component_total": page_component_total,
+                "food_page_ingredient_total": page_ingredient_total,
+                "food_search_query": search_query,
+                "food_selected_kind": selected_kind,
+                "food_photo_state": photo_state,
+                "food_usage_state": usage_state,
+                "food_readiness_state": readiness_state,
+                "food_allergen_state": allergen_state,
+                "food_min_price": min_price_raw,
+                "food_max_price": max_price_raw,
+                "food_kind_options": DruhJidla.objects.order_by("poradi", "nazev"),
+                "food_filters_active": bool(
+                    search_query
+                    or selected_kind
+                    or photo_state
+                    or usage_state
+                    or readiness_state
+                    or allergen_state
+                    or min_price_raw
+                    or max_price_raw
+                ),
+                "food_bulk_querystring": request.GET.urlencode(),
+            }
+        )
+        return response
+
+    def _nutrition_summary(self, obj):
+        values = []
+        if obj.kcal is not None:
+            values.append(f"{obj.kcal:.0f} kcal")
+        if obj.bílkoviny is not None:
+            values.append(f"B {obj.bílkoviny:.1f} g")
+        if obj.tuky is not None:
+            values.append(f"T {obj.tuky:.1f} g")
+        if obj.sacharidy is not None:
+            values.append(f"S {obj.sacharidy:.1f} g")
+        return " • ".join(values[:3])
 
     def get_search_results(self, request, queryset, search_term):
         queryset, use_distinct = super().get_search_results(request, queryset, search_term)
@@ -662,13 +782,36 @@ class JidelnicekAdmin(admin.ModelAdmin):
         return format_html(table_html)
 
     def get_queryset(self, request):
-        queryset = super().get_queryset(request).prefetch_related(
-            "polozky__druh_jidla",
-            "polozky__jidlo",
+        queryset = (
+            super()
+            .get_queryset(request)
+            .prefetch_related(
+                "polozky__druh_jidla",
+                "polozky__jidlo",
+            )
+            .annotate(items_count=Count("polozky", distinct=True))
         )
         food_lookup = request.GET.get("q", "").strip() or request.GET.get("food_lookup", "").strip()
+        selected_kind = request.GET.get("druh", "").strip()
+        content_state = request.GET.get("obsah", "").strip()
+        date_from = request.GET.get("od", "").strip()
+        date_to = request.GET.get("do", "").strip()
+
         if food_lookup:
             queryset = queryset.filter(polozky__jidlo__nazev__icontains=food_lookup).distinct()
+        if selected_kind:
+            try:
+                queryset = queryset.filter(polozky__druh_jidla_id=int(selected_kind))
+            except (TypeError, ValueError):
+                queryset = queryset.none()
+        if content_state == "empty":
+            queryset = queryset.filter(items_count=0)
+        elif content_state == "with":
+            queryset = queryset.filter(items_count__gt=0)
+        if date_from:
+            queryset = queryset.filter(platnost_do__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(platnost_od__lte=date_to)
         return queryset
 
     def changelist_view(self, request, extra_context=None):
@@ -679,6 +822,10 @@ class JidelnicekAdmin(admin.ModelAdmin):
 
         cl = response.context_data["cl"]
         food_lookup = request.GET.get("q", "").strip() or request.GET.get("food_lookup", "").strip()
+        selected_kind = request.GET.get("druh", "").strip()
+        content_state = request.GET.get("obsah", "").strip()
+        date_from = request.GET.get("od", "").strip()
+        date_to = request.GET.get("do", "").strip()
         menus = []
         total_items = 0
         matched_occurrences = 0
@@ -732,9 +879,24 @@ class JidelnicekAdmin(admin.ModelAdmin):
                 "menu_active_filters": {
                     "food_lookup": food_lookup,
                 },
+                "menu_selected_kind": selected_kind,
+                "menu_content_state": content_state,
+                "menu_date_from": date_from,
+                "menu_date_to": date_to,
+                "menu_kind_options": DruhJidla.objects.order_by("poradi", "nazev"),
+                "menu_filters_active": bool(
+                    food_lookup or selected_kind or content_state or date_from or date_to
+                ),
+                "last_menu_import": self._get_last_menu_import_safe(),
             }
         )
         return response
+
+    def _get_last_menu_import_safe(self):
+        try:
+            return MenuImportRun.objects.order_by("-started_at").first()
+        except (ProgrammingError, OperationalError):
+            return None
 
     def get_urls(self):
         urls = super().get_urls()
@@ -745,12 +907,39 @@ class JidelnicekAdmin(admin.ModelAdmin):
                 name="jidelnicek_jidlo_meta",
             ),
             path(
-                "import-txt/",
-                self.admin_site.admin_view(self.import_txt_view),
-                name="jidelnicek_import_txt",
+                "bulk-apply/",
+                self.admin_site.admin_view(self.bulk_apply_view),
+                name="jidelnicek_jidelnicek_bulk_apply",
             ),
         ]
         return my_urls + urls
+
+    def bulk_apply_view(self, request):
+        changelist_url = reverse("admin:jidelnicek_jidelnicek_changelist")
+        query_string = request.GET.urlencode()
+
+        if request.method != "POST":
+            return HttpResponseRedirect(f"{changelist_url}?{query_string}" if query_string else changelist_url)
+
+        if not self.has_delete_permission(request):
+            self.message_user(request, "Nemáš oprávnění pro hromadné operace jídelníčků.")
+            return HttpResponseRedirect(f"{changelist_url}?{query_string}" if query_string else changelist_url)
+
+        operation = request.POST.get("bulk_operation", "").strip()
+        queryset = self.get_queryset(request)
+
+        if operation == "delete_empty":
+            empty_qs = queryset.filter(polozky__isnull=True).distinct()
+            deleted_count = empty_qs.count()
+            if deleted_count:
+                empty_qs.delete()
+                self.message_user(request, f"Hotovo: smazáno {deleted_count} prázdných jídelníčků.")
+            else:
+                self.message_user(request, "V aktuálním výběru nejsou žádné prázdné jídelníčky.")
+        else:
+            self.message_user(request, "Vyber hromadnou operaci, kterou chceš provést.")
+
+        return HttpResponseRedirect(f"{changelist_url}?{query_string}" if query_string else changelist_url)
 
     def render_change_form(self, request, context, *args, **kwargs):
         context["jidlo_meta_url_template"] = reverse(
@@ -789,34 +978,45 @@ class JidelnicekAdmin(admin.ModelAdmin):
             }
         )
 
-    def import_txt_view(self, request):
-        if request.method == "POST":
-            form = TxtImportForm(request.POST, request.FILES)
-            if form.is_valid():
-                f = form.cleaned_data["soubor"]
-                content = f.read().decode("utf-8", errors="ignore")
-                try:
-                    menu_by_date = parse_txt_to_structure(content)
-                    import_menu_structure(menu_by_date, logger=None)
-                except Exception as e:
-                    messages.error(request, f"Chyba při importu: {e}")
-                else:
-                    messages.success(request, "TXT jídelníček byl naimportován (Jídla + Jídelníčky).")
-                return redirect("admin:jidelnicek_jidelnicek_changelist")
-        else:
-            form = TxtImportForm()
-
-        context = {
-            **self.admin_site.each_context(request),
-            "form": form,
-            "title": "Import jídelníčku z TXT",
-        }
-        return render(request, "admin/jidelnicek_import_txt.html", context)
-
-
 @admin.register(PolozkaJidelnicku)
 class PolozkaJidelnickuAdmin(admin.ModelAdmin):
     form = PolozkaJidelnickuAdminForm
     list_display = ("jidelnicek", "druh_jidla", "jidlo")
     list_filter = ("jidelnicek", "druh_jidla")
     search_fields = ("jidlo__nazev",)
+
+
+@admin.register(MenuImportRun)
+class MenuImportRunAdmin(admin.ModelAdmin):
+    list_display = (
+        "started_at",
+        "source",
+        "status",
+        "menu_days",
+        "menus_created",
+        "items_created",
+        "foods_created",
+        "triggered_by",
+    )
+    list_filter = ("source", "status", "dry_run")
+    search_fields = ("summary", "error_message", "triggered_by__username")
+    readonly_fields = (
+        "source",
+        "status",
+        "started_at",
+        "finished_at",
+        "triggered_by",
+        "dry_run",
+        "rows_read",
+        "rows_after_merge",
+        "menu_days",
+        "menus_created",
+        "foods_created",
+        "items_created",
+        "summary",
+        "error_message",
+    )
+    ordering = ("-started_at",)
+
+    def has_add_permission(self, request):
+        return False

@@ -9,7 +9,7 @@ from django.urls import reverse
 from urllib.parse import urlencode
 from django.http import JsonResponse
 from django.template.loader import render_to_string
-from django.db.models import Sum, F
+from django.db.models import Sum, Q
 from django.db import transaction
 from decimal import Decimal
 from collections import defaultdict
@@ -36,7 +36,7 @@ from canteen_settings.models import (
 )
 
 
-from objednavky.models import Order, OrderItem
+from objednavky.models import Order, OrderItem, OrderValidator
 from objednavky.services import validate_order_quantity
 from jidelnicek.models import PolozkaJidelnicku, Jidelnicek
 from dotace.models import SkupinoveNastaveni
@@ -45,6 +45,54 @@ from users.group_utils import get_first_group_setting
 
 
 logger = logging.getLogger(__name__)
+
+
+def sort_druhy_by_priority(items_by_druh):
+    if not items_by_druh:
+        return {}
+
+    sorted_keys = sorted(
+        items_by_druh.keys(),
+        key=lambda druh: (
+            getattr(druh, 'poradi', 100),
+            getattr(druh, 'nazev', str(druh)),
+        ),
+    )
+    return {key: items_by_druh[key] for key in sorted_keys}
+
+
+def count_menu_items_for_range(user, start_date, end_date):
+    """Lehké spočítání položek v intervalu bez drahé validace položek."""
+    if start_date > end_date:
+        return 0
+
+    total = 0
+    current_day = start_date
+
+    while current_day <= end_date:
+        jidelnicky_den = Jidelnicek.objects.filter(
+            platnost_od__lte=current_day,
+            platnost_do__gte=current_day,
+        )
+        if jidelnicky_den.exists():
+            day_items = PolozkaJidelnicku.objects.filter(jidelnicek__in=jidelnicky_den)
+            if not request_user_is_superuser(user):
+                user_groups = list(user.groups.all())
+                if user_groups:
+                    day_items = day_items.filter(
+                        Q(druh_jidla__viditelne_pro_skupiny__in=user_groups)
+                        | Q(druh_jidla__viditelne_pro_skupiny__isnull=True)
+                    )
+                else:
+                    day_items = day_items.filter(druh_jidla__viditelne_pro_skupiny__isnull=True)
+            total += day_items.distinct().count()
+        current_day += timedelta(days=1)
+
+    return total
+
+
+def request_user_is_superuser(user):
+    return getattr(user, "is_superuser", False)
 
 
 def get_item_name(item):
@@ -76,17 +124,12 @@ def get_user_balance_settings(user):
 
 
 def get_user_balance(user):
-    """✅ SPRÁVNĚ načte aktuální zůstatek z DB"""
+    """Jednotný zdroj pravdy pro zůstatek uživatele."""
     try:
-        # Předpokládám User model s custom polem aktualni_zustatek
         return Decimal(str(user.aktualni_zustatek or 0))
-    except:
-        # Fallback: spočítat z objednávek
-        total_orders = OrderItem.objects.filter(
-            order__user=user,
-            order__datum_vydeje__gte=date.today().replace(day=1)
-        ).aggregate(total=Sum(F('quantity') * F('cena')))['total'] or 0
-        return Decimal('0') - Decimal(str(total_orders or 0))
+    except Exception:
+        logger.exception("Chyba při načtení aktuálního zůstatku uživatele.")
+        return Decimal("0")
 
 def update_user_balance(user, amount_change):
     """
@@ -210,7 +253,10 @@ def dashboard(request):
     else:
         selected_date = today
 
-    # ✅ Kalendář vždy podle selected_date (bez změn)
+    if filter_type not in {"date", "week", "month"}:
+        filter_type = "date"
+
+    # ✅ Kalendář vždy podle selected_date
     first_day_month = selected_date.replace(day=1)
     if first_day_month.month == 12:
         last_day_month = date(first_day_month.year + 1, 1, 1) - timedelta(days=1)
@@ -219,66 +265,71 @@ def dashboard(request):
 
     calendar_ctx = build_calendar_context(selected_date)
 
-    # ✅ DEN - vždy selected_date
+    # ✅ DEN - vždy selected_date (pro denní tab + badge)
     day_ctx = build_day_menu_context(request.user, selected_date)
 
-    # ✅ TÝDEN - POUŽIJ reference_date (pokud existuje), jinak selected_date
     week_reference = reference_date or selected_date
-    week_ctx = build_week_menu_context(request.user, week_reference)
-
-    # Filtruj dny >= today, ale zachovej reference
-    week_ctx['menu_items_by_day'] = {
-        d: items for d, items in week_ctx.get('menu_items_by_day', {}).items() if d >= today
+    week_ctx = {
+        'menu_items_by_day': {},
+        'menu_items_by_day_grouped': {},
+        'week_start': week_reference - timedelta(days=week_reference.weekday()),
+        'week_end': week_reference - timedelta(days=week_reference.weekday()) + timedelta(days=6),
     }
-    week_ctx['menu_items_by_day_grouped'] = {
-        d: items for d, items in week_ctx.get('menu_items_by_day_grouped', {}).items() if d >= today
+    month_ctx = {
+        'menu_items_by_day': {},
+        'menu_items_by_day_grouped': {},
     }
 
-    # ✅ MĚSÍC - měsíc z selected_date, ale data od today
     month_first = max(first_day_month, today)
-    month_ctx = build_month_menu_context(request.user, month_first, last_day_month)
 
-    def sort_druhy_by_priority(items_by_druh):
-        if not items_by_druh:
-            return {}
-
-        sorted_keys = sorted(
-            items_by_druh.keys(),
-            key=lambda druh: (
-                getattr(druh, 'poradi', 100),
-                getattr(druh, 'nazev', str(druh)),
-            ),
-        )
-        return {key: items_by_druh[key] for key in sorted_keys}
-
-    # Seřaď TÝDEN
-    if week_ctx.get('menu_items_by_day_grouped'):
-        for day in week_ctx['menu_items_by_day_grouped']:
-            week_ctx['menu_items_by_day_grouped'][day] = sort_druhy_by_priority(
-                week_ctx['menu_items_by_day_grouped'][day]
-            )
-
-    # Seřaď MĚSÍC
-    if month_ctx.get('menu_items_by_day_grouped'):
-        for day in month_ctx['menu_items_by_day_grouped']:
-            month_ctx['menu_items_by_day_grouped'][day] = sort_druhy_by_priority(
-                month_ctx['menu_items_by_day_grouped'][day]
-            )
+    if filter_type == 'week':
+        week_ctx = build_week_menu_context(request.user, week_reference)
+        week_ctx['menu_items_by_day'] = {
+            d: items for d, items in week_ctx.get('menu_items_by_day', {}).items() if d >= today
+        }
+        week_ctx['menu_items_by_day_grouped'] = {
+            d: items for d, items in week_ctx.get('menu_items_by_day_grouped', {}).items() if d >= today
+        }
+        if week_ctx.get('menu_items_by_day_grouped'):
+            for day in week_ctx['menu_items_by_day_grouped']:
+                week_ctx['menu_items_by_day_grouped'][day] = sort_druhy_by_priority(
+                    week_ctx['menu_items_by_day_grouped'][day]
+                )
+    elif filter_type == 'month':
+        month_ctx = build_month_menu_context(request.user, month_first, last_day_month)
+        if month_ctx.get('menu_items_by_day_grouped'):
+            for day in month_ctx['menu_items_by_day_grouped']:
+                month_ctx['menu_items_by_day_grouped'][day] = sort_druhy_by_priority(
+                    month_ctx['menu_items_by_day_grouped'][day]
+                )
 
     # Seřaď DEN
     if day_ctx.get('menu_items_grouped'):
         day_ctx['menu_items_grouped'] = sort_druhy_by_priority(day_ctx['menu_items_grouped'])
 
     # Výběr dat podle filtru
+    menu_items_by_day = {}
     if filter_type == 'week':
         menu_items_by_day_grouped = week_ctx.get('menu_items_by_day_grouped', {})
+        menu_items_by_day = week_ctx.get('menu_items_by_day', {})
     elif filter_type == 'month':
         menu_items_by_day_grouped = month_ctx.get('menu_items_by_day_grouped', {})
+        menu_items_by_day = month_ctx.get('menu_items_by_day', {})
     else:
         menu_items_by_day_grouped = {}
+        menu_items_by_day = {}
 
-    week_items_count = sum(len(items) for items in week_ctx.get('menu_items_by_day', {}).values())
-    month_items_count = sum(len(items) for items in month_ctx.get('menu_items_by_day', {}).values())
+    if filter_type == 'week':
+        week_items_count = sum(len(items) for items in week_ctx.get('menu_items_by_day', {}).values())
+    else:
+        week_start_for_count = week_reference - timedelta(days=week_reference.weekday())
+        week_end_for_count = week_start_for_count + timedelta(days=6)
+        week_items_count = count_menu_items_for_range(request.user, max(week_start_for_count, today), week_end_for_count)
+
+    if filter_type == 'month':
+        month_items_count = sum(len(items) for items in month_ctx.get('menu_items_by_day', {}).values())
+    else:
+        month_items_count = count_menu_items_for_range(request.user, month_first, last_day_month)
 
     my_order_items = get_user_order_items(request.user)
     ankety_prehled = anketni_prehled_uzivatele(request.user, today)
@@ -292,6 +343,7 @@ def dashboard(request):
         **calendar_ctx,
         'menu_items': day_ctx.get('menu_items', []),
         'menu_items_grouped': day_ctx.get('menu_items_grouped', {}),
+        'menu_items_by_day': menu_items_by_day,
         'menu_items_by_day_grouped': menu_items_by_day_grouped,
         'week_items_count': week_items_count,
         'month_items_count': month_items_count,
@@ -321,7 +373,7 @@ def dashboard(request):
     })
 
 
-    return render(request, 'dashboard.html', context)
+    return render(request, 'jidelnicek/dashboard.html', context)
 
 
 
@@ -404,18 +456,12 @@ def order_create_view(request):
         if existing_qty + quantity > 10:
             return JsonResponse({'status': 'error', 'message': 'Max 10 kusů celkem za den!'})
 
-        # 4. Kontrola zůstatku / debetu
-        balance_settings = get_user_balance_settings(request.user)
-        current_balance = get_user_balance(request.user)
-        new_balance = current_balance - total_price
-
-        if balance_settings['nutnost_dobit'] and new_balance < 0:
-            return JsonResponse({'status': 'error', 'message': 'Nedostatek zůstatku'})
-
-        if balance_settings['cerpani_debit']:
-            debit_limit = Decimal(str(balance_settings['debit_limit']))
-            if new_balance < -abs(debit_limit):
-                return JsonResponse({'status': 'error', 'message': 'Překročen debet'})
+        # 4. Kontrola zůstatku / debetu - jednotná validace domény
+        ok_balance, balance_reason = OrderValidator.check_user_balance(request.user, total_price)
+        if not ok_balance:
+            if balance_reason == "debit_limit_exceeded":
+                return JsonResponse({'status': 'error', 'message': 'Objednávka by překročila debetní limit.'})
+            return JsonResponse({'status': 'error', 'message': 'Nedostatečný zůstatek.'})
 
         # 5. Vytvoř / uprav objednávku
         with transaction.atomic():
@@ -435,11 +481,7 @@ def order_create_view(request):
             order_item.cena = price_per_item
             order_item.save()
 
-            update_user_balance(request.user, -total_price)
-
-        # 6. Refresh
-        request.user.refresh_from_db()
-        menu_item.refresh_from_db()
+        # 6. Refresh (zůstatek je počítaný, není nutné zapisovat do user modelu)
 
         # ✅ Validuj pro hide_quantity
         validate_item_for_display(request.user, menu_item, target_date)
@@ -476,10 +518,6 @@ def order_create_view(request):
         my_orders_html = render_to_string('includes/_my_orders.html', {
             'my_order_items': get_user_order_items(request.user)
         }, request=request)
-        account_html = render_to_string('includes/_account_status.html', {
-            'user': request.user
-        }, request=request)
-
         # ✅ AJAX response s kompletními daty pro aktualizaci všech panelů
         final_balance = get_user_balance(request.user)
         balance_class = '' if final_balance >= 0 else ''
@@ -573,10 +611,7 @@ def order_delete_view(request):
             if not order.items.exists():
                 order.delete()
 
-            update_user_balance(request.user, return_price)
-
-        request.user.refresh_from_db()
-        menu_item.refresh_from_db()
+        # zůstatek je počítaný, není nutný zápis do user modelu
 
         # ✅ Validuj pro hide_quantity
         validate_item_for_display(request.user, menu_item, target_date)
@@ -612,10 +647,6 @@ def order_delete_view(request):
         my_orders_html = render_to_string('includes/_my_orders.html', {
             'my_order_items': get_user_order_items(request.user)
         }, request=request)
-        account_html = render_to_string('includes/_account_status.html', {
-            'user': request.user
-        }, request=request)
-
         # ✅ AJAX response s kompletními daty
         final_balance = get_user_balance(request.user)
         balance_class = '' if final_balance >= 0 else ''

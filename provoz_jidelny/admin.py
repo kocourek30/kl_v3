@@ -1,7 +1,8 @@
 from django.contrib import admin, messages
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import render
-from django.urls import reverse
+from django.template.loader import render_to_string
+from django.urls import path, reverse
 
 from vydej.models import VydejSettings as RealVydejSettings
 
@@ -12,6 +13,17 @@ from .services import build_canteen_staff_dashboard
 @admin.register(ProvozniDashboard)
 class ProvozniDashboardAdmin(admin.ModelAdmin):
     change_list_template = "admin/provoz_jidelny/provoznidashboard/change_list.html"
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "snapshot/",
+                self.admin_site.admin_view(self.snapshot_view),
+                name="provoz_jidelny_provoznidashboard_snapshot",
+            ),
+        ]
+        return custom_urls + urls
 
     def has_add_permission(self, request):
         return False
@@ -34,6 +46,27 @@ class ProvozniDashboardAdmin(admin.ModelAdmin):
         if extra_context:
             context.update(extra_context)
         return render(request, self.change_list_template, context)
+
+    def snapshot_view(self, request):
+        dashboard = build_canteen_staff_dashboard()
+        context = {
+            **self.admin_site.each_context(request),
+            "dashboard": dashboard,
+        }
+        return JsonResponse(
+            {
+                "hero_html": render_to_string(
+                    "admin/provoz_jidelny/provoznidashboard/_hero_stats.html",
+                    context,
+                    request=request,
+                ),
+                "sections_html": render_to_string(
+                    "admin/provoz_jidelny/provoznidashboard/_live_sections.html",
+                    context,
+                    request=request,
+                ),
+            }
+        )
 
 
 @admin.register(NastaveniVydaje)

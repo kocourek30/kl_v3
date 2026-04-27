@@ -1,0 +1,281 @@
+.vklad-list-page {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.vklad-list-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.7fr);
+  gap: 1rem;
+  padding: 1.55rem;
+  border: 1px solid #d8e8d2;
+  border-radius: 1.5rem;
+  background:
+    radial-gradient(circle at top left, rgba(84, 174, 67, 0.14), transparent 34%),
+    radial-gradient(circle at top right, rgba(255, 187, 66, 0.16), transparent 28%),
+    #fff;
+  box-shadow: 0 18px 40px rgba(31, 47, 70, 0.06);
+}
+
+.vklad-list-kicker {
+  display: inline-flex;
+  margin-bottom: 0.75rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  background: #eef8e9;
+  color: #2a761d;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.vklad-list-hero h1 {
+  margin: 0 0 0.5rem;
+  color: #193621;
+  font-size: 2.05rem;
+  line-height: 1.1;
+}
+
+.vklad-list-hero p {
+  margin: 0;
+  max-width: 760px;
+  color: #627163;
+  line-height: 1.65;
+}
+
+.vklad-list-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.vklad-list-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid #d7e6d1;
+  background: #fff;
+  color: #3a4d3e;
+  font-size: 0.9rem;
+}
+
+.vklad-list-chip strong {
+  color: #1f6a17;
+}
+
+.vklad-list-hero-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.vklad-list-filter-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.vklad-list-grid {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.vklad-row-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: center;
+  padding: 0.8rem 0.9rem;
+  border-radius: 0.95rem;
+  border: 1px solid #dfebda;
+  background: #fff;
+  box-shadow: 0 10px 22px rgba(31, 47, 70, 0.045);
+}
+
+.vklad-row-card h2 {
+  margin: 0;
+  font-size: 1.02rem;
+}
+
+.vklad-row-card__title-link {
+  color: #193621;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.vklad-row-card__title-link:hover,
+.vklad-row-card__title-link:focus {
+  color: #2e8c22;
+  text-decoration: none;
+}
+
+.vklad-row-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+
+.vklad-row-card__pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid #dce8d7;
+  background: #f9fcf8;
+  color: #4d6152;
+  font-size: 0.72rem;
+}
+
+.vklad-row-card__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid #dce7d8;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.vklad-row-card__status.ok {
+  color: #2b7f31;
+  border-color: #cde4c5;
+  background: #eef8e9;
+}
+
+.vklad-row-card__status.warn {
+  color: #8f5f09;
+  border-color: #f0d49f;
+  background: #fff4df;
+}
+
+.vklad-row-card__status.muted {
+  color: #6f7d73;
+  background: #f7faf5;
+}
+
+.vklad-row-card__note {
+  color: #657565;
+  font-size: 0.8rem;
+}
+
+.vklad-row-card__side {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.vklad-row-card__amount {
+  font-weight: 800;
+  font-size: 0.96rem;
+  white-space: nowrap;
+  color: #1f6a17;
+}
+
+.food-bulk-panel {
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid #dce9d6;
+  background: linear-gradient(180deg, #fbfef9, #f2f8ee);
+}
+
+.food-bulk-panel__form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.food-bulk-panel__title {
+  display: grid;
+  gap: 0.2rem;
+  color: #516654;
+  font-size: 0.9rem;
+}
+
+.food-bulk-panel__title strong {
+  color: #214322;
+}
+
+.food-bulk-panel__controls {
+  display: inline-flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.food-bulk-panel__controls select {
+  min-width: 290px;
+}
+
+.vklad-list-empty-state {
+  display: grid;
+  gap: 0.35rem;
+  padding: 2.5rem 1.5rem;
+  border-radius: 1.4rem;
+  border: 1px dashed #d7e6d2;
+  background: #fff;
+  text-align: center;
+  color: #657266;
+}
+
+.vklad-list-empty-state strong {
+  color: #28422e;
+  font-size: 1.05rem;
+}
+
+.vklad-list-pagination {
+  display: flex;
+  justify-content: center;
+}
+
+@media (max-width: 1280px) {
+  .vklad-list-filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
+  .vklad-list-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .vklad-list-hero-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .vklad-list-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vklad-row-card {
+    grid-template-columns: 1fr;
+  }
+
+  .vklad-row-card__side {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .food-bulk-panel__form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .food-bulk-panel__controls {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .food-bulk-panel__controls select {
+    min-width: 0;
+  }
+}

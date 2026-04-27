@@ -16,7 +16,14 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 from kliknijidlo.pdf_utils import czech_pdf_styles, decimal_cs, html_cell, percent_cs, safe_table
 
-from .models import AnketniOtazka, HodnoceniJidla, OdpovedHodnoceni
+from .models import (
+    AnketniOtazka,
+    HodnoceniJidla,
+    MesicniAnketa,
+    MesicniAnketaHlas,
+    MesicniAnketaVarianta,
+    OdpovedHodnoceni,
+)
 from .services import anketni_report_obdobi
 
 
@@ -41,6 +48,25 @@ class OdpovedHodnoceniInline(admin.TabularInline):
     @admin.display(description="Hodnocení")
     def znamka_hvezdy(self, obj):
         return hvezdy_html(obj.znamka)
+
+
+class MesicniAnketaVariantaInline(admin.TabularInline):
+    model = MesicniAnketaVarianta
+    extra = 1
+    fields = ("poradi", "nazev", "popis")
+    ordering = ("poradi", "id")
+
+
+class MesicniAnketaHlasInline(admin.TabularInline):
+    model = MesicniAnketaHlas
+    extra = 0
+    can_delete = False
+    readonly_fields = ("user", "varianta", "hlasovano")
+    fields = ("user", "varianta", "hlasovano")
+    ordering = ("-hlasovano",)
+
+    def has_add_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(HodnoceniJidla)
@@ -501,6 +527,57 @@ class OdpovedHodnoceniAdmin(admin.ModelAdmin):
     @admin.display(description="Hodnocení")
     def znamka_hvezdy(self, obj):
         return hvezdy_html(obj.znamka)
+
+
+@admin.register(MesicniAnketa)
+class MesicniAnketaAdmin(admin.ModelAdmin):
+    list_display = (
+        "nazev",
+        "obdobi",
+        "navrhujici_trida",
+        "hlasovani_od",
+        "hlasovani_do",
+        "aktivni",
+        "hlasu_celkem",
+    )
+    list_filter = ("aktivni", "rok", "mesic")
+    search_fields = ("nazev", "navrhujici_trida")
+    inlines = [MesicniAnketaVariantaInline, MesicniAnketaHlasInline]
+    ordering = ("-rok", "-mesic", "-vytvoreno")
+
+    @admin.display(description="Období")
+    def obdobi(self, obj):
+        return f"{obj.get_mesic_display()} {obj.rok}"
+
+    @admin.display(description="Hlasy")
+    def hlasu_celkem(self, obj):
+        return obj.hlasy.count()
+
+
+@admin.register(MesicniAnketaVarianta)
+class MesicniAnketaVariantaAdmin(admin.ModelAdmin):
+    list_display = ("nazev", "anketa", "poradi", "hlasu_celkem")
+    list_filter = ("anketa__rok", "anketa__mesic")
+    search_fields = ("nazev", "anketa__nazev")
+    ordering = ("anketa__rok", "anketa__mesic", "poradi", "id")
+
+    @admin.display(description="Hlasy")
+    def hlasu_celkem(self, obj):
+        return obj.hlasy.count()
+
+
+@admin.register(MesicniAnketaHlas)
+class MesicniAnketaHlasAdmin(admin.ModelAdmin):
+    list_display = ("anketa", "varianta", "user", "hlasovano")
+    list_filter = ("anketa__rok", "anketa__mesic", "anketa")
+    search_fields = (
+        "user__username",
+        "user__first_name",
+        "user__last_name",
+        "varianta__nazev",
+        "anketa__nazev",
+    )
+    ordering = ("-hlasovano",)
 
 
 def hvezdy_html(value):

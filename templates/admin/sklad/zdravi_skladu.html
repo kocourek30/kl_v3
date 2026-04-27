@@ -1,89 +1,93 @@
 {% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'sklad/css/sklad_admin_views.css' %}">
+{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-      <h1 class="mb-1">{{ title }}</h1>
-      <p class="text-muted mb-0">Kontrola k datu {{ data.datum|date:"d.m.Y" }}</p>
+<div class="admin-shell admin-shell--wide sklad-page">
+  <section class="admin-hero">
+    <div class="admin-hero-grid">
+      <div>
+        <div class="admin-kicker">Zdraví skladu</div>
+        <h1>{{ title }}</h1>
+        <p>Kontrola k datu {{ data.datum|date:"d.m.Y" }}. Jasný přehled rizik před uzávěrkou.</p>
+      </div>
+      <div class="sklad-actions" style="justify-content:flex-end;align-content:flex-start;">
+        <a class="admin-btn admin-btn--danger" href="{{ pdf_url }}">
+          <i class="fas fa-file-pdf"></i> Stáhnout PDF
+        </a>
+      </div>
     </div>
-    <a class="btn btn-danger" href="{{ pdf_url }}">
-      <i class="fas fa-file-pdf"></i> Stáhnout PDF
-    </a>
-  </div>
+    <div class="sklad-kpi-grid">
+      <article class="sklad-kpi">
+        <strong>Skóre skladu</strong>
+        <span>{{ data.skore }} %</span>
+      </article>
+      <article class="sklad-kpi">
+        <strong>Hodnota skladu</strong>
+        <span>{{ data.hodnota_skladu|floatformat:-2 }} Kč</span>
+      </article>
+      <article class="sklad-kpi">
+        <strong>Aktivní šarže</strong>
+        <span>{{ data.pocet_sarzi }}</span>
+      </article>
+      <article class="sklad-kpi">
+        <strong>Po spotřebě / brzy</strong>
+        <span>{{ data.expirovane_sarze|length }} / {{ data.blizka_expirace|length }}</span>
+      </article>
+    </div>
+  </section>
 
-  <div class="row mb-3">
-    <div class="col-md-4">
-      <div class="card">
-        <div class="card-header"><strong>Skóre skladu</strong></div>
-        <div class="card-body">
-          <h2 class="mb-0">{{ data.skore }} %</h2>
-          {% if data.pripraveno_k_uzaverce %}
-            <span class="badge badge-success">Připraveno k uzávěrce</span>
-          {% else %}
-            <span class="badge badge-warning">Vyžaduje kontrolu</span>
-          {% endif %}
-        </div>
-      </div>
+  <section class="admin-panel">
+    <div class="admin-panel-head">
+      <strong>Kontroly</strong>
+      {% if data.pripraveno_k_uzaverce %}
+        <span class="sklad-badge">Připraveno k uzávěrce</span>
+      {% else %}
+        <span class="sklad-badge">Vyžaduje kontrolu</span>
+      {% endif %}
     </div>
-    <div class="col-md-4">
-      <div class="card">
-        <div class="card-header"><strong>Hodnota skladu</strong></div>
-        <div class="card-body">
-          <h2 class="mb-0">{{ data.hodnota_skladu|floatformat:-2 }} Kč</h2>
-          <p class="text-muted mb-0">Aktivní oceněné šarže: {{ data.pocet_sarzi }}</p>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-4">
-      <div class="card">
-        <div class="card-header"><strong>Rizikové šarže</strong></div>
-        <div class="card-body">
-          <p class="mb-1">Po spotřebě: <strong>{{ data.expirovane_sarze|length }}</strong></p>
-          <p class="mb-0">Blízká expirace do {{ data.expirace_do|date:"d.m.Y" }}: <strong>{{ data.blizka_expirace|length }}</strong></p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card mb-3">
-    <div class="card-header"><strong>Kontroly</strong></div>
-    <div class="card-body p-0">
-      <table class="table table-sm table-striped mb-0">
-        <thead class="thead-light">
-          <tr>
-            <th>Kontrola</th>
-            <th>Počet</th>
-            <th>Stav</th>
-            <th>Co to znamená</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in data.rizika %}
-            <tr class="{% if row.ok %}table-success{% else %}table-warning{% endif %}">
-              <td><strong>{{ row.nazev }}</strong></td>
-              <td>{{ row.pocet }}</td>
-              <td>
-                {% if row.ok %}
-                  <span class="badge badge-success">V pořádku</span>
-                {% else %}
-                  <span class="badge badge-warning">Zkontrolovat</span>
-                {% endif %}
-              </td>
-              <td>{{ row.popis }}</td>
+    <div class="admin-panel-body p-0">
+      <div class="sklad-table-wrapper">
+        <table class="sklad-table">
+          <thead>
+            <tr>
+              <th>Kontrola</th>
+              <th>Počet</th>
+              <th>Stav</th>
+              <th>Co to znamená</th>
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {% for row in data.rizika %}
+              <tr class="{% if row.ok %}sklad-row-soft-success{% else %}sklad-row-soft-warning{% endif %}">
+                <td><strong>{{ row.nazev }}</strong></td>
+                <td>{{ row.pocet }}</td>
+                <td>
+                  {% if row.ok %}
+                    <span class="sklad-badge">V pořádku</span>
+                  {% else %}
+                    <span class="sklad-badge">Zkontrolovat</span>
+                  {% endif %}
+                </td>
+                <td>{{ row.popis }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
+  </section>
 
-  <div class="row">
-    <div class="col-lg-6">
-      <div class="card mb-3">
-        <div class="card-header"><strong>Pohyby bez ceny</strong></div>
-        <div class="card-body p-0">
-          <table class="table table-sm table-striped mb-0">
+  <div class="admin-grid admin-grid--split">
+    <section class="admin-panel">
+      <div class="admin-panel-head"><strong>Pohyby bez ceny</strong></div>
+      <div class="admin-panel-body p-0">
+        <div class="sklad-table-wrapper">
+          <table class="sklad-table">
             <thead><tr><th>Datum</th><th>Surovina</th><th>Typ</th><th>Množství</th></tr></thead>
             <tbody>
               {% for pohyb in data.pohyby_bez_ceny %}
@@ -94,19 +98,19 @@
                   <td>{{ pohyb.mnozstvi }} {{ pohyb.surovina.jednotka }}</td>
                 </tr>
               {% empty %}
-                <tr><td colspan="4" class="text-center text-muted py-3">Všechny pohyby mají cenu.</td></tr>
+                <tr><td colspan="4" class="sklad-empty">Všechny pohyby mají cenu.</td></tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div class="col-lg-6">
-      <div class="card mb-3">
-        <div class="card-header"><strong>Aktivní šarže bez ceny</strong></div>
-        <div class="card-body p-0">
-          <table class="table table-sm table-striped mb-0">
+    <section class="admin-panel">
+      <div class="admin-panel-head"><strong>Aktivní šarže bez ceny</strong></div>
+      <div class="admin-panel-body p-0">
+        <div class="sklad-table-wrapper">
+          <table class="sklad-table">
             <thead><tr><th>Surovina</th><th>Šarže</th><th>Zbývá</th><th>Spotřeba</th></tr></thead>
             <tbody>
               {% for sarze in data.sarze_bez_ceny %}
@@ -117,13 +121,13 @@
                   <td>{{ sarze.datum_spotreby|date:"d.m.Y"|default:"–" }}</td>
                 </tr>
               {% empty %}
-                <tr><td colspan="4" class="text-center text-muted py-3">Všechny aktivní šarže mají cenu.</td></tr>
+                <tr><td colspan="4" class="sklad-empty">Všechny aktivní šarže mají cenu.</td></tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
       </div>
-    </div>
+    </section>
   </div>
 </div>
 {% endblock %}

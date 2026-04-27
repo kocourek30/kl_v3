@@ -10,6 +10,7 @@
 <div
   class="bulk-admin-page"
   data-bulk-admin
+  data-today="{{ today_iso }}"
   data-menu-items-url="{% url 'admin:menu_items_api' %}"
   data-menu-days-url="{% url 'admin:jidelnicek_days_api' %}"
   data-users-url="{% url 'admin:users_api' %}"
@@ -81,12 +82,12 @@
     </section>
 
     <section class="bulk-admin-card bulk-admin-body">
-      <form method="post" id="bulkOrderForm">
+      <form method="post" id="bulkOrderForm" autocomplete="off">
         {% csrf_token %}
         {% if form.errors %}
           <div class="bulk-user-empty" style="border-color:#f1b4b4;color:#912d2d;background:#fff6f6;">{{ form.errors }}</div>
         {% endif %}
-        <input type="hidden" name="datum_vydeje" id="selectedDate" value="">
+        <input type="hidden" name="datum_vydeje" id="selectedDate" value="" autocomplete="off">
 
         <div class="bulk-admin-section">
           <div class="bulk-section-title">

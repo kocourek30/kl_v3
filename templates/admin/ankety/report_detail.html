@@ -1,5 +1,5 @@
 {% extends "admin/base_site.html" %}
-{% load static %}
+{% load static l10n %}
 
 {% block extrahead %}
 {{ block.super }}
@@ -114,7 +114,7 @@
               </div>
               <div class="text-right">
                 <div class="ankety-score-stack ankety-score-stack--large">
-                  <div class="ankety-rating ankety-rating--large" style="--rating: {{ response.prumer_numeric|default:0 }};"></div>
+                  <div class="ankety-rating ankety-rating--large" style="--rating: {{ response.prumer_numeric|default:0|unlocalize }};"></div>
                   <strong>{{ response.prumer }}</strong>
                 </div>
               </div>
@@ -125,7 +125,7 @@
                   <span>{{ odpoved.otazka }}</span>
                   <div class="ankety-answer-score">
                     <div class="ankety-score-stack">
-                      <div class="ankety-rating" style="--rating: {{ odpoved.znamka|default:0 }};"></div>
+                      <div class="ankety-rating" style="--rating: {{ odpoved.znamka|default:0|unlocalize }};"></div>
                       <strong>{{ odpoved.znamka }}/5</strong>
                     </div>
                   </div>
@@ -202,7 +202,7 @@
                     <td class="text-right">
                       {% if row.prumer %}
                       <div class="ankety-score-stack">
-                        <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
+                        <div class="ankety-rating" style="--rating: {{ row.prumer|default:0|unlocalize }};"></div>
                         <strong>{{ row.prumer|default:"-" }}</strong>
                       </div>
                       {% else %}
@@ -243,7 +243,7 @@
                     <td class="text-right">
                       {% if row.prumer %}
                       <div class="ankety-score-stack">
-                        <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
+                        <div class="ankety-rating" style="--rating: {{ row.prumer|default:0|unlocalize }};"></div>
                         <strong>{{ row.prumer|default:"-" }}</strong>
                       </div>
                       {% else %}
@@ -275,7 +275,7 @@
                     <td class="text-right">{{ row.pocet }}</td>
                     <td class="text-right">
                       <div class="ankety-score-stack">
-                        <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
+                        <div class="ankety-rating" style="--rating: {{ row.prumer|default:0|unlocalize }};"></div>
                         <strong>{{ row.prumer }}</strong>
                       </div>
                     </td>
@@ -302,7 +302,7 @@
                     <td class="text-right">
                       {% if row.prumer %}
                       <div class="ankety-score-stack">
-                        <div class="ankety-rating" style="--rating: {{ row.prumer|default:0 }};"></div>
+                        <div class="ankety-rating" style="--rating: {{ row.prumer|default:0|unlocalize }};"></div>
                         <strong>{{ row.prumer|default:"-" }}</strong>
                       </div>
                       {% else %}

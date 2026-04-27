@@ -31,7 +31,7 @@
 #jazzy-logo .brand-image {
     border-radius: 0 !important;
     box-shadow: none !important;
-    max-height: auto !important;            /* o něco méně než výška pruhu */
+    max-height: 34px !important;            /* držet logo v bezpečné výšce */
     max-width: 90% !important;              /* malý vnitřní okraj */
     width: auto !important;
     height: auto !important;
@@ -334,11 +334,6 @@
 }
 
 @media (max-width: 767.98px) {
-    .main-sidebar,
-    .brand-link {
-        width: 100%;
-    }
-
     .content-wrapper .content {
         padding-left: 0.5rem;
         padding-right: 0.5rem;
@@ -2051,6 +2046,44 @@
     min-height: 0;
 }
 
+#jazzy-sidebar .user-panel {
+    align-items: center;
+    gap: .8rem;
+}
+
+#jazzy-sidebar .user-panel .image {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 0;
+}
+
+#jazzy-sidebar .user-panel .info {
+    display: grid;
+    gap: .2rem;
+    min-width: 0;
+}
+
+#jazzy-sidebar .admin-user-name {
+    color: #ffffff !important;
+    font-weight: 700;
+    font-size: 1rem;
+    line-height: 1.15;
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+#jazzy-sidebar .admin-user-role {
+    color: rgba(255, 255, 255, .72);
+    font-size: .77rem;
+    line-height: 1.2;
+    font-weight: 600;
+    letter-spacing: .01em;
+}
+
 @media (max-width: 1100px) {
     .prepocty-panels,
     .prepocty-toolbar {
@@ -2065,7 +2098,7 @@
 }
 
 .sidebar-mini.sidebar-collapse .admin-license-sidebar-widget,
-.sidebar-mini.sidebar-collapse #jazzy-sidebar .sidebar {
+.sidebar-mini.sidebar-collapse #jazzy-sidebar .admin-license-sidebar-widget {
     display: none;
 }
 
@@ -2083,4 +2116,75 @@
     .meal-table thead th {
         box-shadow: none !important;
     }
+}
+
+/* ===== Global list/form polish across whole admin ===== */
+.content-wrapper .card,
+.content-wrapper .card-header,
+.content-wrapper .card-body,
+.content-wrapper .results,
+.content-wrapper .module {
+    border-color: #dfe9ef !important;
+}
+
+.change-list #changelist-search .form-row,
+.change-list .actions,
+.change-list .object-tools,
+.change-list .results {
+    border-radius: 14px;
+}
+
+.change-list .actions,
+.change-list #changelist-search .form-row {
+    background: #ffffff;
+    border: 1px solid #dfe9ef;
+    box-shadow: 0 10px 24px rgba(31, 47, 70, 0.04);
+    padding: .65rem .75rem;
+}
+
+.change-list .results {
+    overflow: hidden;
+    border: 1px solid #dfe9ef;
+    box-shadow: 0 14px 30px rgba(31, 47, 70, 0.045);
+}
+
+.change-list .results table thead th,
+.change-list #result_list thead th {
+    background: linear-gradient(180deg, #4fb040, #48a43a);
+    color: #fff !important;
+    border-bottom: 0 !important;
+    font-weight: 700;
+}
+
+.change-list .results table tbody tr:nth-child(even),
+.change-list #result_list tbody tr:nth-child(even) {
+    background: #fbfdfb;
+}
+
+.change-list .results table tbody tr:hover,
+.change-list #result_list tbody tr:hover {
+    background: #f2f8ee;
+}
+
+.change-list .object-tools a,
+.submit-row input,
+.submit-row a.deletelink {
+    border-radius: 999px !important;
+}
+
+.change-form .aligned label,
+.change-form .form-row label {
+    color: #3d4e58;
+    font-weight: 600;
+}
+
+.change-form .form-row,
+.change-form fieldset.module.aligned {
+    border-radius: 12px;
+}
+
+.change-form .submit-row {
+    border-radius: 14px;
+    border: 1px solid #dfe9ef;
+    box-shadow: 0 10px 24px rgba(31, 47, 70, 0.04);
 }

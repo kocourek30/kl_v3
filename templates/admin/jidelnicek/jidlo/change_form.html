@@ -1,0 +1,211 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static admin_modify %}
+
+{% block extrahead %}
+  {{ block.super }}
+  {{ media }}
+  <link rel="stylesheet" href="{% static 'jidelnicek/css/food_form_admin.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="food-form-page admin-shell admin-shell--wide">
+  <section class="food-form-hero">
+    <div class="food-form-hero__main">
+      <span class="food-form-kicker">Katalog jídel</span>
+      <h1>{{ title }}</h1>
+      <p>
+        Jedno místo pro základní údaje, cenu, alergeny, výživu i skladovou logiku jídla. U často používaných položek
+        je důležité mít přehledně vyplněný druh, cenu a návaznost na komponenty nebo suroviny.
+      </p>
+      <div class="food-form-hero__chips">
+        <span class="food-form-chip">1. Doplň název, druh a cenu</span>
+        <span class="food-form-chip">2. Zkontroluj alergeny a výživu</span>
+        <span class="food-form-chip">3. Navazující komponenty a recepturu doladíš níže</span>
+      </div>
+    </div>
+    <div class="food-form-hero__actions">
+      <a href="{% url 'admin:jidelnicek_jidlo_changelist' %}" class="admin-btn admin-btn--light">
+        <i class="fas fa-arrow-left"></i>
+        Zpět na přehled jídel
+      </a>
+      {% if original %}
+        <a href="{% url opts|admin_urlname:'history' original.pk|admin_urlquote %}" class="admin-btn admin-btn--light">
+          <i class="fas fa-clock-rotate-left"></i>
+          Historie změn
+        </a>
+      {% endif %}
+    </div>
+  </section>
+
+  <form {% if has_file_field %}enctype="multipart/form-data"{% endif %} method="post" id="{{ opts.model_name }}_form" novalidate>
+    {% csrf_token %}
+
+    {% if errors %}
+      <div class="food-form-errors">
+        <strong>Formulář obsahuje chyby.</strong>
+        <span>Zkontroluj prosím zvýrazněná pole a zkus to znovu uložit.</span>
+      </div>
+    {% endif %}
+
+    <section class="food-form-card admin-card">
+      <div class="food-form-card__toolbar">
+        <div>
+          <h2>Základní údaje jídla</h2>
+          <p>Hlavní katalogová data na jednom místě bez zbytečného rozpadání do více admin bloků.</p>
+        </div>
+        <div class="food-form-card__submit">
+          {% submit_row %}
+        </div>
+      </div>
+
+      <section class="food-form-summary">
+        <article class="food-form-summary__item">
+          <span class="food-form-summary__icon"><i class="fas fa-cubes"></i></span>
+          <div>
+            <strong>Komponenty</strong>
+            <span>
+              {% if original %}
+                {% if food_form_summary.has_components %}
+                  Vyplněno {{ food_form_summary.components_count }} komponent
+                {% else %}
+                  Zatím bez komponent
+                {% endif %}
+              {% else %}
+                Po uložení můžeš navázat komponenty
+              {% endif %}
+            </span>
+          </div>
+          <div class="food-form-summary__action">
+            <button type="button" class="admin-btn admin-btn--light food-inline-add-trigger" data-inline-target="jidlokomponenta">
+              <i class="fas fa-plus"></i>
+              Přidat komponentu
+            </button>
+          </div>
+        </article>
+        <article class="food-form-summary__item">
+          <span class="food-form-summary__icon"><i class="fas fa-carrot"></i></span>
+          <div>
+            <strong>Suroviny a receptura</strong>
+            <span>
+              {% if original %}
+                {% if food_form_summary.has_ingredients %}
+                  Evidováno {{ food_form_summary.ingredients_count }} surovinových vazeb
+                {% else %}
+                  Zatím bez surovin a receptury
+                {% endif %}
+              {% else %}
+                Po uložení doplníš přímou recepturu nebo suroviny přes komponenty
+              {% endif %}
+            </span>
+          </div>
+          <div class="food-form-summary__action">
+            <button type="button" class="admin-btn admin-btn--light food-inline-add-trigger" data-inline-target="recepturapolozka">
+              <i class="fas fa-plus"></i>
+              Přidat surovinu
+            </button>
+          </div>
+        </article>
+      </section>
+
+      {{ adminform.form.non_field_errors }}
+      {% for fieldset in adminform %}
+        <section class="food-form-section {% if fieldset.name == 'Spotřební koš 2025' %}food-form-section--compact{% endif %}">
+          {% if fieldset.name %}
+            <header class="food-form-section__header">
+              <h3>{{ fieldset.name }}</h3>
+              {% if fieldset.description %}
+                <p>{{ fieldset.description|safe }}</p>
+              {% endif %}
+            </header>
+          {% endif %}
+
+          <div class="food-form-grid {% if fieldset.name == 'Spotřební koš 2025' %}food-form-grid--compact{% endif %}">
+            {% for line in fieldset %}
+              {% for field in line %}
+                <div class="food-form-field {% if field.field.name in 'nazev,druh,cena,alergeny' %}food-form-field--primary{% endif %} {% if fieldset.name == 'Spotřební koš 2025' %}food-form-field--compact{% endif %} {% if field.field.field.widget.input_type == 'checkbox' %}food-form-field--checkbox{% endif %}">
+                  {% if field.is_readonly %}
+                    <div class="food-form-field__label">{{ field.label_tag }}</div>
+                    <div class="food-form-field__readonly">{{ field.contents }}</div>
+                  {% else %}
+                    {% if field.field.field.widget.input_type == 'checkbox' %}
+                      <label class="food-form-checkbox" for="{{ field.field.id_for_label }}">
+                        {{ field.field }}
+                        <span class="food-form-checkbox__body">
+                          <span class="food-form-field__label">{{ field.field.label }}</span>
+                          {% if field.field.help_text %}
+                            <span class="food-form-field__help">{{ field.field.help_text|safe }}</span>
+                          {% endif %}
+                        </span>
+                      </label>
+                    {% else %}
+                      <label class="food-form-field__label" for="{{ field.field.id_for_label }}">{{ field.field.label }}</label>
+                      {{ field.field }}
+                    {% endif %}
+                    {% if field.field.help_text %}
+                      {% if field.field.field.widget.input_type != 'checkbox' %}
+                        <div class="food-form-field__help">{{ field.field.help_text|safe }}</div>
+                      {% endif %}
+                    {% endif %}
+                    {% if field.field.errors %}
+                      <div class="food-form-field__errors">{{ field.field.errors }}</div>
+                    {% endif %}
+                  {% endif %}
+                </div>
+              {% endfor %}
+            {% endfor %}
+          </div>
+        </section>
+      {% endfor %}
+
+      {% for hidden in adminform.form.hidden_fields %}{{ hidden }}{% endfor %}
+
+      {% if inline_admin_formsets %}
+        <section class="food-form-section food-form-section--inlines">
+          <header class="food-form-section__header">
+            <h3>Komponenty a receptura</h3>
+            <p>Tady navážeš jídlo na komponenty a konkrétní suroviny. Necháváme to na stejné stránce, aby bylo vše po ruce.</p>
+          </header>
+          <div class="food-form-inline-stack">
+            {% for inline_admin_formset in inline_admin_formsets %}
+              <section class="food-form-inline-card" data-inline-model="{{ inline_admin_formset.opts.model_name }}">
+                <header class="food-form-inline-card__header">
+                  <div>
+                    <h4>{{ inline_admin_formset.opts.verbose_name_plural|capfirst }}</h4>
+                    {% if inline_admin_formset.opts.model_name == "jidlokomponenta" %}
+                      <p>Poskládej jídlo z připravených komponent, které pak nesou svoje vlastní suroviny.</p>
+                    {% elif inline_admin_formset.opts.model_name == "recepturapolozka" %}
+                      <p>Doplň přímou recepturu tam, kde jídlo nepotřebuje mezivrstvu komponent.</p>
+                    {% endif %}
+                  </div>
+                </header>
+                {% include inline_admin_formset.opts.template %}
+              </section>
+            {% endfor %}
+          </div>
+        </section>
+      {% endif %}
+
+      <div class="food-form-card__footer">
+        {% submit_row %}
+      </div>
+    </section>
+  </form>
+</div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".food-inline-add-trigger").forEach(function (trigger) {
+      trigger.addEventListener("click", function () {
+        const modelName = trigger.dataset.inlineTarget;
+        const inlineCard = document.querySelector('[data-inline-model="' + modelName + '"]');
+        if (!inlineCard) return;
+        const addLink = inlineCard.querySelector(".add-row a, tr.add-row a");
+        if (addLink) {
+          addLink.click();
+          inlineCard.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      });
+    });
+  });
+</script>
+{% endblock %}

@@ -1,48 +1,59 @@
 {% extends "admin/base_site.html" %}
+{% load static %}
 {% load form_tags %}
 
-{% block content %}
-<div class="container-fluid">
-  <h1>{{ title }}</h1>
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'sklad/css/sklad_admin_views.css' %}">
+{% endblock %}
 
-  <div class="card mb-4">
-    <div class="card-header">
-      <strong>Období plánované spotřeby</strong>
-    </div>
-    <div class="card-body">
-      <form method="get" class="form-inline">
-        <div class="form-group mr-3">
-          <label class="mr-2" for="{{ form.date_from.id_for_label }}">Od data</label>
+{% block content %}
+<div class="admin-shell admin-shell--wide sklad-page">
+  <section class="admin-hero">
+    <div class="admin-kicker">Nákupní plánování</div>
+    <h1>{{ title }}</h1>
+    <p>Dopočet budoucího nákupu z očekávané spotřeby, minima na skladě a dostupných dodavatelů.</p>
+  </section>
+
+  <section class="admin-filter-panel">
+    <form method="get" class="admin-filter-form">
+      <div class="sklad-form-inline">
+        <div class="admin-field">
+          <label for="{{ form.date_from.id_for_label }}">Od data</label>
           {{ form.date_from|add_class:"form-control" }}
         </div>
-        <div class="form-group mr-3">
-          <label class="mr-2" for="{{ form.date_to.id_for_label }}">Do data</label>
+        <div class="admin-field">
+          <label for="{{ form.date_to.id_for_label }}">Do data</label>
           {{ form.date_to|add_class:"form-control" }}
         </div>
-        <div class="form-group mr-3">
-          <label class="mr-2" for="{{ form.dodavatel.id_for_label }}">Dodavatel</label>
+        <div class="admin-field">
+          <label for="{{ form.dodavatel.id_for_label }}">Dodavatel</label>
           {{ form.dodavatel|add_class:"form-control" }}
         </div>
-        <button type="submit" class="btn btn-success">
-          Spočítat návrh
-        </button>
-      </form>
-    </div>
-  </div>
-
-  {% if data %}
-    <div class="card">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <strong>Návrh nákupu {{ data.date_from|date:"d.m.Y" }} – {{ data.date_to|date:"d.m.Y" }}</strong>
-        <div>
-          <span class="mr-3">Odhad celkem: <strong>{{ data.odhad_celkem|floatformat:-2 }} Kč</strong></span>
-          <a class="btn btn-sm btn-outline-success" href="{{ xlsx_url }}">Stáhnout XLSX</a>
+        <div class="admin-field">
+          <button type="submit" class="admin-btn admin-btn--primary">
+            <i class="fas fa-calculator"></i> Spočítat návrh
+          </button>
         </div>
       </div>
-      <div class="card-body p-0">
-        <div class="table-responsive">
-          <table class="table table-sm table-striped mb-0">
-            <thead class="thead-light">
+    </form>
+  </section>
+
+  {% if data %}
+    <section class="admin-panel">
+      <div class="admin-panel-head">
+        <strong>Návrh nákupu {{ data.date_from|date:"d.m.Y" }} – {{ data.date_to|date:"d.m.Y" }}</strong>
+        <div class="sklad-actions">
+          <span class="sklad-badge">Odhad celkem {{ data.odhad_celkem|floatformat:-2 }} Kč</span>
+          <a class="admin-btn admin-btn--small admin-btn--light" href="{{ xlsx_url }}">
+            <i class="fas fa-file-excel"></i> XLSX
+          </a>
+        </div>
+      </div>
+      <div class="admin-panel-body p-0">
+        <div class="sklad-table-wrapper">
+          <table class="sklad-table">
+            <thead>
               <tr>
                 <th>Surovina</th>
                 <th>Stav</th>
@@ -68,16 +79,14 @@
                 </tr>
               {% empty %}
                 <tr>
-                  <td colspan="8" class="text-center text-muted py-3">
-                    Pro zvolené období není potřeba nic dokoupit.
-                  </td>
+                  <td colspan="8" class="sklad-empty">Pro zvolené období není potřeba nic dokoupit.</td>
                 </tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
       </div>
-    </div>
+    </section>
   {% endif %}
 </div>
 {% endblock %}

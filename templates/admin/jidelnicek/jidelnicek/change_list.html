@@ -30,10 +30,22 @@
         <i class="fas fa-plus"></i>
         Nový jídelníček
       </a>
-      <a href="{% url 'admin:jidelnicek_import_txt' %}" class="admin-btn admin-btn--accent">
-        <i class="fas fa-file-import"></i>
-        Import TXT jídelníčku
-      </a>
+      <div class="menu-list-chip accent" style="display:flex; flex-direction:column; gap:4px; align-items:flex-start; min-width:300px;">
+        {% if last_menu_import %}
+          <strong style="font-size:13px;">
+            Poslední import:
+            {{ last_menu_import.get_source_display }}
+            • {{ last_menu_import.get_status_display }}
+          </strong>
+          <span style="font-size:12px;">
+            {{ last_menu_import.started_at|date:"d.m.Y H:i" }}
+            {% if last_menu_import.summary %}• {{ last_menu_import.summary }}{% endif %}
+          </span>
+        {% else %}
+          <strong style="font-size:13px;">Poslední import: zatím neběžel</strong>
+          <span style="font-size:12px;">Spusť autoimport z DATAx pro první naplnění dat.</span>
+        {% endif %}
+      </div>
     </div>
   </section>
 
@@ -50,18 +62,63 @@
             placeholder="Např. kuřecí řízek, guláš, jogurt…"
           >
         </div>
+        <div class="admin-field">
+          <label for="id_druh">Druh jídla</label>
+          <select id="id_druh" name="druh">
+            <option value="">Všechny druhy</option>
+            {% for kind in menu_kind_options %}
+              <option value="{{ kind.pk }}" {% if menu_selected_kind == kind.pk|stringformat:'s' %}selected{% endif %}>{{ kind.nazev }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="admin-field">
+          <label for="id_obsah">Obsah jídelníčku</label>
+          <select id="id_obsah" name="obsah">
+            <option value="">Vše</option>
+            <option value="with" {% if menu_content_state == "with" %}selected{% endif %}>Jen s položkami</option>
+            <option value="empty" {% if menu_content_state == "empty" %}selected{% endif %}>Jen prázdné</option>
+          </select>
+        </div>
+        <div class="admin-field">
+          <label for="id_od">Platnost od</label>
+          <input type="date" id="id_od" name="od" value="{{ menu_date_from }}">
+        </div>
+        <div class="admin-field">
+          <label for="id_do">Platnost do</label>
+          <input type="date" id="id_do" name="do" value="{{ menu_date_to }}">
+        </div>
       </div>
       <div class="admin-filter-actions">
         <button type="submit" class="admin-btn admin-btn--primary">
           <i class="fas fa-search"></i>
           Hledat
         </button>
-        {% if food_lookup %}
+        {% if menu_filters_active %}
           <a href="{% url 'admin:jidelnicek_jidelnicek_changelist' %}" class="admin-btn admin-btn--light">
             <i class="fas fa-rotate-left"></i>
-            Zrušit hledání
+            Zrušit filtry
           </a>
         {% endif %}
+      </div>
+    </form>
+  </section>
+
+  <section class="food-bulk-panel">
+    <form method="post" action="{% url 'admin:jidelnicek_jidelnicek_bulk_apply' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}" class="food-bulk-panel__form">
+      {% csrf_token %}
+      <div class="food-bulk-panel__title">
+        <strong>Hromadné operace nad aktuálním filtrem</strong>
+        <span>Operace se provede nad právě zobrazeným výběrem jídelníčků.</span>
+      </div>
+      <div class="food-bulk-panel__controls">
+        <select name="bulk_operation">
+          <option value="">Vyber operaci</option>
+          <option value="delete_empty">Smazat prázdné jídelníčky</option>
+        </select>
+        <button type="submit" class="admin-btn admin-btn--light" onclick="return confirm('Opravdu smazat prázdné jídelníčky z aktuálního výběru?');">
+          <i class="fas fa-bolt"></i>
+          Provést hromadně
+        </button>
       </div>
     </form>
   </section>
@@ -123,7 +180,7 @@
           {% if food_lookup %}
             Zkus upravit hledaný název jídla nebo zrušit filtr.
           {% else %}
-            Založ nový jídelníček nebo naimportuj data z TXT.
+            Založ nový jídelníček nebo naimportuj data z DATAx.
           {% endif %}
         </span>
       </section>

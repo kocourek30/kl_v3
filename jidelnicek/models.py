@@ -2,8 +2,10 @@ import logging
 import unicodedata
 from decimal import Decimal
 from django.db import models
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.contrib.auth.models import Group
+from django.utils import timezone
 from PIL import Image
 from django.core.files.base import ContentFile
 from io import BytesIO
@@ -352,3 +354,104 @@ class PolozkaJidelnicku(models.Model):
 
     def __str__(self):
         return f"{self.druh_jidla} - {self.jidlo} v {self.jidelnicek}"
+
+
+class MenuImportRun(models.Model):
+    SOURCE_DATAX = "datax"
+    SOURCE_AUTO = "auto"
+    SOURCE_CHOICES = (
+        (SOURCE_DATAX, "Datax DBF import"),
+        (SOURCE_AUTO, "Automatický import"),
+    )
+
+    STATUS_RUNNING = "running"
+    STATUS_SUCCESS = "success"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = (
+        (STATUS_RUNNING, "Probíhá"),
+        (STATUS_SUCCESS, "Hotovo"),
+        (STATUS_FAILED, "Chyba"),
+    )
+
+    source = models.CharField(
+        max_length=20,
+        choices=SOURCE_CHOICES,
+        default=SOURCE_DATAX,
+        verbose_name="Zdroj importu",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_RUNNING,
+        db_index=True,
+        verbose_name="Stav",
+    )
+    started_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name="Spuštěno",
+    )
+    finished_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Dokončeno",
+    )
+    triggered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="menu_import_runs",
+        verbose_name="Spustil",
+    )
+    dry_run = models.BooleanField(
+        default=False,
+        verbose_name="Dry-run",
+    )
+    rows_read = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Načtených řádků",
+    )
+    rows_after_merge = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Řádků po sloučení",
+    )
+    menu_days = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Dnů v importu",
+    )
+    menus_created = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Vytvořených jídelníčků",
+    )
+    foods_created = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Nových jídel",
+    )
+    items_created = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Vytvořených položek",
+    )
+    summary = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name="Souhrn",
+    )
+    error_message = models.TextField(
+        blank=True,
+        verbose_name="Chybová zpráva",
+    )
+
+    class Meta:
+        verbose_name = "Běh importu jídelníčku"
+        verbose_name_plural = "Běhy importu jídelníčku"
+        ordering = ("-started_at",)
+
+    def __str__(self):
+        return f"{self.get_source_display()} • {self.get_status_display()} • {timezone.localtime(self.started_at):%d.%m.%Y %H:%M}"
+
+    @property
+    def duration_seconds(self):
+        if not self.finished_at:
+            return None
+        return max(0, int((self.finished_at - self.started_at).total_seconds()))

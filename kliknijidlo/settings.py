@@ -220,6 +220,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'users.context_processors.user_balance',
+                'users.context_processors.admin_user_identity',
                 'canteen_settings.context_processors.footer_info',
                 'admin_dashboard.context_processors.frontend_feature_flags',
                 'licencovani.context_processors.admin_license_footer',
@@ -382,7 +383,6 @@ JAZZMIN_SETTINGS = {
         "vydej_jidel": "fas fa-concierge-bell",
         "dotace": "fas fa-file-contract",
         "canteen_settings": "fas fa-gear",
-        "frontend": "fas fa-globe",
         "reporty": "fas fa-chart-line",
         "finance": "fas fa-coins",
         "fakturace": "fas fa-file-invoice-dollar",
@@ -411,6 +411,7 @@ JAZZMIN_SETTINGS = {
         "jidelnicek.Jidlo": "fas fa-bowl-food",
         "jidelnicek.Jidelnicek": "fas fa-calendar-days",
         "jidelnicek.PolozkaJidelnicku": "fas fa-list-ul",
+        "jidelnicek.MenuImportRun": "fas fa-file-arrow-down",
 
         # === OBJEDNAVKY ===
         "objednavky.Order": "fas fa-shopping-basket",
@@ -496,6 +497,9 @@ JAZZMIN_SETTINGS = {
         "ankety.AnketniOtazka": "fas fa-circle-question",
         "ankety.HodnoceniJidla": "fas fa-star",
         "ankety.OdpovedHodnoceni": "fas fa-list-check",
+        "ankety.MesicniAnketa": "fas fa-calendar-check",
+        "ankety.MesicniAnketaVarianta": "fas fa-list-ul",
+        "ankety.MesicniAnketaHlas": "fas fa-check-to-slot",
 
         # === AUTH fallback ===
         "auth.User": "fas fa-user-circle",
@@ -512,7 +516,6 @@ JAZZMIN_SETTINGS = {
         "vydej_jidel",
         "dotace",
         "canteen_settings",
-        "frontend",
         "reporty",
         "finance",
         "fakturace",
@@ -572,11 +575,6 @@ JAZZMIN_SETTINGS = {
             "name": "Nastavení jídelny",
             "url": "admin:canteen_settings_canteencontact_changelist",
             "icon": "fas fa-gear",
-        },
-        {
-            "name": "Frontend",
-            "url": "home",
-            "icon": "fas fa-globe",
         },
         {
             "name": "Reporty",
@@ -661,6 +659,11 @@ JAZZMIN_SETTINGS = {
                 "name": "Vyhodnocení anket",
                 "url": "admin:ankety_report",
                 "icon": "fas fa-chart-simple",
+            },
+            {
+                "name": "Měsíční volba menu",
+                "url": "admin:ankety_mesicnianketa_changelist",
+                "icon": "fas fa-ballot-check",
             },
         ],
         "reporty": [

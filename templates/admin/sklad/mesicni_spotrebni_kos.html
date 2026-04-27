@@ -1,271 +1,164 @@
 {% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'sklad/css/sklad_admin_views.css' %}">
+{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-  <!-- Hlavička -->
-  <div class="row mb-3">
-    <div class="col">
-      <h1 class="mb-2">Měsíční spotřební koš</h1>
-      <p class="text-muted">
-        Legislativní přehled podle vyhlášky č. 107/2005 Sb. ve znění účinném od 1. 9. 2025.
-      </p>
-    </div>
-  </div>
+<div class="admin-shell admin-shell--wide sklad-page">
+  <section class="admin-hero">
+    <div class="admin-kicker">Spotřební koš</div>
+    <h1>Měsíční spotřební koš</h1>
+    <p>Legislativní přehled podle vyhlášky č. 107/2005 Sb. (účinnost od 1. 9. 2025).</p>
+  </section>
 
-  <!-- Filtrační formulář přes celou šířku -->
-  <div class="row mb-4">
-    <div class="col">
-      <div class="card shadow-sm">
-        <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
-          <strong>Filtr</strong>
-          <small class="text-white-50">Zvol měsíc nebo libovolný datumový rozsah</small>
-        </div>
-        <div class="card-body">
-          <form method="get">
-            <div class="row g-3">
-              <!-- Typ období (měsíc / vlastní rozsah) -->
-              {% if form.period_type %}
-              <div class="col-md-3">
-                <label class="form-label">{{ form.period_type.label }}</label>
-                {{ form.period_type }}
-              </div>
-              {% endif %}
-
-              <!-- Rok a měsíc -->
-              {% if form.year %}
-              <div class="col-sm-6 col-md-2">
-                <label class="form-label">{{ form.year.label }}</label>
-                {{ form.year }}
-              </div>
-              {% endif %}
-
-              {% if form.month %}
-              <div class="col-sm-6 col-md-2">
-                <label class="form-label">{{ form.month.label }}</label>
-                {{ form.month }}
-              </div>
-              {% endif %}
-
-              <!-- Vlastní období: od / do -->
-              {% if form.date_from %}
-              <div class="col-sm-6 col-md-2">
-                <label class="form-label">{{ form.date_from.label }}</label>
-                {{ form.date_from }}
-              </div>
-              {% endif %}
-
-              {% if form.date_to %}
-              <div class="col-sm-6 col-md-2">
-                <label class="form-label">{{ form.date_to.label }}</label>
-                {{ form.date_to }}
-              </div>
-              {% endif %}
-
-              <!-- Stravovací skupina -->
-              {% if form.stravovaci_skupina %}
-              <div class="col-sm-6 col-md-3">
-                <label class="form-label">{{ form.stravovaci_skupina.label }}</label>
-                {{ form.stravovaci_skupina }}
-                {% if form.stravovaci_skupina.help_text %}
-                  <div class="form-text">{{ form.stravovaci_skupina.help_text }}</div>
-                {% endif %}
-              </div>
-              {% endif %}
-
-              <!-- Případná další pole -->
-              {% for field in form %}
-                {% if field.name not in "period_type year month date_from date_to stravovaci_skupina" %}
-                  <div class="col-sm-6 col-md-3">
-                    <label class="form-label">{{ field.label }}</label>
-                    {{ field }}
-                  </div>
-                {% endif %}
-              {% endfor %}
-
-              <div class="col-sm-6 col-md-3">
-                <label class="form-label d-none d-md-block">&nbsp;</label>
-                <button type="submit" class="btn btn-success w-100">
-                  <i class="fas fa-calculator me-1"></i> Spočítat
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  {% if circle_row %}
-  <!-- Kruh plnění -->
-  <div class="row mb-4">
-    <div class="col-lg-6">
-      <div class="card shadow-sm h-100">
-        <div class="card-header bg-info text-white">
-          {% with p=circle_row.plneni|floatformat:0 %}
-          <strong>Plnění normy – {{ circle_row.label }} ({{ p }} %)</strong>
-          {% endwith %}
-        </div>
-        <div class="card-body d-flex justify-content-center align-items-center">
-          {% with p=circle_row.plneni|floatformat:0 %}
-          <div
-            class="d-flex align-items-center justify-content-center"
-            style="
-              --p: {{ p }};
-              width: 180px;
-              height: 180px;
-              border-radius: 50%;
-              background:
-                conic-gradient(#28a745 calc(var(--p) * 1%), #e9ecef 0);
-              box-shadow: 0 0.15rem 0.3rem rgba(0, 0, 0, 0.1);
-              position: relative;
-              color: #212529;
-              font-size: 1.6rem;
-              font-weight: 700;
-            "
-          >
-            <div
-              style="
-                position: absolute;
-                width: 65%;
-                height: 65%;
-                border-radius: 50%;
-                background-color: #ffffff;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-              "
-            >
-              {{ p }}%
-            </div>
+  <section class="admin-filter-panel">
+    <form method="get" class="admin-filter-form">
+      <div class="admin-filter-grid">
+        {% if form.period_type %}
+          <div class="admin-field">
+            <label>{{ form.period_type.label }}</label>
+            {{ form.period_type }}
           </div>
-          {% endwith %}
-        </div>
+        {% endif %}
+        {% if form.year %}
+          <div class="admin-field">
+            <label>{{ form.year.label }}</label>
+            {{ form.year }}
+          </div>
+        {% endif %}
+        {% if form.month %}
+          <div class="admin-field">
+            <label>{{ form.month.label }}</label>
+            {{ form.month }}
+          </div>
+        {% endif %}
+        {% if form.date_from %}
+          <div class="admin-field">
+            <label>{{ form.date_from.label }}</label>
+            {{ form.date_from }}
+          </div>
+        {% endif %}
+        {% if form.date_to %}
+          <div class="admin-field">
+            <label>{{ form.date_to.label }}</label>
+            {{ form.date_to }}
+          </div>
+        {% endif %}
+        {% if form.stravovaci_skupina %}
+          <div class="admin-field">
+            <label>{{ form.stravovaci_skupina.label }}</label>
+            {{ form.stravovaci_skupina }}
+            {% if form.stravovaci_skupina.help_text %}
+              <div class="sklad-note">{{ form.stravovaci_skupina.help_text }}</div>
+            {% endif %}
+          </div>
+        {% endif %}
       </div>
-    </div>
-  </div>
-  {% endif %}
+      <div class="admin-filter-actions">
+        <button type="submit" class="admin-btn admin-btn--primary">
+          <i class="fas fa-calculator"></i> Spočítat
+        </button>
+      </div>
+    </form>
+  </section>
 
   {% if rows %}
-  {% if souhrn %}
-  <div class="row mb-4">
-    <div class="col">
-      <div class="card shadow-sm">
-        <div class="card-header d-flex justify-content-between align-items-center">
-          <strong>Souhrn období</strong>
-          <div>
-            <a class="btn btn-sm btn-outline-success" href="{% url 'admin:sklad_mesicni_spotrebni_kos_xls' %}?{{ export_query }}">
-              Stáhnout XLS
-            </a>
-            <a class="btn btn-sm btn-outline-danger" href="{% url 'admin:sklad_mesicni_spotrebni_kos_pdf' %}?{{ export_query }}">
-              Stáhnout PDF
-            </a>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="row">
-            <div class="col-md-4"><strong>Počet jídel:</strong> {{ souhrn.pocet_jidel|floatformat:0 }}</div>
-            <div class="col-md-4"><strong>Počet strávníků:</strong> {{ souhrn.pocet_stravniku }}</div>
-            <div class="col-md-4"><strong>Počet výdejek:</strong> {{ souhrn.pocet_vydejek }}</div>
-          </div>
-        </div>
+    {% if souhrn %}
+      <div class="sklad-kpi-grid">
+        <article class="sklad-kpi"><strong>Počet jídel</strong><span>{{ souhrn.pocet_jidel|floatformat:0 }}</span></article>
+        <article class="sklad-kpi"><strong>Počet strávníků</strong><span>{{ souhrn.pocet_stravniku }}</span></article>
+        <article class="sklad-kpi"><strong>Počet výdejek</strong><span>{{ souhrn.pocet_vydejek }}</span></article>
       </div>
-    </div>
-  </div>
-  {% endif %}
+    {% endif %}
 
-  {% if legislativni_ukazatele %}
-  <div class="row mb-4">
-    <div class="col">
-      <div class="card shadow-sm">
-        <div class="card-header">
-          <strong>Legislativní ukazatele</strong>
-        </div>
-        <div class="card-body">
-          <div class="row">
-            <div class="col-md-3"><strong>Bio:</strong> {{ legislativni_ukazatele.bio_pct|floatformat:-2 }} %</div>
-            <div class="col-md-3"><strong>Sezónní:</strong> {{ legislativni_ukazatele.sezonni_pct|floatformat:-2 }} %</div>
-            <div class="col-md-3"><strong>Sterilované / kompot:</strong> {{ legislativni_ukazatele.sterilovane_pct|floatformat:-2 }} %</div>
-            <div class="col-md-3"><strong>Masné výrobky:</strong> {{ legislativni_ukazatele.masne_vyrobky_pct|floatformat:-2 }} %</div>
+    {% if legislativni_ukazatele %}
+      <section class="admin-panel">
+        <div class="admin-panel-head"><strong>Legislativní ukazatele</strong></div>
+        <div class="admin-panel-body">
+          <div class="sklad-kpi-grid">
+            <article class="sklad-kpi"><strong>Bio</strong><span>{{ legislativni_ukazatele.bio_pct|floatformat:-2 }} %</span></article>
+            <article class="sklad-kpi"><strong>Sezónní</strong><span>{{ legislativni_ukazatele.sezonni_pct|floatformat:-2 }} %</span></article>
+            <article class="sklad-kpi"><strong>Sterilované / kompot</strong><span>{{ legislativni_ukazatele.sterilovane_pct|floatformat:-2 }} %</span></article>
+            <article class="sklad-kpi"><strong>Masné výrobky</strong><span>{{ legislativni_ukazatele.masne_vyrobky_pct|floatformat:-2 }} %</span></article>
           </div>
           {% if legislativni_ukazatele.zakazane_suroviny %}
-            <div class="alert alert-danger mt-3 mb-0">
+            <div class="sklad-alert sklad-alert--warning mt-3">
               Zakázané suroviny: {{ legislativni_ukazatele.zakazane_suroviny|join:", " }}
             </div>
           {% endif %}
         </div>
-      </div>
-    </div>
-  </div>
-  {% endif %}
+      </section>
+    {% endif %}
 
-  {% if kontroly_jidelnicku.varovani %}
-  <div class="row mb-4">
-    <div class="col">
-      <div class="alert alert-warning">
-        <strong>Kontroly jídelníčku:</strong>
-        <ul class="mb-0">
-          {% for varovani in kontroly_jidelnicku.varovani %}
-            <li>{{ varovani }}</li>
-          {% endfor %}
-        </ul>
-      </div>
-    </div>
-  </div>
-  {% endif %}
-
-  <!-- Tabulka výsledků -->
-  <div class="row">
-    <div class="col">
-      <div class="card shadow-sm">
-        <div class="card-header">
-          <strong>Plnění podle skupin potravin</strong>
+    {% if kontroly_jidelnicku.varovani %}
+      <section class="admin-panel">
+        <div class="admin-panel-head"><strong>Kontroly jídelníčku</strong></div>
+        <div class="admin-panel-body">
+          <ul class="sklad-info-list">
+            {% for varovani in kontroly_jidelnicku.varovani %}
+              <li>{{ varovani }}</li>
+            {% endfor %}
+          </ul>
         </div>
-        <div class="card-body p-0">
-          <div class="table-responsive">
-            <table class="table table-striped mb-0 align-middle">
-              <thead class="table-light">
-                <tr>
-                  <th>Skupina potravin</th>
-                  <th class="text-end">Norma [g]</th>
-                  <th class="text-end">Skutečnost [g]</th>
-                  <th class="text-end">Rozdíl [g]</th>
-                  <th class="text-end">Skut. v %</th>
-                  <th class="text-end">Limit</th>
-                  <th>Stav</th>
+      </section>
+    {% endif %}
+
+    <section class="admin-panel">
+      <div class="admin-panel-head">
+        <strong>Plnění podle skupin potravin</strong>
+        <div class="sklad-actions">
+          <a class="admin-btn admin-btn--small admin-btn--light" href="{% url 'admin:sklad_mesicni_spotrebni_kos_xls' %}?{{ export_query }}">
+            <i class="fas fa-file-excel"></i> XLS
+          </a>
+          <a class="admin-btn admin-btn--small admin-btn--danger" href="{% url 'admin:sklad_mesicni_spotrebni_kos_pdf' %}?{{ export_query }}">
+            <i class="fas fa-file-pdf"></i> PDF
+          </a>
+        </div>
+      </div>
+      <div class="admin-panel-body p-0">
+        <div class="sklad-table-wrapper">
+          <table class="sklad-table">
+            <thead>
+              <tr>
+                <th>Skupina potravin</th>
+                <th>Norma [g]</th>
+                <th>Skutečnost [g]</th>
+                <th>Rozdíl [g]</th>
+                <th>Skut. v %</th>
+                <th>Limit</th>
+                <th>Stav</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in rows %}
+                <tr class="{% if r.stav == 'pod_limitem' or r.stav == 'nad_limitem' %}sklad-row-soft-warning{% endif %}">
+                  <td>{{ r.skupina_nazev }}</td>
+                  <td>{{ r.norma_g|floatformat:0 }}</td>
+                  <td>{{ r.skutecnost_g|floatformat:0 }}</td>
+                  <td>{{ r.rozdil_g|floatformat:0 }}</td>
+                  <td>{{ r.skutecnost_pct|floatformat:-2 }}</td>
+                  <td>{{ r.min_pct|floatformat:0 }} % {% if r.max_pct %}- {{ r.max_pct|floatformat:0 }} %{% else %}+{% endif %}</td>
+                  <td>
+                    {% if r.stav == "ok" %}
+                      <span class="sklad-badge">V pořádku</span>
+                    {% elif r.stav == "pod_limitem" %}
+                      <span class="sklad-badge">Pod limitem</span>
+                    {% elif r.stav == "nad_limitem" %}
+                      <span class="sklad-badge">Nad limitem</span>
+                    {% else %}
+                      <span class="sklad-badge">Bez normy</span>
+                    {% endif %}
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {% for r in rows %}
-                  <tr class="{% if r.stav == 'pod_limitem' or r.stav == 'nad_limitem' %}table-warning{% endif %}">
-                    <td>{{ r.skupina_nazev }}</td>
-                    <td class="text-end">{{ r.norma_g|floatformat:0 }}</td>
-                    <td class="text-end">{{ r.skutecnost_g|floatformat:0 }}</td>
-                    <td class="text-end">{{ r.rozdil_g|floatformat:0 }}</td>
-                    <td class="text-end">{{ r.skutecnost_pct|floatformat:-2 }}</td>
-                    <td class="text-end">
-                      {{ r.min_pct|floatformat:0 }} %
-                      {% if r.max_pct %}- {{ r.max_pct|floatformat:0 }} %{% else %}+{% endif %}
-                    </td>
-                    <td>
-                      {% if r.stav == "ok" %}
-                        <span class="badge badge-success">V pořádku</span>
-                      {% elif r.stav == "pod_limitem" %}
-                        <span class="badge badge-warning">Pod limitem</span>
-                      {% elif r.stav == "nad_limitem" %}
-                        <span class="badge badge-warning">Nad limitem</span>
-                      {% else %}
-                        <span class="badge badge-secondary">Bez normy</span>
-                      {% endif %}
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
+              {% endfor %}
+            </tbody>
+          </table>
         </div>
       </div>
-    </div>
-  </div>
+    </section>
   {% endif %}
 </div>
 {% endblock %}

@@ -1,0 +1,22 @@
+<div class="admin-hero-kpis">
+  <div class="admin-kpi-card">
+    <span class="admin-kpi-card__label">Druhů jídel dnes</span>
+    <strong class="admin-kpi-card__value">{{ dashboard.production_groups|length }}</strong>
+    <span class="admin-kpi-card__hint">Kolik druhů jídel dnes čeká na výrobu a výdej</span>
+  </div>
+  <div class="admin-kpi-card">
+    <span class="admin-kpi-card__label">Nevydané porce</span>
+    <strong class="admin-kpi-card__value">{{ dashboard.pending_portions }}</strong>
+    <span class="admin-kpi-card__hint">{{ dashboard.pending_orders_count }} objednávek / {{ dashboard.pending_users_count }} strávníků</span>
+  </div>
+  <div class="admin-kpi-card">
+    <span class="admin-kpi-card__label">Vydané dnes</span>
+    <strong class="admin-kpi-card__value">{{ dashboard.issued_portions }}</strong>
+    <span class="admin-kpi-card__hint">{{ dashboard.issued_receipts_count }} uzavřených výdejů</span>
+  </div>
+  <div class="admin-kpi-card">
+    <span class="admin-kpi-card__label">Aktualizováno</span>
+    <strong class="admin-kpi-card__value admin-kpi-card__value--compact">{{ dashboard.last_updated|date:"H:i:s" }}</strong>
+    <span class="admin-kpi-card__hint">Dashboard si data obnovuje průběžně na pozadí</span>
+  </div>
+</div>

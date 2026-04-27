@@ -30,6 +30,39 @@
         <strong>Aktivní otázky</strong>
         <span>{{ otazky_count }}</span>
       </div>
+      <div class="survey-summary-card">
+        <strong>Měsíční volba</strong>
+        <span>
+          {% if mesicni_anketa.exists %}
+            {% if mesicni_anketa.already_voted %}Hlas odeslán{% else %}Otevřeno{% endif %}
+          {% else %}
+            Bez ankety
+          {% endif %}
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <section class="survey-vote-banner">
+    <div>
+      <span class="rate-eyebrow"><i class="fas fa-ballot-check"></i> Měsíční anketa menu</span>
+      {% if mesicni_anketa.exists %}
+        <h2>{{ mesicni_anketa.anketa.nazev }}</h2>
+        <p>
+          {% if mesicni_anketa.anketa.navrhujici_trida %}
+            Návrh připravila třída {{ mesicni_anketa.anketa.navrhujici_trida }}.
+          {% endif %}
+          Hlasování běží od {{ mesicni_anketa.anketa.hlasovani_od|date:"d.m.Y" }} do {{ mesicni_anketa.anketa.hlasovani_do|date:"d.m.Y" }}.
+        </p>
+      {% else %}
+        <h2>Měsíční volba zatím není vypsaná</h2>
+        <p>Jakmile bude připravená anketa s variantami menu, objeví se tady.</p>
+      {% endif %}
+    </div>
+    <div class="survey-vote-banner__actions">
+      <a class="survey-btn" href="{% url 'ankety:mesicni_volba' %}">
+        {% if mesicni_anketa.already_voted %}Zobrazit výsledky{% else %}Hlasovat{% endif %}
+      </a>
     </div>
   </section>
 
@@ -44,7 +77,7 @@
   {% endif %}
 
   <section>
-    <h2 class="h5 fw-bold mb-3">Čeká na hodnocení</h2>
+    <h2 class="h5 fw-bold mb-3">Hodnocení jídel - čeká na hodnocení</h2>
     {% if hodnotit %}
       <div class="survey-grid">
         {% for item in hodnotit %}
@@ -69,7 +102,7 @@
   </section>
 
   <section>
-    <h2 class="h5 fw-bold mb-3">Už ohodnoceno</h2>
+    <h2 class="h5 fw-bold mb-3">Hodnocení jídel - už ohodnoceno</h2>
     {% if hotovo %}
       <div class="survey-grid">
         {% for item in hotovo %}

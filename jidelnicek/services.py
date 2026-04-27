@@ -11,7 +11,7 @@ from django.db.models import Sum
 # MODELY
 from canteen_settings.models import GroupOrderLimit, OrderClosingTime
 from dotace.models import DotaceProJidelniskouSkupinu, DotacniPolitika, SkupinoveNastaveni
-from objednavky.models import Order, OrderItem
+from objednavky.models import Order, OrderItem, OrderValidator
 from jidelnicek.models import Jidelnicek, PolozkaJidelnicku
 from canteen_settings.utils import is_ordering_allowed, get_order_closing_datetime
 from users.group_utils import (
@@ -234,57 +234,32 @@ def get_user_price_for_item(user, item, target_date=None, quantity=1, exclude_or
 def check_user_balance_for_item(user, item_price):
     """Kontroluje zůstatek uživatele pro objednávku položky"""
     try:
-        zustatek = user.aktualni_zustatek or 0
-        zustatek = float(zustatek)
-        item_price = float(item_price)
-        predikce_zustatek = zustatek - item_price
+        item_price = float(item_price or 0)
+        aktualni_zustatek = float(user.aktualni_zustatek or 0)
+        ok_balance, reason = OrderValidator.check_user_balance(user, item_price)
+        if ok_balance:
+            return True, None
 
-        if predikce_zustatek < 0:
-            nastaveni = None
+        if reason == "debit_limit_exceeded":
             nastaveni = get_first_group_setting(user)
+            debit_limit = float(getattr(nastaveni, "debit_limit", 0) or 0)
+            predikce_zustatku = aktualni_zustatek - item_price
+            return False, {
+                "type": "predicted_debit_limit",
+                "required": debit_limit,
+                "current": predikce_zustatku,
+                "predicted": True,
+                "message": "Objednávka by překročila debetní limit",
+            }
 
-            if nastaveni and nastaveni.nutnost_dobit and zustatek < item_price:
-                error_info = {
-                    "type": "insufficient_balance",
-                    "required": item_price,
-                    "current": zustatek,
-                    "message": "Nedostatečný zůstatek",
-                }
-                return False, error_info
-
-            if nastaveni and nastaveni.cerpani_debit:
-                debit_limit = float(nastaveni.debit_limit or 0)
-                if predikce_zustatek < debit_limit:
-                    error_info = {
-                        "type": "predicted_debit_limit",
-                        "required": debit_limit,
-                        "current": predikce_zustatek,
-                        "predicted": True,
-                        "message": "Objednávka by překročila debetní limit",
-                    }
-                    return False, error_info
-
-            if nastaveni and zustatek < float(getattr(nastaveni, "debit_limit", 0)):
-                debit_limit = float(nastaveni.debit_limit or 0)
-                error_info = {
-                    "type": "debit_limit",
-                    "required": debit_limit,
-                    "current": zustatek,
-                    "message": "Překročen debetní limit",
-                }
-                return False, error_info
-
-            if not nastaveni and zustatek < item_price:
-                error_info = {
-                    "type": "insufficient_balance",
-                    "required": item_price,
-                    "current": zustatek,
-                    "message": "Nedostatečný zůstatek",
-                }
-                return False, error_info
-
-        return True, None
+        return False, {
+            "type": "insufficient_balance",
+            "required": item_price,
+            "current": aktualni_zustatek,
+            "message": "Nedostatečný zůstatek",
+        }
     except Exception:
+        logger.exception("Chyba při kontrole zůstatku uživatele pro položku.")
         return True, None
 
 

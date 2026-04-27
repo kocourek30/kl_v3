@@ -16,13 +16,15 @@ REGISTERED_TASKS = (
         "expected_interval_hours": 24,
     },
     {
-        "slug": "menu-import-link",
-        "name": "Import jídelního lístku",
+        "slug": "menu-autoimport-datax",
+        "name": "Autoimport jídelníčku (DATAx)",
         "category": "menu",
-        "description": "Otevře ruční import jídelníčku z TXT. Později sem může přibýt i audit importů.",
-        "is_quick_link": True,
-        "allow_manual_run": False,
-        "target_url_name": "admin:jidelnicek_import_txt",
+        "command_name": "run_datax_autoimport",
+        "description": "Načte aktuální a příští měsíc z DATAx DBF bez potřeby ručního zásahu.",
+        "expected_interval_hours": 6,
+        "default_options": {
+            "months_ahead": 1,
+        },
     },
     {
         "slug": "price-recalculation-link",

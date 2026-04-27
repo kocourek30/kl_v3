@@ -45,9 +45,11 @@ class ProvozJidelnyDashboardTests(TestCase):
         response = self.client.get(reverse("admin:provoz_jidelny_provoznidashboard_changelist"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Provozní dashboard pro obsluhu")
+        self.assertContains(response, "Dnes vyrobit a vydat")
+        self.assertContains(response, "Přehled výdeje")
+        self.assertContains(response, "Aktuální výdej")
         self.assertContains(response, "Živý výdej")
         self.assertContains(response, "Přehled pro kuchyni")
-        self.assertNotContains(response, "Admin přehled")
 
     def test_admin_index_redirects_staff_to_canteen_dashboard(self):
         self.client.force_login(self.staff)
@@ -55,3 +57,15 @@ class ProvozJidelnyDashboardTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn(reverse("admin:provoz_jidelny_provoznidashboard_changelist"), response["Location"])
 
+    def test_dashboard_snapshot_returns_html_fragments(self):
+        self.client.force_login(self.superuser)
+        response = self.client.get(
+            reverse("admin:provoz_jidelny_provoznidashboard_snapshot"),
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("hero_html", payload)
+        self.assertIn("sections_html", payload)
+        self.assertIn("Nevydané porce", payload["hero_html"])
+        self.assertIn("Dnes vyrobit a vydat", payload["sections_html"])

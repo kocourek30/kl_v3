@@ -36,6 +36,7 @@ ADMIN_ACCESS_LEVEL_TONES = {
     "write": "warning",
     "control": "good",
 }
+GLOBAL_HIDDEN_ADMIN_APP_LABELS = {"frontend"}
 
 
 def sync_registered_tasks():
@@ -378,8 +379,33 @@ def is_menu_link_visible_for_user(user, url):
     return True
 
 
+def build_visible_custom_links_for_app(user, app_label):
+    links = []
+    for link in settings.JAZZMIN_SETTINGS.get("custom_links", {}).get(app_label, []):
+        target = link.get("url", "")
+        try:
+            resolved_url = reverse(target) if target and not target.startswith("/") else target
+        except NoReverseMatch:
+            resolved_url = target
+        if not resolved_url or not is_menu_link_visible_for_user(user, resolved_url):
+            continue
+        links.append(
+            {
+                "name": link.get("name", "Rychlá akce"),
+                "object_name": link.get("name", "Rychlá akce"),
+                "perms": {},
+                "admin_url": resolved_url,
+                "add_url": None,
+                "view_only": True,
+                "icon": link.get("icon", "fas fa-link"),
+                "custom": True,
+            }
+        )
+    return links
+
+
 def filter_admin_app_items_for_user(user, app_list):
-    hidden_app_labels = get_hidden_app_labels_for_user(user)
+    hidden_app_labels = get_hidden_app_labels_for_user(user) | GLOBAL_HIDDEN_ADMIN_APP_LABELS
     filtered_apps = []
     for app in app_list:
         if app.get("app_label") in hidden_app_labels:
@@ -527,6 +553,13 @@ def build_dashboard_health():
         1 for user in CustomUser.objects.filter(is_active=True)
         if getattr(user, "aktualni_zustatek", 0) < 0
     )
+    last_menu_import = None
+    try:
+        from jidelnicek.models import MenuImportRun
+
+        last_menu_import = MenuImportRun.objects.order_by("-started_at").first()
+    except Exception:
+        last_menu_import = None
 
     try:
         from licencovani.services import get_license_summary_cards
@@ -551,8 +584,28 @@ def build_dashboard_health():
     else:
         license_tone = "danger"
 
+    import_tone = "warning"
+    import_value = "Žádný běh"
+    import_hint = "Import jídelníčku ještě nebyl spuštěn."
+    if last_menu_import:
+        if last_menu_import.status == "success":
+            import_tone = "good"
+        elif last_menu_import.status == "failed":
+            import_tone = "danger"
+        import_value = f"{last_menu_import.get_source_display()} • {last_menu_import.get_status_display()}"
+        import_hint = (
+            f"{timezone.localtime(last_menu_import.started_at):%d.%m.%Y %H:%M}"
+            + (f" • {last_menu_import.summary}" if last_menu_import.summary else "")
+        )
+
     return {
         "cards": [
+            {
+                "label": "Poslední import jídelníčku",
+                "value": import_value,
+                "tone": import_tone,
+                "hint": import_hint,
+            },
             {
                 "label": "Licence",
                 "value": license_summary["status_label"],

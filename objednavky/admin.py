@@ -10,6 +10,7 @@ from decimal import Decimal
 from django.contrib import admin, messages
 from django.shortcuts import render, redirect
 from django.utils.html import format_html
+from django.utils import timezone
 from datetime import date, timedelta
 
 from .models import (
@@ -247,6 +248,7 @@ class OrderAdmin(admin.ModelAdmin):
         context = dict(
             self.admin_site.each_context(request),
             form=form,
+            today_iso=timezone.localdate().isoformat(),
         )
         return render(request, "admin/bulk_create_orders.html", context)
 
@@ -325,10 +327,11 @@ class OrderAdmin(admin.ModelAdmin):
 
     def jidelnicek_days_api(self, request):
         from datetime import timedelta
-        days_set = set()
-        jidelnicky = Jidelnicek.objects.all()
+        today = timezone.localdate()
+        days_set = {today.strftime('%Y-%m-%d')}
+        jidelnicky = Jidelnicek.objects.filter(platnost_do__gte=today)
         for j in jidelnicky:
-            current = j.platnost_od
+            current = max(j.platnost_od, today)
             while current <= j.platnost_do:
                 days_set.add(current.strftime('%Y-%m-%d'))
                 current += timedelta(days=1)

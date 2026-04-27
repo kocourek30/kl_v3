@@ -27,10 +27,22 @@ document.addEventListener("DOMContentLoaded", () => {
   const menuItemsUrl = root.dataset.menuItemsUrl;
   const menuDaysUrl = root.dataset.menuDaysUrl;
   const usersUrl = root.dataset.usersUrl;
+  const todayIso = root.dataset.today;
+
+  if (selectedDateInput) {
+    selectedDateInput.value = "";
+  }
 
   let availableDates = [];
   let currentMonth = new Date();
   currentMonth.setDate(1);
+
+  function formatDateISO(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
 
   function setText(nodes, value) {
     nodes.forEach((node) => {
@@ -69,7 +81,7 @@ document.addEventListener("DOMContentLoaded", () => {
     for (let i = 0; i < 42; i += 1) {
       const cellDate = new Date(gridStart);
       cellDate.setDate(gridStart.getDate() + i);
-      const iso = cellDate.toISOString().slice(0, 10);
+      const iso = formatDateISO(cellDate);
       const isCurrentMonth = cellDate.getMonth() === month;
       const isAvailable = availableDates.includes(iso);
       const isSelected = selectedDateInput.value === iso;
@@ -257,14 +269,38 @@ document.addEventListener("DOMContentLoaded", () => {
   fetch(menuDaysUrl)
     .then((res) => res.json())
     .then((days) => {
-      availableDates = Array.isArray(days) ? days : [];
+      availableDates = Array.isArray(days) ? [...days] : [];
+      const baseToday = todayIso ? new Date(`${todayIso}T00:00:00`) : new Date();
+      const today = new Date(baseToday);
+      today.setDate(1);
+      currentMonth = new Date(today);
+      const effectiveTodayIso = todayIso || formatDateISO(new Date());
+
+      // Dnešek chceme v kalendáři nabízet vždy, i kdyby pro něj API
+      // zrovna nevrátilo jídelníček. Obsluha tak může cíleně pracovat
+      // s dnešním dnem bez ručního přepisování data.
+      if (effectiveTodayIso && !availableDates.includes(effectiveTodayIso)) {
+        availableDates.push(effectiveTodayIso);
+      }
+      availableDates.sort();
+
       if (availableDates.length && !selectedDateInput.value) {
-        selectedDateInput.value = availableDates[0];
-        currentMonth = new Date(`${availableDates[0]}T00:00:00`);
-        currentMonth.setDate(1);
-        setText(statsDateNodes, formatDateLabel(availableDates[0]));
-        selectedHint.textContent = `Výchozí den: ${formatDateLabel(availableDates[0])}`;
-        loadMenuItems(availableDates[0]);
+        const currentMonthPrefix = effectiveTodayIso.slice(0, 7);
+        const selectedDate =
+          (availableDates.includes(effectiveTodayIso) && effectiveTodayIso) ||
+          availableDates.find((day) => day.startsWith(currentMonthPrefix));
+
+        if (selectedDate) {
+          selectedDateInput.value = selectedDate;
+          setText(statsDateNodes, formatDateLabel(selectedDate));
+          selectedHint.textContent = `Výchozí den: ${formatDateLabel(selectedDate)}`;
+          loadMenuItems(selectedDate);
+        } else {
+          selectedDateInput.value = "";
+          setText(statsDateNodes, "Nevybráno");
+          selectedHint.textContent = "V aktuálním měsíci není žádný den s jídelníčkem. Vyber ho ručně v kalendáři.";
+          menuContainer.innerHTML = '<div class="bulk-menu-empty">V aktuálním měsíci není dostupný jídelníček. Přepni měsíc nebo vyber jiný den.</div>';
+        }
       }
       renderCalendar();
       updateSubmitState();
