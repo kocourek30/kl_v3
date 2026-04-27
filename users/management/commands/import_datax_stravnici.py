@@ -57,6 +57,7 @@ class Command(BaseCommand):
         existing_columns = self._get_columns("users_customuser")
         if not existing_columns:
             raise CommandError("Tabulka users_customuser v DB neexistuje.")
+        has_must_change_password = "must_change_password" in existing_columns
         has_group_fk = "stravovaci_skupina_id" in existing_columns and "users_stravovaciskupina" in connection.introspection.table_names()
 
         existing_by_personal = self._load_existing_users_by_personal()
@@ -126,17 +127,18 @@ class Command(BaseCommand):
                         last_name=last_name,
                         osobni_cislo=osobni_cislo,
                     )
-                    user_id = self._create_user_sql(
-                        username=username,
-                        password_hash=password_hash,
+                user_id = self._create_user_sql(
+                    username=username,
+                    password_hash=password_hash,
                         first_name=first_name,
                         last_name=last_name,
                         email=email,
                         osobni_cislo=osobni_cislo,
-                        identifikacni_medium=medium or None,
-                        is_active=is_active,
-                        stravovaci_skupina_id=skupina_id if has_group_fk else None,
-                    )
+                    identifikacni_medium=medium or None,
+                    is_active=is_active,
+                    must_change_password=has_must_change_password,
+                    stravovaci_skupina_id=skupina_id if has_group_fk else None,
+                )
                     existing_by_personal[osobni_cislo] = {
                         "id": user_id,
                         "username": username,
@@ -145,6 +147,7 @@ class Command(BaseCommand):
                         "email": email,
                         "identifikacni_medium": medium or "",
                         "is_active": is_active,
+                        "must_change_password": has_must_change_password,
                         "stravovaci_skupina_id": skupina_id,
                     }
                     created += 1
@@ -181,6 +184,9 @@ class Command(BaseCommand):
                     changed = True
                 if not check_password(osobni_cislo, user.get("password") or ""):
                     changed_fields["password"] = password_hash
+                    if has_must_change_password:
+                        changed_fields["must_change_password"] = True
+                        changed_fields["password_changed_at"] = None
                     changed = True
 
                 if changed:
@@ -281,6 +287,8 @@ class Command(BaseCommand):
             "osobni_cislo",
             "is_active",
         ]
+        if "must_change_password" in columns:
+            select_cols.append("must_change_password")
         if "stravovaci_skupina_id" in columns:
             select_cols.append("stravovaci_skupina_id")
 
@@ -309,6 +317,7 @@ class Command(BaseCommand):
         osobni_cislo: str,
         identifikacni_medium: str | None,
         is_active: bool,
+        must_change_password: bool,
         stravovaci_skupina_id: int | None,
     ) -> int:
         columns = self._get_columns("users_customuser")
@@ -340,6 +349,9 @@ class Command(BaseCommand):
             identifikacni_medium,
             osobni_cislo,
         ]
+        if "must_change_password" in columns:
+            insert_cols.append("must_change_password")
+            values.append(must_change_password)
         if "stravovaci_skupina_id" in columns:
             insert_cols.append("stravovaci_skupina_id")
             values.append(stravovaci_skupina_id)

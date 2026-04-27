@@ -17,6 +17,7 @@ from .models import (
     DruhJidla,
     Jidelnicek,
     Jidlo,
+    JidloPhotoProposal,
     MenuImportRun,
     PolozkaJidelnicku,
     vychozi_ikona_druhu_jidla,
@@ -25,6 +26,7 @@ from .models import (
 from dotace.models import DotacniPolitika, DotaceProJidelniskouSkupinu
 from sklad.admin import RecepturaPolozkaInline, JidloKomponentaInline
 from pokladna.models import PLUPolozka, DPHSkupina, PLUKategorie
+from .ai_photos import apply_photo_proposal, generate_food_photo_proposal, reject_photo_proposal
 
 
 class JidloAdminForm(forms.ModelForm):
@@ -294,6 +296,28 @@ class JidloAdmin(admin.ModelAdmin):
                 jidlo.save(update_fields=["ikona"])
                 updated += 1
             self.message_user(request, f"Hotovo: doplněno ikon u {updated} jídel.")
+        elif operation == "fill_photos_ai":
+            updated = 0
+            skipped = 0
+            failed = 0
+
+            for jidlo in queryset.select_related("druh"):
+                result = generate_food_photo_proposal(jidlo, overwrite=False, dry_run=False, timeout=90)
+                if result.status == "updated":
+                    updated += 1
+                elif result.status == "failed":
+                    failed += 1
+                else:
+                    skipped += 1
+
+            self.message_user(
+                request,
+                (
+                    "Hotovo: AI návrh fotky vytvořen u "
+                    f"{updated} jídel, přeskočeno {skipped}, selhalo {failed}. "
+                    "Návrhy čekají na schválení v sekci „Návrhy AI fotek jídel“. Pro běh je potřeba OPENAI_API_KEY."
+                ),
+            )
         else:
             self.message_user(request, "Vyber hromadnou operaci, kterou chceš provést.")
 
@@ -1017,6 +1041,109 @@ class MenuImportRunAdmin(admin.ModelAdmin):
         "error_message",
     )
     ordering = ("-started_at",)
+
+    def has_add_permission(self, request):
+        return False
+
+
+@admin.register(JidloPhotoProposal)
+class JidloPhotoProposalAdmin(admin.ModelAdmin):
+    list_display = (
+        "created_at",
+        "jidlo",
+        "status_badge",
+        "preview",
+        "model_name",
+        "reviewed_at",
+        "reviewed_by",
+    )
+    list_filter = ("status", "created_at", "model_name")
+    search_fields = ("jidlo__nazev", "prompt", "error_message")
+    readonly_fields = (
+        "jidlo",
+        "image",
+        "status",
+        "prompt",
+        "model_name",
+        "error_message",
+        "created_at",
+        "reviewed_at",
+        "reviewed_by",
+        "preview_large",
+    )
+    actions = ("approve_and_apply", "reject_selected")
+    ordering = ("-created_at",)
+
+    @admin.display(description="Stav")
+    def status_badge(self, obj):
+        colors = {
+            JidloPhotoProposal.STATUS_PENDING: "#2f8f2f",
+            JidloPhotoProposal.STATUS_APPROVED: "#1f7a8c",
+            JidloPhotoProposal.STATUS_REJECTED: "#b02a37",
+            JidloPhotoProposal.STATUS_APPLIED: "#6c757d",
+        }
+        color = colors.get(obj.status, "#6c757d")
+        return format_html(
+            '<span style="display:inline-block;padding:3px 10px;border-radius:999px;background:{}22;color:{};font-weight:700;">{}</span>',
+            color,
+            color,
+            obj.get_status_display(),
+        )
+
+    @admin.display(description="Náhled")
+    def preview(self, obj):
+        if not obj.image:
+            return "—"
+        return format_html(
+            '<img src="{}" style="width:48px;height:48px;object-fit:cover;border-radius:10px;border:1px solid #d9e2d1;" alt="">',
+            obj.image.url,
+        )
+
+    @admin.display(description="Velký náhled")
+    def preview_large(self, obj):
+        if not obj.image:
+            return "Návrh neobsahuje obrázek."
+        return format_html(
+            '<img src="{}" style="max-width:420px;width:100%;height:auto;border-radius:12px;border:1px solid #d9e2d1;" alt="">',
+            obj.image.url,
+        )
+
+    @admin.action(description="Schválit a propsat do fotky jídla")
+    def approve_and_apply(self, request, queryset):
+        updated = 0
+        failed = 0
+        skipped = 0
+        for proposal in queryset.select_related("jidlo"):
+            if proposal.status == JidloPhotoProposal.STATUS_REJECTED:
+                skipped += 1
+                continue
+            result = apply_photo_proposal(proposal, reviewed_by=request.user)
+            if result.status == "updated":
+                updated += 1
+            elif result.status == "failed":
+                failed += 1
+            else:
+                skipped += 1
+
+        self.message_user(
+            request,
+            f"Schváleno a propsáno: {updated}, přeskočeno: {skipped}, chyby: {failed}.",
+        )
+
+    @admin.action(description="Zamítnout vybrané návrhy")
+    def reject_selected(self, request, queryset):
+        changed = 0
+        skipped = 0
+        for proposal in queryset:
+            if proposal.status == JidloPhotoProposal.STATUS_APPLIED:
+                skipped += 1
+                continue
+            reject_photo_proposal(proposal, reviewed_by=request.user)
+            changed += 1
+        self.message_user(
+            request,
+            f"Zamítnuto: {changed}, přeskočeno (už použité): {skipped}.",
+        )
 
     def has_add_permission(self, request):
         return False

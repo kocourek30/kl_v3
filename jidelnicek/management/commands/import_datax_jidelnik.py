@@ -14,9 +14,18 @@ from django.db import connection
 from django.db.utils import OperationalError, ProgrammingError
 from django.utils.text import slugify
 from django.utils import timezone
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 
 from jidelnicek.models import DruhJidla, Jidelnicek, Jidlo, MenuImportRun, PolozkaJidelnicku
-from objednavky.models import Order, OrderItem, PriceRecalculationDetail, PriceRecalculationLog
+from jidelnicek.services import can_user_access_menu_item, get_user_price_for_item
+from objednavky.models import (
+    Order,
+    OrderCancellationLog,
+    OrderItem,
+    PriceRecalculationDetail,
+    PriceRecalculationLog,
+)
 from vydej.models import PolozkaUctenky, VydejniUctenka
 
 
@@ -189,10 +198,14 @@ class Command(BaseCommand):
 
                 if purge_related:
                     self._purge_related_data()
+                else:
+                    self._purge_orders_for_period(year, months)
 
                 created_menu_days = 0
                 created_items = 0
                 created_foods = 0
+                created_orders = 0
+                created_order_items = 0
 
                 if legacy_mode:
                     self._delete_target_period_legacy(year, months)
@@ -259,6 +272,11 @@ class Command(BaseCommand):
                             if was_polozka_created:
                                 created_items += 1
 
+                self._ensure_default_type_visibility_mapping()
+                created_orders, created_order_items = self._create_orders_for_imported_days(
+                    list(grouped_by_day.keys())
+                )
+
             if import_run:
                 import_run.status = MenuImportRun.STATUS_SUCCESS
                 import_run.finished_at = timezone.now()
@@ -266,7 +284,12 @@ class Command(BaseCommand):
                 import_run.items_created = created_items
                 import_run.foods_created = created_foods
                 import_run.summary = (
-                    f"Import dokončen: jídelníčky={created_menu_days}, položky={created_items}, nová jídla={created_foods}."
+                    "Import dokončen: "
+                    f"jídelníčky={created_menu_days}, "
+                    f"položky={created_items}, "
+                    f"nová jídla={created_foods}, "
+                    f"objednávky={created_orders}, "
+                    f"objednané položky={created_order_items}."
                 )
                 import_run.save(
                     update_fields=[
@@ -284,7 +307,9 @@ class Command(BaseCommand):
                     "Import dokončen: "
                     f"jídelníčky={created_menu_days}, "
                     f"položky={created_items}, "
-                    f"nová jídla={created_foods}"
+                    f"nová jídla={created_foods}, "
+                    f"objednávky={created_orders}, "
+                    f"objednané položky={created_order_items}"
                 )
             )
         except Exception as exc:
@@ -344,6 +369,152 @@ class Command(BaseCommand):
                 cursor.execute(f'DELETE FROM "{Jidlo._meta.db_table}"')
         else:
             safe_delete(Jidlo)
+
+    def _purge_orders_for_period(self, year: int, months: list[int]) -> None:
+        """
+        Pro opakovatelný import:
+        smaže objednávky v cílovém období (a navázané položky přes CASCADE),
+        aby šlo bezpečně přegenerovat jídelníčky a výchozí objednávky.
+        """
+        orders_qs = Order.objects.filter(datum_vydeje__year=year, datum_vydeje__month__in=months)
+        orders_count = orders_qs.count()
+        if orders_count:
+            orders_qs.delete()
+
+        OrderCancellationLog.objects.filter(
+            datum_vydeje__year=year,
+            datum_vydeje__month__in=months,
+        ).delete()
+
+        if orders_count:
+            self.stdout.write(
+                self.style.NOTICE(
+                    f"Smazáno {orders_count} objednávek v cílovém období pro čistý reimport."
+                )
+            )
+
+    def _create_orders_for_imported_days(self, imported_days: list[date]) -> tuple[int, int]:
+        """
+        Po importu jídelníčku založí defaultní objednávky pro všechny aktivní uživatele:
+        - každému objedná vše, co podle viditelnosti může vidět,
+        - 1 ks od každé viditelné položky,
+        - pouze pro dnešek a budoucnost (historii necháváme bez zásahu).
+        """
+        if not imported_days:
+            return 0, 0
+
+        User = get_user_model()
+        today = timezone.localdate()
+        target_days = sorted({d for d in imported_days if d >= today})
+        if not target_days:
+            return 0, 0
+
+        users = (
+            User.objects.filter(is_active=True)
+            .exclude(is_superuser=True)
+            .exclude(osobni_cislo__isnull=True)
+            .exclude(osobni_cislo__exact="")
+            .select_related("stravovaci_skupina", "stravovaci_skupina__django_group")
+            .prefetch_related("groups")
+            .order_by("id")
+        )
+        users = list(users)
+        if not users:
+            return 0, 0
+
+        created_orders = 0
+        created_order_items = 0
+
+        for target_date in target_days:
+            day_items = list(
+                PolozkaJidelnicku.objects.filter(
+                    jidelnicek__platnost_od__lte=target_date,
+                    jidelnicek__platnost_do__gte=target_date,
+                )
+                .select_related("jidlo", "druh_jidla")
+                .prefetch_related("druh_jidla__viditelne_pro_skupiny")
+                .order_by("druh_jidla__poradi", "druh_jidla__nazev", "jidlo__nazev")
+            )
+            if not day_items:
+                continue
+
+            for user in users:
+                visible_items = [item for item in day_items if can_user_access_menu_item(user, item)]
+                if not visible_items:
+                    continue
+
+                order, was_created = Order.objects.get_or_create(
+                    user=user,
+                    datum_vydeje=target_date,
+                    defaults={"status": "objednano"},
+                )
+                if was_created:
+                    created_orders += 1
+                elif order.status not in {"zalozena-obsluhou", "objednano"}:
+                    order.status = "objednano"
+                    order.save(update_fields=["status"])
+
+                existing_items = {
+                    oi.menu_item_id: oi
+                    for oi in order.items.filter(
+                        menu_item_id__in=[menu_item.id for menu_item in visible_items]
+                    )
+                }
+
+                for menu_item in visible_items:
+                    existing = existing_items.get(menu_item.id)
+                    price = get_user_price_for_item(
+                        user,
+                        menu_item,
+                        target_date=target_date,
+                        quantity=1,
+                        exclude_order_item_id=existing.id if existing else None,
+                    )
+
+                    if existing is None:
+                        OrderItem.objects.create(
+                            order=order,
+                            menu_item=menu_item,
+                            quantity=1,
+                            cena=price or Decimal("0.00"),
+                        )
+                        created_order_items += 1
+                        continue
+
+                    changed_fields = []
+                    if existing.quantity != 1:
+                        existing.quantity = 1
+                        changed_fields.append("quantity")
+                    if existing.cena != (price or Decimal("0.00")):
+                        existing.cena = price or Decimal("0.00")
+                        changed_fields.append("cena")
+                    if changed_fields:
+                        existing.save(update_fields=changed_fields)
+
+        return created_orders, created_order_items
+
+    def _ensure_default_type_visibility_mapping(self) -> None:
+        """
+        DATAx provozní pravidlo viditelnosti:
+        - Učitelé a personál: pouze oběd.
+        - Studenti: vše (včetně oběda).
+        """
+        students_group = Group.objects.filter(name="Studenti").first()
+        staff_group = Group.objects.filter(name="Učitelé a personál").first()
+        if not students_group or not staff_group:
+            self.stdout.write(
+                self.style.WARNING(
+                    "Nelze nastavit výchozí viditelnost druhů jídel (chybí skupiny Studenti / Učitelé a personál)."
+                )
+            )
+            return
+
+        for druh in DruhJidla.objects.all():
+            if (druh.nazev or "").strip().lower() == "oběd":
+                target_groups = [students_group, staff_group]
+            else:
+                target_groups = [students_group]
+            druh.viditelne_pro_skupiny.set(target_groups)
 
     def _is_legacy_schema(self) -> bool:
         existing_tables = set(connection.introspection.table_names())

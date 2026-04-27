@@ -145,6 +145,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'users.middleware.ForcePasswordChangeMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'admin_dashboard.middleware.ModuleAccessMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -206,6 +207,14 @@ TIME_ZONE = 'Europe/Prague'
 USE_I18N = True
 USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Local override for auth migrations:
+# Some workstation Python installs may contain non-project auth migrations
+# (e.g. accidental 0013/0014 files). Pinning auth migration module keeps
+# project migrations deterministic and prevents broken external dependencies.
+MIGRATION_MODULES = {
+    "auth": "kliknijidlo.auth_migrations",
+}
 
 
 TEMPLATES = [

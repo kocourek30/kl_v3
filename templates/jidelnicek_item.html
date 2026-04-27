@@ -92,24 +92,30 @@
 
       {% elif item.order_status == "ordered" %}
         <div class="mi-block mi-action mi-block-full">
-          {% if item.can_cancel %}
-            <!-- ZRUŠENÍ OBJEDNÁVKY: menu_item_id + menu_date -->
-            <form action="{% url 'jidelnicek:order_delete' %}" method="post"
-                  class="mb-0 ajax-order-form d-flex align-items-stretch justify-content-end w-100">
-              {% csrf_token %}
-              <input type="hidden" name="menu_item_id" value="{{ item.id }}">
-              <input type="hidden" name="menu_date" value="{% if item.target_date %}{{ item.target_date|date:'Y-m-d' }}{% else %}{{ date|date:'Y-m-d' }}{% endif %}">
-              <button type="submit" class="btn mi-btn-danger mi-btn-fixed flex-grow-1">
-                <i class="fas fa-trash me-1"></i>
-                Zrušit{% if not item.hide_quantity and item.current_quantity %} ({{ item.current_quantity }} ks){% endif %}
+          {% if request.user.is_staff or request.user.is_superuser %}
+            {% if item.can_cancel %}
+              <!-- ZRUŠENÍ POLOŽKY: pouze pro obsluhu/admin -->
+              <form action="{% url 'jidelnicek:order_delete' %}" method="post"
+                    class="mb-0 ajax-order-form d-flex align-items-stretch justify-content-end w-100">
+                {% csrf_token %}
+                <input type="hidden" name="menu_item_id" value="{{ item.id }}">
+                <input type="hidden" name="menu_date" value="{% if item.target_date %}{{ item.target_date|date:'Y-m-d' }}{% else %}{{ date|date:'Y-m-d' }}{% endif %}">
+                <button type="submit" class="btn mi-btn-danger mi-btn-fixed flex-grow-1">
+                  <i class="fas fa-trash me-1"></i>
+                  Zrušit{% if not item.hide_quantity and item.current_quantity %} ({{ item.current_quantity }} ks){% endif %}
+                </button>
+              </form>
+            {% else %}
+              <button class="btn mi-btn-success mi-btn-fixed w-100" disabled>
+                <i class="fas fa-check-circle me-1"></i>
+                Objednáno{% if not item.hide_quantity %} {{ item.current_quantity|default:"1" }} ks{% endif %}
               </button>
-            </form>
+            {% endif %}
           {% else %}
-            <!-- Objednáno, ale už nelze rušit -->
-            <button class="btn mi-btn-success mi-btn-fixed w-100" disabled>
-              <i class="fas fa-check-circle me-1"></i>
-              Objednáno{% if not item.hide_quantity %} {{ item.current_quantity|default:"1" }} ks{% endif %}
-            </button>
+            <div class="mi-day-cancel-note w-100">
+              <i class="fas fa-circle-info me-1"></i>
+              Jídlo je objednáno. Odhlášku proveďte přes panel <strong>Aktuální objednávky</strong> (celý den).
+            </div>
           {% endif %}
         </div>
 
@@ -151,9 +157,13 @@
             </form>
           {% else %}
             <button class="btn mi-btn-ghost mi-btn-fixed w-100" disabled>
-              <i class="fas fa-exclamation-triangle me-1"></i> 
-              {% if item.validation_error == 'group_limit' %}
-                Limit skupiny překročen
+              <i class="fas fa-circle-info me-1"></i>
+              {% if item.validation_error == 'auto_order_managed' %}
+                Objednávky se vytváří automaticky
+              {% elif item.validation_error == 'order_closed' %}
+                Objednávky jsou uzavřeny
+              {% elif item.validation_error == 'group_limit' %}
+                Limit skupiny je vyčerpaný
               {% else %}
                 Nedostatečný zůstatek
               {% endif %}
@@ -558,6 +568,21 @@ function adjustQty(btn, delta) {
   background: #e6f4ea;
   border: 1px solid #bbf7d0;
   color: #166534;
+}
+
+.mi-day-cancel-note {
+  border: 1px solid #dbe3ec;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 999px;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.84rem;
+  font-weight: 500;
+  padding: 0 0.9rem;
+  text-align: center;
 }
 
 /* Vypnutí spinnerů */

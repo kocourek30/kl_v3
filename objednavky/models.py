@@ -37,6 +37,11 @@ class Order(models.Model):
     storno_datum = models.DateTimeField(null=True, blank=True, verbose_name="Storno datum")
     class Meta:
         unique_together = ('user', 'datum_vydeje')
+        indexes = [
+            models.Index(fields=["user", "datum_vydeje"]),
+            models.Index(fields=["datum_vydeje", "status"]),
+            models.Index(fields=["user", "status", "datum_vydeje"]),
+        ]
         verbose_name = "Objednávka"
         verbose_name_plural = "Objednávky uživatelů"
 
@@ -222,3 +227,33 @@ class PriceRecalculationDetail(models.Model):
 
     def __str__(self):
         return f"{self.order_item}: {self.old_price} → {self.new_price}"
+
+
+class OrderCancellationLog(models.Model):
+    """Audit storna objednávek/odhlášek z uživatelského dashboardu."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="order_cancellation_logs",
+        verbose_name="Uživatel",
+    )
+    datum_vydeje = models.DateField(verbose_name="Datum výdeje")
+    cancelled_at = models.DateTimeField(auto_now_add=True, verbose_name="Zrušeno")
+    cancelled_late = models.BooleanField(default=False, verbose_name="Po uzávěrce")
+    reason = models.CharField(max_length=255, blank=True, default="", verbose_name="Důvod")
+    items_count = models.PositiveIntegerField(default=0, verbose_name="Počet položek")
+    total_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        verbose_name="Celková cena",
+    )
+
+    class Meta:
+        verbose_name = "Log storna objednávky"
+        verbose_name_plural = "Logy storen objednávek"
+        ordering = ["-cancelled_at"]
+
+    def __str__(self):
+        return f"{self.user} | {self.datum_vydeje:%d.%m.%Y} | {self.total_price} Kč"

@@ -159,6 +159,16 @@ class CustomUser(AbstractUser):
         verbose_name=_("Stravovací skupina"),
         help_text=_("Např. SŠ žák, ZŠ 1. stupeň…"),
     )
+    must_change_password = models.BooleanField(
+        default=False,
+        verbose_name=_("Vyžadovat změnu hesla"),
+        help_text=_("Při dalším přihlášení bude uživatel povinně vyzván ke změně hesla."),
+    )
+    password_changed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("Heslo změněno"),
+    )
 
     def __str__(self):
         return self.username

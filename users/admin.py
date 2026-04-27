@@ -64,6 +64,8 @@ class CustomUserResource(resources.ModelResource):
     def before_save_instance(self, instance, row, **kwargs):
         if instance.osobni_cislo:
             instance.set_password(instance.osobni_cislo)
+            instance.must_change_password = True
+            instance.password_changed_at = None
 
     def import_row(self, row, instance_loader, **kwargs):
         instance = instance_loader.get_instance(row)
@@ -103,6 +105,7 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
         (("Oprávnění"), {"fields": ("is_active", "is_staff", "is_superuser", "groups")}),
         (("Alergeny"), {"fields": ("alergeny",)}),
         (("Důležitá data"), {"fields": ("last_login", "date_joined")}),
+        (("Bezpečnost"), {"fields": ("must_change_password", "password_changed_at")}),
     )
 
     list_display = (
@@ -115,6 +118,7 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
         'debit_limit',
         'cerpa_debit',
         'ma_nutnost_dobit',
+        'must_change_password',
         'stravovaci_skupina',  # ← doplněno
     )
 
@@ -226,7 +230,9 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
                     skipped += 1
                     continue
                 user.set_password(personal)
-                user.save(update_fields=["password"])
+                user.must_change_password = True
+                user.password_changed_at = None
+                user.save(update_fields=["password", "must_change_password", "password_changed_at"])
                 updated += 1
             self.message_user(
                 request,

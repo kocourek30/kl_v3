@@ -41,6 +41,13 @@ def can_order_for_menuitem_date(user, menu_item: PolozkaJidelnicku, target_date)
     """
     Kontroluje, zda lze objednávat konkrétní položku (druh jídla) na dané datum.
     """
+    today = timezone.localdate()
+    if target_date < today:
+        return (
+            False,
+            f"Objednávky na {target_date.strftime('%d.%m.%Y')} již nelze vytvářet ani měnit.",
+        )
+
     if user.is_staff:
         return True, ""
 
@@ -128,6 +135,12 @@ def get_user_balance(user):
 
 def can_order_for_date(user, target_date):  # ✅ PARAMETRY OPRACENY!
     """Kontroluje, zda lze objednávat na dané datum podle nastavení uzavírací doby"""
+    if target_date < timezone.localdate():
+        return (
+            False,
+            f"Objednávky na {target_date.strftime('%d.%m.%Y')} již nelze vytvářet ani měnit.",
+        )
+
     # Admin může vždy
     if user.is_staff:
         return True, ""

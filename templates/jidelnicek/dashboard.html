@@ -11,11 +11,10 @@
     <div class="row g-4 align-items-start">
         <!-- Pravá sekce: kalendář + objednávky -->
         <aside class="col-lg-4 col-xl-3 order-2 order-lg-2 dashboard-sidebar">
-            <div class="position-sticky dashboard-sidebar-sticky" style="top: 1rem;">
-                <!-- ✅ STAV KONTA - aktualizovatelný kontejner -->
-                <div id="account-status-container" class="alert alert-success shadow-md border-0 mb-3 p-3 modern-account-status compact">
-                    {% include 'includes/_account_status.html' with balance=request.user.aktualni_zustatek %}
-                </div>
+            <div class="dashboard-sidebar-sticky">
+                {% if frontend_ankety_enabled and mesicni_anketa.exists and mesicni_anketa.is_open and not mesicni_anketa.already_voted %}
+                    {% include 'includes/_mesicni_volba_cta.html' %}
+                {% endif %}
                 
                 <!-- Kalendář -->
                 <div class="card mb-3 shadow-lg rounded-3 overflow-hidden modern-card compact">
@@ -28,11 +27,11 @@
                     <div class="card-body p-2">
                         <!-- Navigace měsíců -->
                         <div class="d-flex justify-content-between align-items-center mb-3">
-                            <a href="?month={{ prev_month.month }}&year={{ prev_year }}&filter={{ filter }}" class="btn btn-light btn-sm px-2 py-1" aria-label="Předchozí měsíc">
+                            <a href="?month={{ prev_month.month }}&year={{ prev_month.year }}&date={{ prev_month_target_date|date:'Y-m-d' }}&filter={{ filter }}" class="btn btn-light btn-sm px-2 py-1" aria-label="Předchozí měsíc">
                                 <i class="fa fa-chevron-left"></i>
                             </a>
                             <span class="fw-bold text-dark small">{{ current_month|date:"F Y" }}</span>
-                            <a href="?month={{ next_month.month }}&year={{ next_year }}&filter={{ filter }}" class="btn btn-light btn-sm px-2 py-1" aria-label="Další měsíc">
+                            <a href="?month={{ next_month.month }}&year={{ next_month.year }}&date={{ next_month_target_date|date:'Y-m-d' }}&filter={{ filter }}" class="btn btn-light btn-sm px-2 py-1" aria-label="Další měsíc">
                                 <i class="fa fa-chevron-right"></i>
                             </a>
                         </div>
@@ -60,17 +59,21 @@
                                             {% elif day in days_with_menu %}bg-success-soft menu-day-soft
                                             {% else %}bg-light-soft{% endif %} p-2 day-cell-soft modern-day-cell compact">
                                             {% if day.month == current_month.month %}
-                                                {% if day in days_with_menu %}
+                                                {% if day in days_with_menu and day >= today %}
                                                     <a href="?filter=date&date={{ day|date:'Y-m-d' }}" class="text-decoration-none d-block p-2 rounded-2 menu-day-link-soft fw-semibold">
                                                         {{ day.day }}
                                                     </a>
+                                                {% elif day in days_with_menu and day < today %}
+                                                    <div class="p-2 text-muted opacity-75" title="Historický den - objednání není možné">{{ day.day }}</div>
                                                 {% else %}
                                                     <div class="p-2">{{ day.day }}</div>
                                                 {% endif %}
-                                            {% elif day.month != current_month.month and day in days_with_menu %}
+                                            {% elif day.month != current_month.month and day in days_with_menu and day >= today %}
                                                 <a href="?filter=date&date={{ day|date:'Y-m-d' }}" class="text-decoration-none d-block p-2 rounded-2 text-muted">
                                                     {{ day.day }}
                                                 </a>
+                                            {% elif day.month != current_month.month and day in days_with_menu and day < today %}
+                                                <div class="p-2 text-muted opacity-50" title="Historický den - objednání není možné">{{ day.day }}</div>
                                             {% else %}
                                                 <div class="p-2 text-muted opacity-50">{{ day.day }}</div>
                                             {% endif %}
@@ -89,7 +92,7 @@
                 {% endif %}
 
                 <!-- Moje objednávky -->
-                <div class="card shadow-lg rounded-3 overflow-hidden modern-card compact">
+                <div class="card shadow-lg rounded-3 overflow-hidden modern-card compact my-orders-card">
                     <div class="card-header bg-gradient-accent text-white py-2 px-3 fs-6 fw-bold">
                         <i class="fas fa-shopping-cart me-2"></i>Aktuální objednávky
                     </div>
@@ -103,7 +106,7 @@
         <!-- Levá sekce: jídelníček -->
         <section id="menu-section" class="col-lg-8 col-xl-9 order-1 order-lg-1 dashboard-content">
             <!-- Taby s počítadly -->
-            <ul class="nav nav-tabs mb-4 custom-menu-tabs-modern shadow-lg rounded-3 overflow-hidden compact" id="menuTabs" role="tablist">
+            <ul class="nav nav-tabs mb-4 custom-menu-tabs-modern shadow-lg rounded-3 overflow-hidden compact menu-tabs-sticky" id="menuTabs" role="tablist">
                 <li class="nav-item flex-fill" role="presentation">
                     <a class="nav-link w-100 py-3 {% if filter == 'date' %}active{% endif %}"
                        id="tab-day" href="?filter=date&date={{ selected_date|date:'Y-m-d' }}" role="tab">
@@ -170,12 +173,21 @@
 
                 <!-- TÝDEN -->
                 <div class="tab-pane fade {% if filter == 'week' %}show active{% endif %}" id="tab-pane-week" role="tabpanel">
+                    <div class="menu-date-banner mb-3">
+                        <div class="menu-date-banner-label">Jídelníček na týden</div>
+                        <div class="menu-date-banner-main">{{ week_start|date:"d.m.Y" }} - {{ week_end|date:"d.m.Y" }}</div>
+                        <div class="menu-date-banner-sub">{{ week_start|date:"l" }} až {{ week_end|date:"l" }}</div>
+                    </div>
                     {% if menu_items_by_day %}
                         {% for day, items in menu_items_by_day.items %}
                             <div class="mb-4 p-4 bg-light-soft rounded-3 shadow-md modern-day-section compact">
-                                <h6 class="fw-bold border-bottom border-light pb-3 mb-4">
-                                    {{ day|date:"d.m.Y (l)" }}
-                                    <span class="badge bg-gradient-primary text-white px-2 py-1 ms-2">{{ items|length }}</span>
+                                <h6 class="menu-day-heading border-bottom border-light pb-3 mb-4">
+                                    <span class="menu-day-heading-main">
+                                        <i class="fas fa-calendar-day text-success"></i>
+                                        <span class="menu-day-title">{{ day|date:"l" }}</span>
+                                        <span class="menu-day-date">{{ day|date:"d.m.Y" }}</span>
+                                    </span>
+                                    <span class="badge bg-gradient-primary text-white px-2 py-1">{{ items|length }} položek</span>
                                 </h6>
                                 {% for item in items %}
                                     <div class="menu-item-wrapper" data-menu-item-id="{{ item.id }}" data-menu-date="{{ day|date:'Y-m-d' }}">
@@ -194,12 +206,21 @@
 
                 <!-- MĚSÍC -->
                 <div class="tab-pane fade {% if filter == 'month' %}show active{% endif %}" id="tab-pane-month" role="tabpanel">
+                    <div class="menu-date-banner mb-3">
+                        <div class="menu-date-banner-label">Jídelníček na měsíc</div>
+                        <div class="menu-date-banner-main">{{ current_month|date:"F Y" }}</div>
+                        <div class="menu-date-banner-sub">Zobrazeny jsou pouze objednatelné dny</div>
+                    </div>
                     {% if menu_items_by_day %}
                         {% for day, items in menu_items_by_day.items %}
                             <div class="mb-3 p-3 bg-light-soft rounded-3 shadow-sm modern-day-section compact">
-                                <h6 class="fw-bold border-bottom border-light pb-2 mb-3 small">
-                                    {{ day|date:"d.m.Y" }}
-                                    <span class="badge bg-gradient-primary text-white px-2 py-1 ms-2">{{ items|length }}</span>
+                                <h6 class="menu-day-heading menu-day-heading-sm border-bottom border-light pb-2 mb-3">
+                                    <span class="menu-day-heading-main">
+                                        <i class="fas fa-calendar-day text-success"></i>
+                                        <span class="menu-day-title">{{ day|date:"l" }}</span>
+                                        <span class="menu-day-date">{{ day|date:"d.m.Y" }}</span>
+                                    </span>
+                                    <span class="badge bg-gradient-primary text-white px-2 py-1">{{ items|length }} položek</span>
                                 </h6>
                                 {% for item in items %}
                                     <div class="menu-item-wrapper" data-menu-item-id="{{ item.id }}" data-menu-date="{{ day|date:'Y-m-d' }}">
@@ -219,11 +240,66 @@
         </section>
     </div>
 </div>
+
+<div class="modal fade" id="dayCancelModal" tabindex="-1" aria-labelledby="dayCancelModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content day-cancel-modal">
+            <div class="modal-header border-0 pb-1">
+                <h5 class="modal-title fw-bold" id="dayCancelModalLabel">
+                    <i class="fas fa-calendar-xmark text-danger me-2"></i>Odhlásit celý den
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+            </div>
+            <div class="modal-body pt-1">
+                <p id="dayCancelModalSubtitle" class="mb-2 fw-semibold text-dark"></p>
+                <p class="text-muted small mb-3">Tato akce zruší všechny položky objednávky v daném dni.</p>
+
+                <div id="dayCancelModalItemsWrap" class="d-none mb-3">
+                    <div class="day-cancel-modal-card">
+                        <div class="day-cancel-modal-card-head">
+                            <span>Rušené položky</span>
+                            <strong id="dayCancelModalTotal"></strong>
+                        </div>
+                        <ul id="dayCancelModalItems" class="day-cancel-modal-list mb-0"></ul>
+                    </div>
+                </div>
+
+                <div id="dayCancelModalWarning" class="alert alert-warning py-2 px-3 small d-none mb-2">
+                    <i class="fas fa-triangle-exclamation me-1"></i>
+                    Odhláška je po uzávěrce. Důvod je povinný.
+                </div>
+
+                <div id="dayCancelModalReasonWrap" class="d-none">
+                    <label for="dayCancelModalReason" class="form-label fw-semibold small mb-1">Důvod odhlášky</label>
+                    <textarea
+                        id="dayCancelModalReason"
+                        class="form-control form-control-sm"
+                        rows="3"
+                        minlength="3"
+                        placeholder="Napište stručně důvod odhlášky..."></textarea>
+                </div>
+
+                <div id="dayCancelModalError" class="alert alert-danger py-2 px-3 small d-none mt-2 mb-0"></div>
+            </div>
+            <div class="modal-footer border-0 pt-2">
+                <button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Zpět</button>
+                <button type="button" class="btn btn-danger rounded-pill px-3" id="dayCancelModalConfirm">
+                    <i class="fas fa-times-circle me-1"></i>Odhlásit den
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+let dayCancelModalInstance = null;
+let pendingDayCancelForm = null;
+
 document.addEventListener('DOMContentLoaded', function() {
+    initDayCancelModal();
+
     // ✅ AJAX HANDLER - Hlavní oprava pro RUŠENÍ
     // ✅ AJAX HANDLER - PLNĚ OPRAVENÝ PRO OBJEDNÁVKU I RUŠENÍ
     document.addEventListener('submit', function(e) {
@@ -232,6 +308,15 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();
         
         const form = e.target;
+        if (form.classList.contains('day-cancel-form') && form.dataset.confirmed !== '1') {
+            openDayCancelModal(form);
+            return;
+        }
+
+        if (form.classList.contains('day-cancel-form')) {
+            form.dataset.confirmed = '0';
+        }
+
         const submitBtn = form.querySelector('button[type="submit"]');
         const originalText = submitBtn ? submitBtn.innerHTML : '';
         
@@ -271,13 +356,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
             
-            // 3. STAV KONTA
+            // 3. STAV KONTA (jen pokud je kontejner v DOM)
             if (data.account_html) {
-                document.getElementById('account-status-container').innerHTML = data.account_html;
+                const accountContainer = document.getElementById('account-status-container');
+                if (accountContainer) {
+                    accountContainer.innerHTML = data.account_html;
+                }
             }
             
             if (data.message) {
                 showToast(data.message, data.status || 'info');
+            }
+
+            if (data.refresh_menu) {
+                // Po denní odhlášce je potřeba překreslit celý jídelníček,
+                // aby zmizel stav "Objednáno" na všech položkách dne.
+                window.setTimeout(() => {
+                    loadDashboardUrl(new URL(window.location.href), null, false);
+                }, 160);
             }
         })
         .catch(err => {
@@ -289,21 +385,130 @@ document.addEventListener('DOMContentLoaded', function() {
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = originalText;
             }
+            form.dataset.confirmed = '0';
         });
-    });
-
-    // Potvrzovací dialogy + taby (beze změny)
-    document.addEventListener('click', function(e) {
-        if (e.target.closest('.btn-order-cancel')) {
-            if (!confirm('Opravdu chcete zrušit objednávku?')) {
-                e.preventDefault();
-                return false;
-            }
-        }
     });
 
     bindDashboardNavigation();
 });
+
+function initDayCancelModal() {
+    const modalEl = document.getElementById('dayCancelModal');
+    if (!modalEl || typeof bootstrap === 'undefined') return;
+
+    dayCancelModalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+    const confirmBtn = document.getElementById('dayCancelModalConfirm');
+    if (confirmBtn && !confirmBtn.dataset.bound) {
+        confirmBtn.dataset.bound = '1';
+        confirmBtn.addEventListener('click', function() {
+            if (!pendingDayCancelForm) return;
+
+            const requiresReason = pendingDayCancelForm.dataset.requiresReason === '1';
+            const reasonField = document.getElementById('dayCancelModalReason');
+            const reason = (reasonField?.value || '').trim();
+
+            if (requiresReason && reason.length < 3) {
+                showDayCancelModalError('Po uzávěrce je potřeba uvést důvod (min. 3 znaky).');
+                return;
+            }
+
+            const hiddenReasonInput = pendingDayCancelForm.querySelector('input[name="cancel_reason"]');
+            if (hiddenReasonInput) {
+                hiddenReasonInput.value = reason;
+            }
+
+            pendingDayCancelForm.dataset.confirmed = '1';
+            dayCancelModalInstance.hide();
+            pendingDayCancelForm.requestSubmit();
+        });
+    }
+
+    modalEl.addEventListener('hidden.bs.modal', () => {
+        clearDayCancelModalState();
+    });
+}
+
+function openDayCancelModal(form) {
+    if (!dayCancelModalInstance) {
+        form.dataset.confirmed = '1';
+        form.requestSubmit();
+        return;
+    }
+
+    pendingDayCancelForm = form;
+
+    const dayLabel = form.dataset.dayLabel || '';
+    const requiresReason = form.dataset.requiresReason === '1';
+
+    const subtitleEl = document.getElementById('dayCancelModalSubtitle');
+    const itemsWrapEl = document.getElementById('dayCancelModalItemsWrap');
+    const itemsListEl = document.getElementById('dayCancelModalItems');
+    const totalEl = document.getElementById('dayCancelModalTotal');
+    const reasonWrapEl = document.getElementById('dayCancelModalReasonWrap');
+    const warningEl = document.getElementById('dayCancelModalWarning');
+    const reasonInput = document.getElementById('dayCancelModalReason');
+
+    if (subtitleEl) {
+        subtitleEl.textContent = dayLabel ? `Odhlásit celý den: ${dayLabel}` : 'Odhlásit celý den';
+    }
+    if (itemsWrapEl && itemsListEl) {
+        const payload = form.querySelector('.day-cancel-details-payload .day-cancel-modal-list');
+        if (payload) {
+            itemsListEl.innerHTML = payload.innerHTML;
+            itemsWrapEl.classList.remove('d-none');
+        } else {
+            itemsListEl.innerHTML = '';
+            itemsWrapEl.classList.add('d-none');
+        }
+    }
+    if (totalEl) {
+        totalEl.textContent = form.dataset.dayTotalPrice || '';
+    }
+
+    if (reasonWrapEl) {
+        reasonWrapEl.classList.toggle('d-none', !requiresReason);
+    }
+    if (warningEl) {
+        warningEl.classList.toggle('d-none', !requiresReason);
+    }
+    if (reasonInput) {
+        reasonInput.value = '';
+        reasonInput.required = requiresReason;
+    }
+
+    showDayCancelModalError('');
+    dayCancelModalInstance.show();
+}
+
+function showDayCancelModalError(message) {
+    const errorEl = document.getElementById('dayCancelModalError');
+    if (!errorEl) return;
+    if (message) {
+        errorEl.textContent = message;
+        errorEl.classList.remove('d-none');
+    } else {
+        errorEl.textContent = '';
+        errorEl.classList.add('d-none');
+    }
+}
+
+function clearDayCancelModalState() {
+    const reasonInput = document.getElementById('dayCancelModalReason');
+    if (reasonInput) {
+        reasonInput.value = '';
+    }
+    const itemsListEl = document.getElementById('dayCancelModalItems');
+    if (itemsListEl) {
+        itemsListEl.innerHTML = '';
+    }
+    const totalEl = document.getElementById('dayCancelModalTotal');
+    if (totalEl) {
+        totalEl.textContent = '';
+    }
+    showDayCancelModalError('');
+    pendingDayCancelForm = null;
+}
 
 function bindDashboardNavigation() {
     const root = document.querySelector('[data-jidelnicek-dashboard]');
@@ -476,9 +681,114 @@ window.showToast = function(message, type = 'info') {
     transition: all 0.3s ease;
 }
 
+.menu-tabs-sticky {
+    position: sticky;
+    top: 84px;
+    z-index: 1020;
+}
+
+.menu-date-banner {
+    border: 1px solid #d8e2d4;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #ffffff 0%, #f7fbf4 100%);
+    padding: 0.7rem 0.95rem;
+    box-shadow: 0 6px 14px rgba(17, 24, 39, 0.06);
+}
+
+.menu-date-banner-label {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.72rem;
+    color: #5c6b61;
+    font-weight: 700;
+}
+
+.menu-date-banner-main {
+    font-size: 1.05rem;
+    line-height: 1.2;
+    font-weight: 800;
+    color: #213a2a;
+}
+
+.menu-date-banner-sub {
+    font-size: 0.82rem;
+    color: #617284;
+}
+
+.menu-day-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    color: #1f2e22;
+    font-weight: 800;
+}
+
+.menu-day-heading-main {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    min-width: 0;
+}
+
+.menu-day-heading-sm {
+    font-size: 0.9rem;
+}
+
+.menu-day-title {
+    display: inline-flex;
+    align-items: center;
+    color: #1f2e22;
+    font-weight: 800;
+}
+
+.menu-day-date {
+    color: #4f5f6e;
+    font-weight: 700;
+}
+
 .modern-card.compact:hover {
     transform: translateY(-4px);
     box-shadow: 0 12px 35px rgba(0,0,0,0.15) !important;
+}
+
+.dashboard-sidebar {
+    position: sticky;
+    top: 84px;
+    align-self: flex-start;
+    max-height: calc(100vh - 96px);
+    overflow-y: auto;
+    padding-right: 0.2rem;
+    scrollbar-width: thin;
+}
+
+.dashboard-sidebar-sticky {
+    position: static;
+}
+
+.dashboard-sidebar::-webkit-scrollbar {
+    width: 8px;
+}
+
+.dashboard-sidebar::-webkit-scrollbar-thumb {
+    background: rgba(84, 174, 67, 0.38);
+    border-radius: 999px;
+}
+
+#my-orders-wrapper {
+    max-height: min(56vh, 560px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+#my-orders-wrapper::-webkit-scrollbar {
+    width: 8px;
+}
+
+#my-orders-wrapper::-webkit-scrollbar-thumb {
+    background: rgba(84, 174, 67, 0.4);
+    border-radius: 999px;
 }
 
 [data-jidelnicek-dashboard] {
@@ -781,6 +1091,79 @@ window.showToast = function(message, type = 'info') {
     }
 }
 
+.day-cancel-modal {
+    border-radius: 18px;
+    border: 1px solid rgba(220,53,69,0.16);
+    box-shadow: 0 18px 40px rgba(17,24,39,0.18);
+}
+
+.day-cancel-modal .modal-header,
+.day-cancel-modal .modal-footer {
+    background: #fff;
+}
+
+.day-cancel-modal .form-control:focus {
+    border-color: #f28c28;
+    box-shadow: 0 0 0 0.18rem rgba(242,140,40,0.15);
+}
+
+.day-cancel-modal-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #f8fafc;
+    padding: 0.65rem 0.75rem;
+}
+
+.day-cancel-modal-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: 0.82rem;
+    color: #475569;
+    margin-bottom: 0.35rem;
+}
+
+.day-cancel-modal-card-head strong {
+    color: #0f5132;
+    font-size: 0.92rem;
+}
+
+.day-cancel-modal-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.2rem;
+}
+
+.day-cancel-modal-list li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.65rem;
+    font-size: 0.82rem;
+    border-top: 1px dashed #dbe3ec;
+    padding-top: 0.3rem;
+}
+
+.day-cancel-modal-list li:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+
+.day-cancel-modal-list .item-name {
+    color: #1f2937;
+    flex: 1;
+    min-width: 0;
+}
+
+.day-cancel-modal-list .item-meta {
+    color: #334155;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
 .compact-title {
     font-size: 1.4rem;
 }
@@ -806,6 +1189,22 @@ window.showToast = function(message, type = 'info') {
 }
 
 @media (max-width: 991.98px) {
+    .menu-tabs-sticky {
+        top: 74px;
+    }
+
+    .dashboard-sidebar {
+        position: static;
+        max-height: none;
+        overflow-y: visible;
+        padding-right: 0;
+    }
+
+    #my-orders-wrapper {
+        max-height: none;
+        overflow-y: visible;
+    }
+
     .dashboard-content {
         margin-bottom: 0.25rem;
     }
@@ -822,6 +1221,34 @@ window.showToast = function(message, type = 'info') {
 }
 
 @media (max-width: 767.98px) {
+    .menu-tabs-sticky {
+        top: 70px;
+    }
+
+    .menu-date-banner {
+        padding: 0.62rem 0.75rem;
+    }
+
+    .menu-date-banner-main {
+        font-size: 0.96rem;
+    }
+
+    .menu-day-heading {
+        align-items: flex-start;
+    }
+
+    .menu-day-heading-main {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        column-gap: 0.45rem;
+        row-gap: 0.08rem;
+        line-height: 1.25;
+    }
+
+    .menu-day-date {
+        grid-column: 2;
+    }
+
     #toast-container.toast-stack {
         top: 0.35rem !important;
         padding-inline: 0.75rem !important;

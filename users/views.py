@@ -207,7 +207,9 @@ def user_profile_view(request):
         user.save()
         if current_password or new_password1 or new_password2:
             user.set_password(new_password1)
-            user.save(update_fields=['password'])
+            user.must_change_password = False
+            user.password_changed_at = timezone.now()
+            user.save(update_fields=['password', 'must_change_password', 'password_changed_at'])
             update_session_auth_hash(request, user)
             messages.success(request, 'Heslo bylo úspěšně změněno.')
 
@@ -221,6 +223,48 @@ def user_profile_view(request):
         **get_user_page_context(user),
     }
     return render(request, 'users/profile.html', context)
+
+
+@login_required
+def force_password_change_view(request):
+    user = request.user
+    if not getattr(user, "must_change_password", False):
+        return redirect(request.GET.get("next") or 'jidelnicek:dashboard')
+
+    next_url = request.POST.get("next") or request.GET.get("next") or "/jidelnicek/dashboard/"
+    if request.method == "POST":
+        new_password1 = (request.POST.get("new_password1") or "").strip()
+        new_password2 = (request.POST.get("new_password2") or "").strip()
+
+        has_errors = False
+        if not new_password1 or not new_password2:
+            messages.error(request, "Vyplňte prosím obě pole nového hesla.")
+            has_errors = True
+        elif new_password1 != new_password2:
+            messages.error(request, "Nová hesla se neshodují.")
+            has_errors = True
+        else:
+            try:
+                validate_password(new_password1, user=user)
+            except ValidationError as exc:
+                for error in exc.messages:
+                    messages.error(request, error)
+                has_errors = True
+
+        if not has_errors:
+            user.set_password(new_password1)
+            user.must_change_password = False
+            user.password_changed_at = timezone.now()
+            user.save(update_fields=["password", "must_change_password", "password_changed_at"])
+            update_session_auth_hash(request, user)
+            messages.success(request, "Heslo bylo změněno. Děkujeme.")
+            return redirect(next_url)
+
+    return render(
+        request,
+        "users/force_password_change.html",
+        {"next": next_url},
+    )
 
 
 @login_required

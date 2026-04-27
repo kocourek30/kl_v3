@@ -19,7 +19,6 @@ from .services import (
     get_effective_closing_time,
     get_group_order_limit,
     check_user_balance_for_item,
-    get_user_order_items,
     validate_item_for_display,
     can_user_access_menu_item,
     build_calendar_context,
@@ -36,15 +35,17 @@ from canteen_settings.models import (
 )
 
 
-from objednavky.models import Order, OrderItem, OrderValidator
+from objednavky.models import Order, OrderItem, OrderValidator, OrderCancellationLog
 from objednavky.services import validate_order_quantity
 from jidelnicek.models import PolozkaJidelnicku, Jidelnicek
 from dotace.models import SkupinoveNastaveni
 from ankety.services import anketni_prehled_uzivatele
 from users.group_utils import get_first_group_setting
+from users.group_utils import get_effective_user_groups
 
 
 logger = logging.getLogger(__name__)
+OPEN_ORDER_STATUSES = ["zalozena-obsluhou", "objednano"]
 
 
 def sort_druhy_by_priority(items_by_druh):
@@ -66,26 +67,39 @@ def count_menu_items_for_range(user, start_date, end_date):
     if start_date > end_date:
         return 0
 
+    jidelnicky = list(
+        Jidelnicek.objects.filter(
+            platnost_od__lte=end_date,
+            platnost_do__gte=start_date,
+        ).only("id", "platnost_od", "platnost_do")
+    )
+    if not jidelnicky:
+        return 0
+
+    jidelnicek_ids = [j.id for j in jidelnicky]
+    day_items = PolozkaJidelnicku.objects.filter(jidelnicek_id__in=jidelnicek_ids)
+    if not request_user_is_superuser(user):
+        user_groups = get_effective_user_groups(user)
+        if user_groups:
+            day_items = day_items.filter(
+                Q(druh_jidla__viditelne_pro_skupiny__in=user_groups)
+                | Q(druh_jidla__viditelne_pro_skupiny__isnull=True)
+            )
+        else:
+            day_items = day_items.filter(druh_jidla__viditelne_pro_skupiny__isnull=True)
+
+    items_by_jidelnicek = {}
+    for row in day_items.values("jidelnicek_id", "id").distinct():
+        items_by_jidelnicek.setdefault(row["jidelnicek_id"], set()).add(row["id"])
+
     total = 0
     current_day = start_date
-
     while current_day <= end_date:
-        jidelnicky_den = Jidelnicek.objects.filter(
-            platnost_od__lte=current_day,
-            platnost_do__gte=current_day,
-        )
-        if jidelnicky_den.exists():
-            day_items = PolozkaJidelnicku.objects.filter(jidelnicek__in=jidelnicky_den)
-            if not request_user_is_superuser(user):
-                user_groups = list(user.groups.all())
-                if user_groups:
-                    day_items = day_items.filter(
-                        Q(druh_jidla__viditelne_pro_skupiny__in=user_groups)
-                        | Q(druh_jidla__viditelne_pro_skupiny__isnull=True)
-                    )
-                else:
-                    day_items = day_items.filter(druh_jidla__viditelne_pro_skupiny__isnull=True)
-            total += day_items.distinct().count()
+        active_item_ids = set()
+        for j in jidelnicky:
+            if j.platnost_od <= current_day <= j.platnost_do:
+                active_item_ids.update(items_by_jidelnicek.get(j.id, set()))
+        total += len(active_item_ids)
         current_day += timedelta(days=1)
 
     return total
@@ -205,9 +219,9 @@ def menu_item_partial(request):
 
 @login_required
 def my_orders_partial(request):
-    my_order_items = get_user_order_items(request.user)
+    my_day_orders = get_user_day_orders(request.user)
     html = render_to_string('includes/_my_orders.html', {
-        'my_order_items': my_order_items,
+        'my_day_orders': my_day_orders,
     }, request=request)
     return JsonResponse({'html': html})
 
@@ -225,6 +239,104 @@ def get_first_menu_day_from(from_date: date) -> date | None:
     if not nearest_menu:
         return None
     return max(nearest_menu.platnost_od, from_date)
+
+
+def get_first_menu_day_in_month(year: int, month: int) -> date | None:
+    month_start = date(year, month, 1)
+    if month == 12:
+        month_end = date(year + 1, 1, 1) - timedelta(days=1)
+    else:
+        month_end = date(year, month + 1, 1) - timedelta(days=1)
+
+    nearest_menu = (
+        Jidelnicek.objects.filter(
+            platnost_od__lte=month_end,
+            platnost_do__gte=month_start,
+        )
+        .order_by("platnost_od")
+        .first()
+    )
+    if not nearest_menu:
+        return None
+    return max(nearest_menu.platnost_od, month_start)
+
+
+def get_first_orderable_menu_day_in_month(user, year: int, month: int) -> date | None:
+    month_start = date(year, month, 1)
+    if month == 12:
+        month_end = date(year + 1, 1, 1) - timedelta(days=1)
+    else:
+        month_end = date(year, month + 1, 1) - timedelta(days=1)
+
+    current = max(month_start, date.today())
+    while current <= month_end:
+        has_menu = Jidelnicek.objects.filter(
+            platnost_od__lte=current,
+            platnost_do__gte=current,
+        ).exists()
+        if has_menu:
+            can_order, _ = can_order_for_date(user, current)
+            if can_order:
+                return current
+        current += timedelta(days=1)
+    return None
+
+
+def get_user_day_orders(user):
+    """
+    Vrátí budoucí objednávky uživatele seskupené po dnech pro odhlášky.
+    """
+    day_groups = []
+
+    items = (
+        OrderItem.objects.filter(
+            order__user=user,
+            order__datum_vydeje__gte=date.today(),
+            order__status__in=OPEN_ORDER_STATUSES,
+        )
+        .select_related("order", "menu_item__jidlo", "menu_item__druh_jidla")
+        .order_by(
+            "order__datum_vydeje",
+            "menu_item__druh_jidla__poradi",
+            "menu_item__druh_jidla__nazev",
+            "menu_item__jidlo__nazev",
+            "menu_item__id",
+        )
+    )
+
+    grouped = defaultdict(list)
+    for item in items:
+        grouped[item.order.datum_vydeje].append(item)
+
+    for target_date in sorted(grouped.keys()):
+        day_items = grouped[target_date]
+        for i in day_items:
+            i.line_total = (i.quantity or 0) * (i.cena or 0)
+        total_qty = sum(int(i.quantity or 0) for i in day_items)
+        total_price = sum((i.quantity or 0) * (i.cena or 0) for i in day_items)
+
+        requires_reason = False
+        for i in day_items:
+            can_cancel, _ = can_cancel_order_for_menuitem_date(
+                user,
+                i.menu_item,
+                target_date,
+            )
+            if not can_cancel:
+                requires_reason = True
+                break
+
+        day_groups.append(
+            {
+                "date": target_date,
+                "items": day_items,
+                "total_qty": total_qty,
+                "total_price": total_price,
+                "requires_reason": requires_reason,
+            }
+        )
+
+    return day_groups
 
 
 @login_required
@@ -246,9 +358,27 @@ def dashboard(request):
             pass
 
     # ✅ PRIORITA 2: selected_date pro kalendář a denní zobrazení
-    if month and year:
-        selected_date = date(int(year), int(month), 1)
-    elif filter_type == 'date' and reference_date:
+    # Pro týdenní/denní pohled musí mít "date" přednost, aby kalendář
+    # i obsah byly ve stejném měsíci/týdnu.
+    if filter_type in {"date", "week"} and reference_date:
+        selected_date = reference_date
+    elif month and year:
+        month_int = int(month)
+        year_int = int(year)
+
+        if (
+            reference_date
+            and reference_date.year == year_int
+            and reference_date.month == month_int
+        ):
+            selected_date = reference_date
+        else:
+            selected_date = (
+                get_first_orderable_menu_day_in_month(request.user, year_int, month_int)
+                or get_first_menu_day_in_month(year_int, month_int)
+                or date(year_int, month_int, 1)
+            )
+    elif reference_date:
         selected_date = reference_date
     else:
         selected_date = today
@@ -280,16 +410,10 @@ def dashboard(request):
         'menu_items_by_day_grouped': {},
     }
 
-    month_first = max(first_day_month, today)
+    month_first = first_day_month
 
     if filter_type == 'week':
         week_ctx = build_week_menu_context(request.user, week_reference)
-        week_ctx['menu_items_by_day'] = {
-            d: items for d, items in week_ctx.get('menu_items_by_day', {}).items() if d >= today
-        }
-        week_ctx['menu_items_by_day_grouped'] = {
-            d: items for d, items in week_ctx.get('menu_items_by_day_grouped', {}).items() if d >= today
-        }
         if week_ctx.get('menu_items_by_day_grouped'):
             for day in week_ctx['menu_items_by_day_grouped']:
                 week_ctx['menu_items_by_day_grouped'][day] = sort_druhy_by_priority(
@@ -324,20 +448,35 @@ def dashboard(request):
     else:
         week_start_for_count = week_reference - timedelta(days=week_reference.weekday())
         week_end_for_count = week_start_for_count + timedelta(days=6)
-        week_items_count = count_menu_items_for_range(request.user, max(week_start_for_count, today), week_end_for_count)
+        week_items_count = count_menu_items_for_range(request.user, week_start_for_count, week_end_for_count)
 
     if filter_type == 'month':
         month_items_count = sum(len(items) for items in month_ctx.get('menu_items_by_day', {}).values())
     else:
         month_items_count = count_menu_items_for_range(request.user, month_first, last_day_month)
 
-    my_order_items = get_user_order_items(request.user)
+    my_day_orders = get_user_day_orders(request.user)
     ankety_prehled = anketni_prehled_uzivatele(request.user, today)
     my_orders = Order.objects.filter(
         user=request.user,
         datum_vydeje__month=selected_date.month,
         datum_vydeje__year=selected_date.year
     ).prefetch_related('items').order_by('-created_at')[:5]
+
+    prev_month_target = (
+        get_first_orderable_menu_day_in_month(
+            request.user, calendar_ctx["prev_month"].year, calendar_ctx["prev_month"].month
+        )
+        or get_first_menu_day_in_month(calendar_ctx["prev_month"].year, calendar_ctx["prev_month"].month)
+        or calendar_ctx["prev_month"].replace(day=1)
+    )
+    next_month_target = (
+        get_first_orderable_menu_day_in_month(
+            request.user, calendar_ctx["next_month"].year, calendar_ctx["next_month"].month
+        )
+        or get_first_menu_day_in_month(calendar_ctx["next_month"].year, calendar_ctx["next_month"].month)
+        or calendar_ctx["next_month"].replace(day=1)
+    )
 
     context = {
         **calendar_ctx,
@@ -353,11 +492,14 @@ def dashboard(request):
         'filter': filter_type,
         'selected_date': selected_date,
         'date_str': selected_date.strftime('%Y-%m-%d'),
-        'my_order_items': my_order_items,
+        'my_day_orders': my_day_orders,
         'ankety_hodnotit': ankety_prehled["hodnotit"],
         'ankety_hotovo': ankety_prehled["hotovo"],
         'ankety_otazky_count': ankety_prehled["otazky_count"],
+        'mesicni_anketa': ankety_prehled.get("mesicni_anketa", {}),
         'today': today,
+        'prev_month_target_date': prev_month_target,
+        'next_month_target_date': next_month_target,
     }
 
     context.update({
@@ -397,6 +539,14 @@ def order_create_view(request):
     """✅ OKAMŽITÁ OBJEDNÁVKA - S KONTROLOU GROUP LIMITU"""
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'message': 'POST only'}, status=405)
+    if not (request.user.is_staff or request.user.is_superuser):
+        return JsonResponse(
+            {
+                'status': 'error',
+                'message': 'Objednávky se vytváří automaticky. Uživatelé provádí pouze odhlášku celého dne.',
+            },
+            status=403,
+        )
 
     menu_item_id = request.POST.get('menu_item_id') or request.POST.get('menuitemid')
     menu_date_str = request.POST.get('menudate') or request.POST.get('menu_date')
@@ -410,6 +560,14 @@ def order_create_view(request):
         menu_item = PolozkaJidelnicku.objects.select_related('jidlo', 'druh_jidla').get(id=menu_item_id)
         target_date = datetime.strptime(menu_date_str, '%Y-%m-%d').date()
         item_name = get_item_name(menu_item)
+
+        if target_date < timezone.localdate():
+            return JsonResponse(
+                {
+                    'status': 'error',
+                    'message': f'Objednávky na {target_date.strftime("%d.%m.%Y")} již nelze vytvářet ani měnit.',
+                }
+            )
 
         if not can_user_access_menu_item(request.user, menu_item):
             return JsonResponse(
@@ -516,7 +674,7 @@ def order_create_view(request):
 
         item_html = render_to_string('jidelnicek_item.html', context, request=request)
         my_orders_html = render_to_string('includes/_my_orders.html', {
-            'my_order_items': get_user_order_items(request.user)
+            'my_day_orders': get_user_day_orders(request.user)
         }, request=request)
         # ✅ AJAX response s kompletními daty pro aktualizaci všech panelů
         final_balance = get_user_balance(request.user)
@@ -546,6 +704,7 @@ def order_delete_view(request):
     # nový formát z jidelnicek_item.html
     menu_item_id = request.POST.get('menu_item_id') or request.POST.get('menuitemid')
     menu_date_str = request.POST.get('menudate') or request.POST.get('menu_date')
+    cancel_day = str(request.POST.get("cancel_day", "")).lower() in {"1", "true", "yes", "on"}
     try:
         quantity_to_remove = validate_order_quantity(request.POST.get('quantity', 1))
     except Exception as exc:
@@ -562,6 +721,113 @@ def order_delete_view(request):
         return JsonResponse({'status': 'error', 'message': 'Položka nenalezena'})
     except ValueError:
         return JsonResponse({'status': 'error', 'message': 'Neplatné datum'})
+
+    if cancel_day:
+        reason = (request.POST.get("cancel_reason") or "").strip()
+        try:
+            with transaction.atomic():
+                order = (
+                    Order.objects.select_for_update()
+                    .prefetch_related("items__menu_item__druh_jidla", "items__menu_item__jidlo")
+                    .filter(
+                        user=request.user,
+                        datum_vydeje=target_date,
+                        status__in=OPEN_ORDER_STATUSES,
+                    )
+                    .first()
+                )
+
+                if not order:
+                    return JsonResponse(
+                        {
+                            "status": "warning",
+                            "message": "Pro tento den už není co odhlásit.",
+                            "refresh_menu": True,
+                        }
+                    )
+
+                day_items = list(order.items.all())
+                if not day_items:
+                    order.delete()
+                    return JsonResponse(
+                        {
+                            "status": "warning",
+                            "message": "Objednávka byla prázdná a byla uklizena.",
+                            "refresh_menu": True,
+                        }
+                    )
+
+                late_cancel = False
+                for day_item in day_items:
+                    can_cancel_time, _ = can_cancel_order_for_menuitem_date(
+                        request.user,
+                        day_item.menu_item,
+                        target_date,
+                    )
+                    if not can_cancel_time:
+                        late_cancel = True
+                        break
+
+                if late_cancel and len(reason) < 3:
+                    return JsonResponse(
+                        {
+                            "status": "error",
+                            "message": "Po uzávěrce je povinné uvést důvod odhlášky (min. 3 znaky).",
+                        }
+                    )
+
+                total_qty = sum(int(i.quantity or 0) for i in day_items)
+                total_price = sum((i.quantity or 0) * (i.cena or 0) for i in day_items)
+
+                OrderCancellationLog.objects.create(
+                    user=request.user,
+                    datum_vydeje=target_date,
+                    cancelled_late=late_cancel,
+                    reason=reason if late_cancel else "",
+                    items_count=total_qty,
+                    total_price=total_price,
+                )
+
+                order.delete()
+
+            my_orders_html = render_to_string(
+                "includes/_my_orders.html",
+                {"my_day_orders": get_user_day_orders(request.user)},
+                request=request,
+            )
+            final_balance = get_user_balance(request.user)
+            balance_class = '' if final_balance >= 0 else ''
+            success_message = (
+                "Odhláška dne byla uložena."
+                if not late_cancel
+                else "Odhláška po uzávěrce byla uložena včetně důvodu."
+            )
+            return JsonResponse(
+                {
+                    "status": "success",
+                    "message": success_message,
+                    "my_orders_html": my_orders_html,
+                    "navbar_balance": f"{final_balance:.0f} Kč",
+                    "navbar_balance_class": balance_class,
+                    "balance": float(final_balance),
+                    "refresh_menu": True,
+                    "refresh_date": target_date.strftime("%Y-%m-%d"),
+                }
+            )
+        except Exception:
+            logger.exception("Chyba při denní odhlášce.")
+            return JsonResponse(
+                {"status": "error", "message": "Denní odhlášku se nepodařilo zpracovat."}
+            )
+
+    if not (request.user.is_staff or request.user.is_superuser):
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": "Jednotlivé položky nelze rušit. Použijte odhlášku celého dne.",
+            },
+            status=403,
+        )
 
     # ✅ KONTROLA ČASU PRO ZRUŠENÍ – cancel_days + cancel_until_time
     can_cancel_time, time_msg = can_cancel_order_for_menuitem_date(request.user, menu_item, target_date)
@@ -645,7 +911,7 @@ def order_delete_view(request):
 
         item_html = render_to_string('jidelnicek_item.html', context, request=request)
         my_orders_html = render_to_string('includes/_my_orders.html', {
-            'my_order_items': get_user_order_items(request.user)
+            'my_day_orders': get_user_day_orders(request.user)
         }, request=request)
         # ✅ AJAX response s kompletními daty
         final_balance = get_user_balance(request.user)

@@ -279,6 +279,10 @@ class Jidelnicek(models.Model):
     )
 
     class Meta:
+        indexes = [
+            models.Index(fields=["platnost_od", "platnost_do"]),
+            models.Index(fields=["platnost_do", "platnost_od"]),
+        ]
         verbose_name = "Jídelníček"
         verbose_name_plural = "Jídelníčky"
 
@@ -314,6 +318,11 @@ class PolozkaJidelnicku(models.Model):
 
     
     class Meta:
+        indexes = [
+            models.Index(fields=["jidelnicek", "druh_jidla"]),
+            models.Index(fields=["jidelnicek", "jidlo"]),
+            models.Index(fields=["druh_jidla", "jidlo"]),
+        ]
         verbose_name = "Položka jídelníčku"
         verbose_name_plural = "Položky jídelníčku"
         ordering = ("druh_jidla__poradi", "druh_jidla__nazev", "jidlo__nazev")
@@ -455,3 +464,73 @@ class MenuImportRun(models.Model):
         if not self.finished_at:
             return None
         return max(0, int((self.finished_at - self.started_at).total_seconds()))
+
+
+class JidloPhotoProposal(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_REJECTED = "rejected"
+    STATUS_APPLIED = "applied"
+    STATUS_CHOICES = (
+        (STATUS_PENDING, "Čeká na schválení"),
+        (STATUS_APPROVED, "Schváleno"),
+        (STATUS_REJECTED, "Zamítnuto"),
+        (STATUS_APPLIED, "Použito v jídle"),
+    )
+
+    jidlo = models.ForeignKey(
+        "Jidlo",
+        on_delete=models.CASCADE,
+        related_name="photo_proposals",
+        verbose_name="Jídlo",
+    )
+    image = models.ImageField(
+        upload_to="jidla/proposals/%Y/%m/",
+        verbose_name="Návrh fotky",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        db_index=True,
+        verbose_name="Stav návrhu",
+    )
+    prompt = models.TextField(
+        blank=True,
+        verbose_name="Použitý prompt",
+    )
+    model_name = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name="Model",
+    )
+    error_message = models.TextField(
+        blank=True,
+        verbose_name="Chybová zpráva",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name="Vytvořeno",
+    )
+    reviewed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Schváleno / zamítnuto",
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reviewed_food_photo_proposals",
+        verbose_name="Zkontroloval",
+    )
+
+    class Meta:
+        verbose_name = "Návrh AI fotky jídla"
+        verbose_name_plural = "Návrhy AI fotek jídel"
+        ordering = ("-created_at",)
+
+    def __str__(self):
+        return f"{self.jidlo.nazev} • {self.get_status_display()} • {timezone.localtime(self.created_at):%d.%m.%Y %H:%M}"
