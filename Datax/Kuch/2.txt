@@ -1,0 +1,1 @@
+450 Chyba iKuch.exe: Cannot open file "C:\Users\TomášKocourek\Documents\Datax\Datax\Kuch\1.txt". Systém nemùže nalézt uvedený soubor

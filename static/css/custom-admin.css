@@ -1101,6 +1101,28 @@
     line-height: 1.15;
 }
 
+.kuchyne-title-icon,
+.kuchyne-inline-icon {
+    color: #ff8800;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.kuchyne-title-icon {
+    margin-right: .6rem;
+}
+
+.kuchyne-inline-icon {
+    margin-right: .45rem;
+}
+
+.kuchyne-shell .panel-card > h3,
+.kuchyne-shell .meal-section-header h2 {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+}
+
 .kuchyne-hero p,
 .vydej-hero p {
     margin: .65rem 0 0;
@@ -1227,6 +1249,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: .65rem;
+    align-items: center;
 }
 
 .quick-row {
@@ -1261,8 +1284,8 @@
 .top-row,
 .people-row,
 .jidlo-polozka {
-    background: #f8fbf8;
-    border: 1px solid #e5efe5;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fcf6 100%);
+    border: 1px solid #dfeadf;
 }
 
 .chip-card {
@@ -1359,13 +1382,17 @@
 
 .meal-section-header,
 .den-header {
-    background: linear-gradient(135deg, #2fa74f 0%, #24823e 100%);
+    background: linear-gradient(135deg, #54ae43 0%, #2d8f3f 100%);
     color: #fff;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
     padding: 1rem 1.1rem;
+}
+
+.meal-section-header .kuchyne-inline-icon {
+    color: rgba(255, 255, 255, .95);
 }
 
 .meal-section-header h2,
@@ -1406,6 +1433,7 @@
     width: 100%;
     min-width: 760px;
     border-collapse: collapse;
+    background: #fff;
 }
 
 .meal-table th,
@@ -1416,8 +1444,8 @@
 }
 
 .meal-table thead th {
-    background: #f7fbf7;
-    color: #33523b;
+    background: #f4faf1;
+    color: #2f5038;
     font-size: .82rem;
     text-transform: uppercase;
     letter-spacing: .04em;
@@ -1425,7 +1453,20 @@
 }
 
 .meal-table tbody tr:hover {
-    background: #fbfefb;
+    background: #f8fcf6;
+}
+
+.meal-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.kuchyne-shell .admin-btn i {
+    margin-right: .4rem;
+}
+
+.kuchyne-shell .admin-btn i:last-child {
+    margin-right: 0;
+    margin-left: .4rem;
 }
 
 .den-obsah {

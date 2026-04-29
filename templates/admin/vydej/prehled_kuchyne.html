@@ -9,7 +9,7 @@
 <div class="kuchyne-shell col-12">
     <div class="kuchyne-hero">
         <div>
-            <h1><i class="fas fa-clipboard-list me-2"></i>Přehled objednaných jídel pro kuchyni</h1>
+            <h1><i class="fas fa-clipboard-list kuchyne-title-icon"></i>Přehled objednaných jídel pro kuchyni</h1>
             <p>
                 Výrobní pohled pro konkrétní den výdeje. Vidíš jen to, co je opravdu potřeba
                 připravit nebo ještě dovydat, včetně rozpisu po strávnících.
@@ -44,7 +44,7 @@
             <div>
                 <form method="get" class="date-form" id="dateForm">
                     <div class="date-field">
-                        <label for="datum"><i class="fas fa-calendar me-1"></i>Vyber den výdeje</label>
+                        <label for="datum"><i class="fas fa-calendar kuchyne-inline-icon"></i>Vyber den výdeje</label>
                         <input type="date" name="datum" id="datum" value="{{ datum_str }}" required>
                     </div>
                     <button type="submit" class="admin-btn admin-btn--primary">
@@ -123,7 +123,7 @@
 
     <div class="overview-grid">
         <div class="panel-card">
-            <h3><i class="fas fa-layer-group me-2"></i>Souhrn podle druhu jídla</h3>
+            <h3><i class="fas fa-layer-group kuchyne-inline-icon"></i>Souhrn podle druhu jídla</h3>
             <div class="chip-grid">
                 {% for section in section_summaries %}
                 <div class="chip-card">
@@ -138,7 +138,7 @@
         </div>
 
         <div class="panel-card">
-            <h3><i class="fas fa-fire me-2"></i>Nejsilnější položky dne</h3>
+            <h3><i class="fas fa-fire kuchyne-inline-icon"></i>Nejsilnější položky dne</h3>
             <div class="top-list">
                 {% for row in top_meals %}
                 <div class="top-row">
@@ -161,7 +161,7 @@
     {% for druh, jidla in stats.items %}
     <section class="meal-section">
         <div class="meal-section-header">
-            <h2><i class="fas fa-bowl-food me-2"></i>{{ druh }}</h2>
+            <h2><i class="fas fa-bowl-food kuchyne-inline-icon"></i>{{ druh }}</h2>
             <div class="meal-header-stats">
                 <span class="meal-stat">{{ jidla|length }} jídel</span>
                 <span class="meal-stat">
@@ -209,7 +209,7 @@
 
     {% else %}
     <div class="empty-state">
-        <p><i class="fas fa-inbox me-2"></i>Na vybraný den nejsou žádné objednávky k přípravě.</p>
+        <p><i class="fas fa-inbox kuchyne-inline-icon"></i>Na vybraný den nejsou žádné objednávky k přípravě.</p>
     </div>
     {% endif %}
 </div>

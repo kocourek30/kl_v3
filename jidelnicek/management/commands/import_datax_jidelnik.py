@@ -43,7 +43,7 @@ class DbfField:
 
 class Command(BaseCommand):
     help = (
-        "Importuje jídelníček z Datax DBF (JIDELNIK.DBF) pro vybrané měsíce "
+        "Importuje jídelníček z Datax DBF (QHK900.DBF) pro vybrané měsíce "
         "a volitelně předtím smaže navázané testovací transakce."
     )
 
@@ -59,8 +59,13 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             "--dbf-path",
-            default=r"E:\datax\JIDELNIK.DBF",
-            help="Cesta k Datax JIDELNIK.DBF",
+            default=r"Datax\Kuch\DBF\QHK900.DBF",
+            help="Cesta k Datax QHK900.DBF",
+        )
+        parser.add_argument(
+            "--jidla-catalog-path",
+            default=r"Datax\Kuch\DBF\JIDLA.DBF",
+            help="Volitelná cesta ke katalogu jídel JIDLA.DBF pro lepší ceny a názvy.",
         )
         parser.add_argument(
             "--year",
@@ -98,6 +103,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         dbf_path = Path(options["dbf_path"])
+        jidla_catalog_path = Path(options["jidla_catalog_path"])
         if not dbf_path.exists():
             raise CommandError(f"Soubor neexistuje: {dbf_path}")
 
@@ -119,6 +125,7 @@ class Command(BaseCommand):
 
         try:
             rows = self._read_dbf_rows(dbf_path)
+            jidla_catalog_rows = self._read_dbf_rows(jidla_catalog_path) if jidla_catalog_path.exists() else []
             raw_selected_rows = [
                 row
                 for row in rows
@@ -146,7 +153,8 @@ class Command(BaseCommand):
                 grouped_by_day_source = dict(grouped_by_day_raw)
 
             slug_catalog = self._build_slug_catalog(
-                [row for day_rows in grouped_by_day_source.values() for row in day_rows]
+                [row for day_rows in grouped_by_day_source.values() for row in day_rows],
+                jidla_catalog_rows=jidla_catalog_rows,
             )
 
             grouped_by_day = {}
@@ -719,7 +727,7 @@ class Command(BaseCommand):
     def _slug_from_name(self, nazev: str | None) -> str:
         return slugify((nazev or "").strip())
 
-    def _build_slug_catalog(self, rows: list[dict]) -> dict[str, dict]:
+    def _build_slug_catalog(self, rows: list[dict], jidla_catalog_rows: list[dict] | None = None) -> dict[str, dict]:
         aggregated: dict[str, dict] = {}
         for row in rows:
             nazev = (row.get("NAZEV") or "").strip()
@@ -741,12 +749,42 @@ class Command(BaseCommand):
             bucket["name_counts"][nazev] += 1
             bucket["prices"].append(cena)
 
+        catalog_by_code = self._build_catalog_by_code(jidla_catalog_rows or [])
+        for row in rows:
+            kod = (row.get("KOD") or "").strip()
+            catalog_row = catalog_by_code.get(kod)
+            if not catalog_row:
+                continue
+
+            catalog_name = (catalog_row.get("NAZEV") or "").strip()
+            slug = self._slug_from_name(catalog_name or row.get("NAZEV"))
+            if not slug:
+                continue
+
+            bucket = aggregated.setdefault(
+                slug,
+                {
+                    "typ_counts": defaultdict(int),
+                    "name_counts": defaultdict(int),
+                    "prices": [],
+                },
+            )
+            row_typ = (row.get("TYP") or "").strip().upper()
+            if row_typ:
+                bucket["typ_counts"][row_typ] += 1
+            if catalog_name:
+                bucket["name_counts"][catalog_name] += 3
+            catalog_price = self._parse_decimal(catalog_row.get("PRUMER"))
+            if catalog_price is not None:
+                bucket["prices"].append(catalog_price)
+
         catalog: dict[str, dict] = {}
         for slug, bucket in aggregated.items():
-            typ = sorted(
+            typ_items = sorted(
                 bucket["typ_counts"].items(),
                 key=lambda item: (-item[1], self._order_for_type(item[0]), item[0]),
-            )[0][0]
+            )
+            typ = typ_items[0][0] if typ_items else ""
             nazev = sorted(
                 bucket["name_counts"].items(),
                 key=lambda item: (-item[1], -len(item[0]), item[0]),
@@ -758,6 +796,14 @@ class Command(BaseCommand):
                 "nazev": nazev,
                 "cena": cena,
             }
+        return catalog
+
+    def _build_catalog_by_code(self, rows: list[dict]) -> dict[str, dict]:
+        catalog: dict[str, dict] = {}
+        for row in rows:
+            kod = (row.get("KOD") or "").strip()
+            if kod and kod not in catalog:
+                catalog[kod] = row
         return catalog
 
     def _dedupe_day_rows(self, day_rows: list[dict], slug_catalog: dict[str, dict]) -> tuple[list[dict], int]:

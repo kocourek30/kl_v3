@@ -145,6 +145,33 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
     class Media:
         css = {"all": ("users/css/user_list_admin.css",)}
 
+    _custom_filter_keys = ("role_group", "strav_group", "medium", "active", "balance", "q")
+
+    def _get_custom_filters(self, request):
+        return getattr(request, "_users_custom_filters", {})
+
+    def _get_custom_param(self, request, key):
+        cached = self._get_custom_filters(request)
+        if key in cached:
+            return cached.get(key, "")
+        return request.GET.get(key, "").strip()
+
+    def lookup_allowed(self, lookup, value, request=None):
+        """
+        Povolit vlastní query parametry z custom filtr panelu.
+        Bez toho je admin changelist vyhodnocuje jako neplatné lookupy.
+        """
+        custom_lookups = {
+            "role_group",
+            "strav_group",
+            "medium",
+            "active",
+            "balance",
+        }
+        if lookup in custom_lookups:
+            return True
+        return super().lookup_allowed(lookup, value, request)
+
     @admin.display(description="Zůstatek")
     def colored_zustatek(self, obj):
         zustatek = obj.aktualni_zustatek
@@ -251,11 +278,21 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
             .select_related("stravovaci_skupina")
             .prefetch_related("groups")
         )
-        role_group_id = request.GET.get("role_group", "").strip()
-        strav_group_id = request.GET.get("strav_group", "").strip()
-        medium_state = request.GET.get("medium", "").strip()
-        active_state = request.GET.get("active", "").strip()
-        balance_state = request.GET.get("balance", "").strip()
+        role_group_id = self._get_custom_param(request, "role_group")
+        strav_group_id = self._get_custom_param(request, "strav_group")
+        medium_state = self._get_custom_param(request, "medium")
+        active_state = self._get_custom_param(request, "active")
+        balance_state = self._get_custom_param(request, "balance")
+        q_lookup = self._get_custom_param(request, "q")
+
+        if q_lookup:
+            qs = qs.filter(
+                Q(username__icontains=q_lookup)
+                | Q(first_name__icontains=q_lookup)
+                | Q(last_name__icontains=q_lookup)
+                | Q(email__icontains=q_lookup)
+                | Q(osobni_cislo__icontains=q_lookup)
+            )
 
         if role_group_id:
             try:
@@ -297,7 +334,21 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
 
     def changelist_view(self, request, extra_context=None):
         extra_context = extra_context or {}
-        response = super().changelist_view(request, extra_context=extra_context)
+        request._users_custom_filters = {
+            key: request.GET.get(key, "").strip()
+            for key in self._custom_filter_keys
+        }
+
+        original_get = request.GET
+        cleaned_get = request.GET.copy()
+        for key in self._custom_filter_keys:
+            cleaned_get.pop(key, None)
+        request.GET = cleaned_get
+        try:
+            response = super().changelist_view(request, extra_context=extra_context)
+        finally:
+            request.GET = original_get
+
         if not hasattr(response, "context_data"):
             return response
 
@@ -330,19 +381,19 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
                 "users_debt_enabled_on_page": debt_enabled_on_page,
                 "user_role_group_options": Group.objects.order_by("name"),
                 "user_strav_group_options": StravovaciSkupina.objects.order_by("nazev"),
-                "user_filter_role_group": request.GET.get("role_group", "").strip(),
-                "user_filter_strav_group": request.GET.get("strav_group", "").strip(),
-                "user_filter_medium": request.GET.get("medium", "").strip(),
-                "user_filter_active": request.GET.get("active", "").strip(),
-                "user_filter_balance": request.GET.get("balance", "").strip(),
-                "user_filter_q": request.GET.get("q", "").strip(),
+                "user_filter_role_group": self._get_custom_param(request, "role_group"),
+                "user_filter_strav_group": self._get_custom_param(request, "strav_group"),
+                "user_filter_medium": self._get_custom_param(request, "medium"),
+                "user_filter_active": self._get_custom_param(request, "active"),
+                "user_filter_balance": self._get_custom_param(request, "balance"),
+                "user_filter_q": self._get_custom_param(request, "q"),
                 "user_filters_active": bool(
-                    request.GET.get("q", "").strip()
-                    or request.GET.get("role_group", "").strip()
-                    or request.GET.get("strav_group", "").strip()
-                    or request.GET.get("medium", "").strip()
-                    or request.GET.get("active", "").strip()
-                    or request.GET.get("balance", "").strip()
+                    self._get_custom_param(request, "q")
+                    or self._get_custom_param(request, "role_group")
+                    or self._get_custom_param(request, "strav_group")
+                    or self._get_custom_param(request, "medium")
+                    or self._get_custom_param(request, "active")
+                    or self._get_custom_param(request, "balance")
                 ),
                 "user_bulk_querystring": request.GET.urlencode(),
             }
@@ -373,6 +424,35 @@ class VkladAdmin(admin.ModelAdmin):
 
     class Media:
         css = {"all": ("users/css/vklad_list_admin.css",)}
+
+    _custom_filter_keys = ("stav", "uhrada", "pokladna", "od", "do", "uzivatel", "castka_od", "castka_do")
+
+    def _get_custom_filters(self, request):
+        return getattr(request, "_vklad_custom_filters", {})
+
+    def _get_custom_param(self, request, key):
+        cached = self._get_custom_filters(request)
+        if key in cached:
+            return cached.get(key, "")
+        return request.GET.get(key, "").strip()
+
+    def lookup_allowed(self, lookup, value, request=None):
+        """
+        Povolit vlastní query parametry z custom filtr panelu vkladů.
+        """
+        custom_lookups = {
+            "stav",
+            "uhrada",
+            "pokladna",
+            "od",
+            "do",
+            "uzivatel",
+            "castka_od",
+            "castka_do",
+        }
+        if lookup in custom_lookups:
+            return True
+        return super().lookup_allowed(lookup, value, request)
 
     def get_urls(self):
         urls = super().get_urls()
@@ -432,14 +512,14 @@ class VkladAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         qs = super().get_queryset(request).select_related("uzivatel", "pokladna")
 
-        status = request.GET.get("stav", "").strip()
-        payment = request.GET.get("uhrada", "").strip()
-        pokladna_id = request.GET.get("pokladna", "").strip()
-        date_from = self._parse_date_param(request.GET.get("od", ""))
-        date_to = self._parse_date_param(request.GET.get("do", ""))
-        user_lookup = request.GET.get("uzivatel", "").strip()
-        amount_from = self._parse_decimal_param(request.GET.get("castka_od", ""))
-        amount_to = self._parse_decimal_param(request.GET.get("castka_do", ""))
+        status = self._get_custom_param(request, "stav")
+        payment = self._get_custom_param(request, "uhrada")
+        pokladna_id = self._get_custom_param(request, "pokladna")
+        date_from = self._parse_date_param(self._get_custom_param(request, "od"))
+        date_to = self._parse_date_param(self._get_custom_param(request, "do"))
+        user_lookup = self._get_custom_param(request, "uzivatel")
+        amount_from = self._parse_decimal_param(self._get_custom_param(request, "castka_od"))
+        amount_to = self._parse_decimal_param(self._get_custom_param(request, "castka_do"))
 
         if status:
             qs = qs.filter(status=status)
@@ -470,7 +550,21 @@ class VkladAdmin(admin.ModelAdmin):
 
     def changelist_view(self, request, extra_context=None):
         extra_context = extra_context or {}
-        response = super().changelist_view(request, extra_context=extra_context)
+        request._vklad_custom_filters = {
+            key: request.GET.get(key, "").strip()
+            for key in self._custom_filter_keys
+        }
+
+        original_get = request.GET
+        cleaned_get = request.GET.copy()
+        for key in self._custom_filter_keys:
+            cleaned_get.pop(key, None)
+        request.GET = cleaned_get
+        try:
+            response = super().changelist_view(request, extra_context=extra_context)
+        finally:
+            request.GET = original_get
+
         if not hasattr(response, "context_data"):
             return response
 
@@ -503,23 +597,23 @@ class VkladAdmin(admin.ModelAdmin):
                 "vklad_status_standard": status_counts[Vklad.STATUS_STANDARD],
                 "vklad_status_nulovani": status_counts[Vklad.STATUS_NULOVANI_KONTA],
                 "vklad_status_platba": status_counts[Vklad.STATUS_PLATBA_UCTU],
-                "vklad_filter_status": request.GET.get("stav", "").strip(),
-                "vklad_filter_payment": request.GET.get("uhrada", "").strip(),
-                "vklad_filter_pokladna": request.GET.get("pokladna", "").strip(),
-                "vklad_filter_date_from": request.GET.get("od", "").strip(),
-                "vklad_filter_date_to": request.GET.get("do", "").strip(),
-                "vklad_filter_user": request.GET.get("uzivatel", "").strip(),
-                "vklad_filter_amount_from": request.GET.get("castka_od", "").strip(),
-                "vklad_filter_amount_to": request.GET.get("castka_do", "").strip(),
+                "vklad_filter_status": self._get_custom_param(request, "stav"),
+                "vklad_filter_payment": self._get_custom_param(request, "uhrada"),
+                "vklad_filter_pokladna": self._get_custom_param(request, "pokladna"),
+                "vklad_filter_date_from": self._get_custom_param(request, "od"),
+                "vklad_filter_date_to": self._get_custom_param(request, "do"),
+                "vklad_filter_user": self._get_custom_param(request, "uzivatel"),
+                "vklad_filter_amount_from": self._get_custom_param(request, "castka_od"),
+                "vklad_filter_amount_to": self._get_custom_param(request, "castka_do"),
                 "vklad_filters_active": bool(
-                    request.GET.get("stav", "").strip()
-                    or request.GET.get("uhrada", "").strip()
-                    or request.GET.get("pokladna", "").strip()
-                    or request.GET.get("od", "").strip()
-                    or request.GET.get("do", "").strip()
-                    or request.GET.get("uzivatel", "").strip()
-                    or request.GET.get("castka_od", "").strip()
-                    or request.GET.get("castka_do", "").strip()
+                    self._get_custom_param(request, "stav")
+                    or self._get_custom_param(request, "uhrada")
+                    or self._get_custom_param(request, "pokladna")
+                    or self._get_custom_param(request, "od")
+                    or self._get_custom_param(request, "do")
+                    or self._get_custom_param(request, "uzivatel")
+                    or self._get_custom_param(request, "castka_od")
+                    or self._get_custom_param(request, "castka_do")
                 ),
                 "vklad_bulk_querystring": request.GET.urlencode(),
                 "vklad_status_choices": Vklad.STATUS_CHOICES,

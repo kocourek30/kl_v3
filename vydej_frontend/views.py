@@ -1,5 +1,6 @@
 import logging
 import secrets
+from collections import defaultdict
 
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
@@ -28,6 +29,12 @@ logger = logging.getLogger(__name__)
 from vydej.models import VydejSettings
 
 
+ACTIVE_ORDER_STATUSES = ['objednano', 'zalozena-obsluhou', 'castecne-vydano']
+LOCAL_RFID_CLIENTS = {"127.0.0.1", "::1", "localhost"}
+
+
+@login_required
+@obsluha_required
 def get_vydej_settings(request):
     settings, created = VydejSettings.objects.get_or_create()
     return JsonResponse({
@@ -35,10 +42,10 @@ def get_vydej_settings(request):
     })
 
 
-def _rfid_token_ok(request, data=None):
+def _rfid_token_ok(request, data=None, require_configured=False):
     expected = getattr(settings, "RFID_API_TOKEN", "")
     if not expected:
-        return True
+        return not require_configured
     supplied = (
         request.headers.get("X-RFID-Token")
         or request.headers.get("X-API-Key")
@@ -46,6 +53,18 @@ def _rfid_token_ok(request, data=None):
         or ""
     )
     return secrets.compare_digest(str(supplied), str(expected))
+
+
+def _rfid_request_allowed(request, data=None):
+    user = getattr(request, "user", None)
+    if user and user.is_authenticated:
+        return True
+
+    remote_addr = (request.META.get("REMOTE_ADDR") or "").strip()
+    if remote_addr not in LOCAL_RFID_CLIENTS:
+        return False
+
+    return _rfid_token_ok(request, data, require_configured=True)
 
 
 def get_current_meal_type_ids():
@@ -77,29 +96,51 @@ def get_current_meal_types_with_counts(today, current_meal_type_ids):
         pickup_to__gte=now
     ).select_related('druh_jidla').order_by('druh_jidla__poradi', 'druh_jidla__nazev')
     
-    for pickup in active_pickup_times:
-        menu_items = PolozkaJidelnicku.objects.filter(
-            druh_jidla=pickup.druh_jidla,
+    pickup_meal_type_ids = [p.druh_jidla_id for p in active_pickup_times]
+    if not pickup_meal_type_ids:
+        return active_pickup_times
+
+    menu_items = list(
+        PolozkaJidelnicku.objects.filter(
+            druh_jidla_id__in=pickup_meal_type_ids,
             jidelnicek__platnost_od__lte=today,
-            jidelnicek__platnost_do__gte=today
-        ).select_related('jidlo').order_by('jidlo__nazev')
-        
-        meals_with_counts = []
-        for menu_item in menu_items:
-            count = OrderItem.objects.filter(
-                order__datum_vydeje=today,
-                order__status__in=['objednano', 'zalozena-obsluhou', 'castecne-vydano'],
-                menu_item=menu_item,
-                vydano=False
-            ).aggregate(total=Sum('quantity'))['total'] or 0
-            
-            if count > 0:
-                meals_with_counts.append({
-                    'menu_item': menu_item,
-                    'count': count
-                })
-        
-        pickup.meals_with_counts = meals_with_counts
+            jidelnicek__platnost_do__gte=today,
+        )
+        .select_related("jidlo", "druh_jidla")
+        .order_by("druh_jidla__poradi", "druh_jidla__nazev", "jidlo__nazev")
+    )
+    menu_item_ids = [m.id for m in menu_items]
+    if not menu_item_ids:
+        for pickup in active_pickup_times:
+            pickup.meals_with_counts = []
+        return active_pickup_times
+
+    count_by_menu_item_id = {
+        row["menu_item_id"]: row["total"]
+        for row in OrderItem.objects.filter(
+            order__datum_vydeje=today,
+            order__status__in=ACTIVE_ORDER_STATUSES,
+            menu_item_id__in=menu_item_ids,
+            vydano=False,
+        )
+        .values("menu_item_id")
+        .annotate(total=Sum("quantity"))
+    }
+
+    meals_by_type = defaultdict(list)
+    for menu_item in menu_items:
+        count = count_by_menu_item_id.get(menu_item.id, 0) or 0
+        if count <= 0:
+            continue
+        meals_by_type[menu_item.druh_jidla_id].append(
+            {
+                "menu_item": menu_item,
+                "count": count,
+            }
+        )
+
+    for pickup in active_pickup_times:
+        pickup.meals_with_counts = meals_by_type.get(pickup.druh_jidla_id, [])
     
     return active_pickup_times
 
@@ -113,7 +154,7 @@ def dashboard(request):
     # Pending orders (k výdeji)
     pending_orders_qs = Order.objects.filter(
         datum_vydeje=today,
-        status__in=['objednano', 'zalozena-obsluhou', 'castecne-vydano']
+        status__in=ACTIVE_ORDER_STATUSES
     ).select_related('user').prefetch_related(
         'items__menu_item__jidlo',
         'items__menu_item__druh_jidla'
@@ -148,7 +189,7 @@ def dashboard(request):
     # Statistiky položek k výdeji POUZE pro aktuální výdejní časy
     pending_items = OrderItem.objects.filter(
         order__datum_vydeje=today,
-        order__status__in=['objednano', 'zalozena-obsluhou', 'castecne-vydano'],
+        order__status__in=ACTIVE_ORDER_STATUSES,
         vydano=False,
         menu_item__druh_jidla_id__in=current_meal_type_ids
     ).select_related(
@@ -228,7 +269,7 @@ def refresh_data(request):
     
     pending_orders_qs = Order.objects.filter(
         datum_vydeje=today,
-        status__in=['objednano', 'zalozena-obsluhou', 'castecne-vydano']
+        status__in=ACTIVE_ORDER_STATUSES
     ).select_related('user').prefetch_related(
         'items__menu_item__jidlo',
         'items__menu_item__druh_jidla'
@@ -258,7 +299,7 @@ def refresh_data(request):
     
     pending_items = OrderItem.objects.filter(
         order__datum_vydeje=today,
-        order__status__in=['objednano', 'zalozena-obsluhou', 'castecne-vydano'],
+        order__status__in=ACTIVE_ORDER_STATUSES,
         vydano=False,
         menu_item__druh_jidla_id__in=current_meal_type_ids
     ).select_related(
@@ -308,8 +349,12 @@ def rfid_scan(request):
     """Najde objednávku podle RFID - zobrazí i už vydané"""
     try:
         data = json.loads(request.body)
-        if not _rfid_token_ok(request, data):
-            logger.warning("Odmítnutý RFID scan kvůli neplatnému tokenu.")
+        if not _rfid_request_allowed(request, data):
+            logger.warning(
+                "Odmítnutý RFID scan (remote=%s, user=%s).",
+                request.META.get("REMOTE_ADDR"),
+                getattr(getattr(request, "user", None), "username", None),
+            )
             return JsonResponse({'success': False, 'error': 'Neplatné oprávnění RFID terminálu.'}, status=403)
 
         rfid_tag = data.get('rfid_tag', '').strip()
@@ -333,7 +378,7 @@ def rfid_scan(request):
         order = Order.objects.filter(
             user=user,
             datum_vydeje=today,
-            status__in=['objednano', 'zalozena-obsluhou', 'castecne-vydano']
+            status__in=ACTIVE_ORDER_STATUSES
         ).select_related('user').prefetch_related(
             'items__menu_item__jidlo',
             'items__menu_item__druh_jidla'

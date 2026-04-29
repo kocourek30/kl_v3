@@ -10,7 +10,7 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
 from django.core.exceptions import ValidationError
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.template.response import TemplateResponse
@@ -615,6 +615,34 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
             key=lambda row: (not row["pod_min"], row["procento_minima"], row["surovina"].nazev),
         )[:20]
 
+    def _dashboard_import_quality(self):
+        partner_qs = Dodavatel.objects.filter(datax_zdroj__startswith="DATAx").order_by("typ_subjektu", "nazev")
+        review_qs = partner_qs.filter(
+            Q(typ_subjektu=Dodavatel.TYP_DODAVATEL, ico="")
+            | Q(typ_subjektu__in=[Dodavatel.TYP_STREDISKO, Dodavatel.TYP_PROVOZ], adresa="")
+            | Q(nazev__icontains="spotreby")
+            | Q(nazev__icontains="kuchyne")
+            | Q(nazev__icontains="lahud")
+            | Q(nazev__icontains="bile")
+        )[:8]
+        return {
+            "partner_total": partner_qs.count(),
+            "dodavatele": partner_qs.filter(typ_subjektu=Dodavatel.TYP_DODAVATEL).count(),
+            "strediska": partner_qs.filter(typ_subjektu=Dodavatel.TYP_STREDISKO).count(),
+            "provozy": partner_qs.filter(typ_subjektu=Dodavatel.TYP_PROVOZ).count(),
+            "technicke": partner_qs.filter(typ_subjektu=Dodavatel.TYP_TECHNICKY).count(),
+            "historicke_prijemky": PrijemSkladu.objects.filter(popis__startswith="DATAx import QHK01").count(),
+            "historicke_pohyby": PohybSkladu.objects.filter(
+                Q(poznamka__startswith="DATAx import QHK01")
+                | Q(poznamka__startswith="DATAx import QHK10")
+            ).count(),
+            "receptury": RecepturaPolozka.objects.count(),
+            "suroviny_bez_skupiny": Surovina.objects.filter(
+                Q(skupina_sk="") | Q(skupina_sk=Surovina.SK_NEZAPOCITAVA_SE)
+            ).count(),
+            "partneri_ke_kontrole": list(review_qs),
+        }
+
     def get_urls(self):
         urls = super().get_urls()
         custom = [
@@ -735,6 +763,11 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
             "zdravi_skladu_url": "zdravi-skladu/",
             "zdravi_skladu_pdf_url": f"zdravi-skladu/pdf/?date={target_date.isoformat()}",
             "doklady_k_oprave_url": "doklady-k-oprave/",
+            "import_quality": self._dashboard_import_quality(),
+            "dodavatele_url": reverse("admin:sklad_dodavatel_changelist"),
+            "prijemky_url": reverse("admin:sklad_prijemskladu_changelist"),
+            "pohyby_url": reverse("admin:sklad_pohybskladu_changelist"),
+            "suroviny_url": reverse("admin:sklad_surovina_changelist"),
         })
         return super().changelist_view(request, extra_context=extra_context)
 
@@ -1320,9 +1353,56 @@ class StavSkladuAdmin(admin.ModelAdmin):
 
 @admin.register(Dodavatel)
 class DodavatelAdmin(admin.ModelAdmin):
-    list_display = ("nazev", "ico", "dic", "email", "telefon", "aktivni")
-    list_filter = ("aktivni",)
-    search_fields = ("nazev", "ico", "dic", "email", "telefon")
+    list_display = ("nazev", "typ_subjektu_badge", "datax_zdroj", "ico", "email", "telefon", "aktivni")
+    list_filter = ("typ_subjektu", "datax_zdroj", "aktivni")
+    search_fields = ("nazev", "ico", "dic", "email", "telefon", "datax_kod", "datax_kod2", "datax_analytika")
+    readonly_fields = ("datax_zdroj", "datax_kod", "datax_kod2", "datax_analytika")
+    fieldsets = (
+        (
+            "Základ",
+            {
+                "fields": (
+                    ("nazev", "typ_subjektu", "aktivni"),
+                    ("ico", "dic"),
+                ),
+            },
+        ),
+        (
+            "Kontakt",
+            {
+                "fields": (
+                    "adresa",
+                    ("kontaktni_osoba", "telefon", "email"),
+                ),
+            },
+        ),
+        (
+            "DATAx vazba",
+            {
+                "classes": ("collapse",),
+                "fields": (
+                    ("datax_zdroj", "datax_kod"),
+                    ("datax_kod2", "datax_analytika"),
+                    "poznamka",
+                ),
+            },
+        ),
+    )
+
+    def typ_subjektu_badge(self, obj):
+        palette = {
+            Dodavatel.TYP_DODAVATEL: "success",
+            Dodavatel.TYP_STREDISKO: "info",
+            Dodavatel.TYP_PROVOZ: "warning",
+            Dodavatel.TYP_TECHNICKY: "secondary",
+        }
+        return format_html(
+            '<span class="badge badge-{}">{}</span>',
+            palette.get(obj.typ_subjektu, "light"),
+            obj.get_typ_subjektu_display(),
+        )
+
+    typ_subjektu_badge.short_description = "Typ"
 
 
 @admin.register(PohybSkladu)

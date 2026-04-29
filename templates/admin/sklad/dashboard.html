@@ -60,6 +60,161 @@
 
 {% block result_list %}
 <div class="sklad-shell">
+<section class="sklad-section mb-3">
+  <div class="sklad-section-head">
+    <h3>
+      <i class="fas fa-database"></i>
+      DATAx import pod kontrolou
+    </h3>
+    <div class="admin-actions-row">
+      <a class="admin-btn admin-btn--light admin-btn--small" href="{{ dodavatele_url }}">
+        <i class="fas fa-truck"></i> Partneři a střediska
+      </a>
+      <a class="admin-btn admin-btn--light admin-btn--small" href="{{ prijemky_url }}">
+        <i class="fas fa-file-invoice"></i> Příjemky
+      </a>
+      <a class="admin-btn admin-btn--light admin-btn--small" href="{{ pohyby_url }}">
+        <i class="fas fa-right-left"></i> Pohyby
+      </a>
+      <a class="admin-btn admin-btn--light admin-btn--small" href="{{ suroviny_url }}">
+        <i class="fas fa-carrot"></i> Suroviny
+      </a>
+    </div>
+  </div>
+  <div class="sklad-section-body">
+    <div class="row mb-3">
+      <div class="col-md-2 col-6 mb-2">
+        <div class="admin-stat-card">
+          <span class="admin-stat-label">DATAx partneři</span>
+          <span class="admin-stat-value">{{ import_quality.partner_total }}</span>
+          <span class="admin-stat-note">celkem v adresáři skladu</span>
+        </div>
+      </div>
+      <div class="col-md-2 col-6 mb-2">
+        <div class="admin-stat-card">
+          <span class="admin-stat-label">Dodavatelé</span>
+          <span class="admin-stat-value">{{ import_quality.dodavatele }}</span>
+          <span class="admin-stat-note">komerční subjekty</span>
+        </div>
+      </div>
+      <div class="col-md-2 col-6 mb-2">
+        <div class="admin-stat-card">
+          <span class="admin-stat-label">Střediska</span>
+          <span class="admin-stat-value">{{ import_quality.strediska }}</span>
+          <span class="admin-stat-note">interní odběry a vazby</span>
+        </div>
+      </div>
+      <div class="col-md-2 col-6 mb-2">
+        <div class="admin-stat-card">
+          <span class="admin-stat-label">Provozy</span>
+          <span class="admin-stat-value">{{ import_quality.provozy }}</span>
+          <span class="admin-stat-note">místa a režimy výdeje</span>
+        </div>
+      </div>
+      <div class="col-md-2 col-6 mb-2">
+        <div class="admin-stat-card">
+          <span class="admin-stat-label">Historické příjemky</span>
+          <span class="admin-stat-value">{{ import_quality.historicke_prijemky }}</span>
+          <span class="admin-stat-note">načtené z DATAx QHK01</span>
+        </div>
+      </div>
+      <div class="col-md-2 col-6 mb-2">
+        <div class="admin-stat-card">
+          <span class="admin-stat-label">Historické pohyby</span>
+          <span class="admin-stat-value">{{ import_quality.historicke_pohyby }}</span>
+          <span class="admin-stat-note">QHK01 + QHK10</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-lg-7 mb-3">
+        <div class="table-responsive">
+          <table class="table table-sm table-striped mb-0 sklad-table">
+            <thead class="thead-light">
+              <tr>
+                <th>Kontrolní bod</th>
+                <th>Stav</th>
+                <th>Poznámka</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Receptury jídel</strong></td>
+                <td><span class="badge badge-success">{{ import_quality.receptury }}</span></td>
+                <td>Aktivní vazby jídlo → surovina po DATAx importu.</td>
+              </tr>
+              <tr>
+                <td><strong>Suroviny bez SK skupiny</strong></td>
+                <td>
+                  <span class="badge {% if import_quality.suroviny_bez_skupiny %}badge-warning{% else %}badge-success{% endif %}">
+                    {{ import_quality.suroviny_bez_skupiny }}
+                  </span>
+                </td>
+                <td>Sem spadnou i položky, které se do spotřebního koše nezapočítávají a stojí za ruční revizi.</td>
+              </tr>
+              <tr>
+                <td><strong>Technické záznamy</strong></td>
+                <td><span class="badge badge-secondary">{{ import_quality.technicke }}</span></td>
+                <td>Technický partner pro historické příjemky zůstává odděleně.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="col-lg-5 mb-3">
+        <div class="sklad-alert {% if import_quality.partneri_ke_kontrole %}sklad-alert--warning{% else %}sklad-alert--success{% endif %} mb-2">
+          {% if import_quality.partneri_ke_kontrole %}
+            K ruční kontrole zbývá {{ import_quality.partneri_ke_kontrole|length }} partnerů nebo středisek.
+          {% else %}
+            Partneri z DATAx vypadají po základním čištění v pořádku.
+          {% endif %}
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-striped mb-0 sklad-table">
+            <thead class="thead-light">
+              <tr>
+                <th>Název</th>
+                <th>Typ</th>
+                <th>Kontrola</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for partner in import_quality.partneri_ke_kontrole %}
+                <tr>
+                  <td>
+                    <strong>{{ partner.nazev }}</strong>
+                    {% if partner.datax_kod %}
+                      <small class="text-muted d-block">{{ partner.datax_zdroj }} / {{ partner.datax_kod }}</small>
+                    {% endif %}
+                  </td>
+                  <td>{{ partner.get_typ_subjektu_display }}</td>
+                  <td>
+                    {% if partner.typ_subjektu == "DODAVATEL" and not partner.ico %}
+                      Doplnit IČO
+                    {% elif partner.typ_subjektu != "TECHNICKY" and not partner.adresa %}
+                      Doplnit adresu
+                    {% else %}
+                      Zkontrolovat název
+                    {% endif %}
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="3" class="text-center text-muted py-3">
+                    <i class="fas fa-check-circle"></i>
+                    Žádný partner aktuálně nevyžaduje ruční kontrolu.
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section class="sklad-section">
   <div class="sklad-section-head">
     <h3>

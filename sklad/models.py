@@ -214,13 +214,36 @@ class StavSkladu(models.Model):
 
 
 class Dodavatel(models.Model):
+    TYP_DODAVATEL = "DODAVATEL"
+    TYP_STREDISKO = "STREDISKO"
+    TYP_PROVOZ = "PROVOZ"
+    TYP_TECHNICKY = "TECHNICKY"
+
+    TYPY_SUBJEKTU = [
+        (TYP_DODAVATEL, "Dodavatel"),
+        (TYP_STREDISKO, "Středisko"),
+        (TYP_PROVOZ, "Provoz"),
+        (TYP_TECHNICKY, "Technický záznam"),
+    ]
+
     nazev = models.CharField("Název", max_length=255, unique=True)
+    typ_subjektu = models.CharField(
+        "Typ subjektu",
+        max_length=20,
+        choices=TYPY_SUBJEKTU,
+        default=TYP_DODAVATEL,
+        db_index=True,
+    )
     ico = models.CharField("IČO", max_length=20, blank=True, default="")
     dic = models.CharField("DIČ", max_length=20, blank=True, default="")
     adresa = models.TextField("Adresa", blank=True, default="")
     kontaktni_osoba = models.CharField("Kontaktní osoba", max_length=255, blank=True, default="")
     email = models.EmailField("E-mail", blank=True, default="")
     telefon = models.CharField("Telefon", max_length=50, blank=True, default="")
+    datax_zdroj = models.CharField("DATAx zdroj", max_length=50, blank=True, default="", db_index=True)
+    datax_kod = models.CharField("DATAx kód", max_length=50, blank=True, default="", db_index=True)
+    datax_kod2 = models.CharField("DATAx kód 2", max_length=50, blank=True, default="")
+    datax_analytika = models.CharField("DATAx analytika", max_length=50, blank=True, default="")
     aktivni = models.BooleanField("Aktivní", default=True)
     poznamka = models.TextField("Poznámka", blank=True, default="")
 
@@ -231,6 +254,10 @@ class Dodavatel(models.Model):
 
     def __str__(self):
         return self.nazev
+
+    @property
+    def je_datax_import(self) -> bool:
+        return bool(self.datax_zdroj)
 
 
 class PrijemSkladu(DokladBase):

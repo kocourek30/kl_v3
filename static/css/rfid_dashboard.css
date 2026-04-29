@@ -411,13 +411,121 @@
             display: inline-block;
         }
 
-        .btn-rfid-retry {
+.btn-rfid-retry {
             background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
             color: white;
             padding: 1rem 2rem;
             font-size: 1.1rem;
             font-weight: 600;
             border: none;
+
+}
+
+/* Layout + helper classes moved from inline styles */
+.csrf-hidden-form { display: none; }
+.tab-pane-rfid { position: relative; }
+.state-hidden { display: none !important; }
+.rfid-loading-overlay.state-hidden { display: none !important; }
+
+.search-filter-panel {
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.badge-compact { font-size: 0.7rem; }
+.badge-compact-xs { font-size: 0.65rem; }
+
+.order-date-line {
+    font-size: 0.85rem;
+    color: #666;
+    margin-bottom: 0.5rem;
+    padding-left: 0.25rem;
+}
+
+.order-date-line--pending { color: #2196F3; }
+.order-date-line--completed { color: #4CAF50; }
+.order-issued-sep { margin-left: 0.5rem; }
+
+.order-followup-note {
+    margin-top: 0.5rem;
+    padding: 0.4rem;
+    background: #e3f2fd;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    color: #1565c0;
+}
+
+.completed-order-icon { color: #4CAF50; }
+.completed-order-time {
+    color: #4CAF50;
+    font-size: 1rem;
+}
+
+.item-issued-time {
+    font-size: 0.75rem;
+    color: #888;
+    margin-left: 0.5rem;
+}
+
+.order-pending-note {
+    margin-top: 0.75rem;
+    padding: 0.5rem;
+    background: #fff3cd;
+    border-radius: 6px;
+    border-left: 3px solid #ffc107;
+}
+
+.order-pending-note-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #856404;
+    margin-bottom: 0.3rem;
+}
+
+.order-pending-note-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-size: 0.8rem;
+    color: #856404;
+}
+
+.order-pending-note-item { padding: 0.2rem 0; }
+.order-pending-note-qty { font-weight: 600; }
+.order-pending-note-type { font-style: italic; }
+
+.summary-empty-text {
+    color: rgba(255, 255, 255, 0.9);
+    text-align: center;
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+.recent-order-date-line {
+    font-size: 0.8rem;
+    color: #888;
+    margin: 0.3rem 0 0.5rem 1.5rem;
+}
+
+.recent-issued-time {
+    font-size: 0.75rem;
+    color: #aaa;
+    margin-left: 0.3rem;
+}
+
+.recent-pending-note {
+    margin: 0.5rem 0 0 1.5rem;
+    padding: 0.4rem;
+    background: #fff3cd;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    color: #856404;
+}
+
+.empty-state-compact { padding: 2rem 0.5rem; }
+.empty-state-icon-lg { font-size: 2.5rem; }
+.empty-state-text-sm { font-size: 0.9rem; }
             border-radius: 10px;
             transition: all 0.3s ease;
             box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);

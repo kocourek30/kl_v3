@@ -28,18 +28,44 @@
   </section>
 
   <section class="toolbar-card">
-    <div class="canteen-admin__quicklinks">
-      {% for link in dashboard.quick_links %}
-        <a
-          class="admin-btn {% if link.tone == 'primary' %}admin-btn--primary{% else %}admin-btn--light{% endif %}"
-          href="{{ link.url }}"
-          {% if link.new_window %}target="_blank" rel="noopener"{% endif %}
-        >
-          <i class="{{ link.icon }}"></i>
-          <span>{{ link.label }}</span>
-          <small>{{ link.description }}</small>
-        </a>
-      {% endfor %}
+    <form method="get" action="{{ report_pdf_url }}" target="_blank" class="cancellation-report-form">
+      <div class="cancellation-report-form__title">
+        <i class="fas fa-file-pdf"></i>
+        <div>
+          <strong>Tisk odhlášek jídel</strong>
+          <small>Přehled kdo a co odhlásil pro vybraný den</small>
+        </div>
+      </div>
+      <div class="cancellation-report-form__controls">
+        <label for="report_date">Datum výdeje</label>
+        <input id="report_date" name="report_date" type="date" value="{{ report_date }}" required>
+        <button type="submit" formaction="{{ report_pdf_url }}" class="admin-btn admin-btn--light">
+          <i class="fas fa-download"></i>
+          <span>Stáhnout PDF odhlášek</span>
+        </button>
+        <button type="submit" formaction="{{ report_kitchen_pdf_url }}" class="admin-btn admin-btn--light">
+          <i class="fas fa-utensils"></i>
+          <span>Stáhnout PDF pro kuchyň</span>
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <section class="toolbar-card">
+    <div class="canteen-admin__kitchen-window">
+      <div class="canteen-admin__kitchen-window-meta">
+        <strong>Kuchyňské okno</strong>
+        <small>Rychlý vstup do samostatného pohledu pro kuchyň</small>
+      </div>
+      <a
+        class="admin-btn admin-btn--light"
+        href="{{ dashboard.kitchen_window.url }}"
+        target="_blank"
+        rel="noopener"
+      >
+        <i class="{{ dashboard.kitchen_window.icon }}"></i>
+        <span>{{ dashboard.kitchen_window.label }}</span>
+      </a>
     </div>
   </section>
 

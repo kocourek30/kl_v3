@@ -4,11 +4,11 @@ from dataclasses import dataclass
 from pathlib import Path
 import struct
 
-from django.core.management.base import BaseCommand, CommandError
 from django.contrib.auth.hashers import check_password, make_password
+from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
-from django.utils.text import slugify
 from django.utils import timezone
+from django.utils.text import slugify
 
 from users.models import StravovaciSkupina
 
@@ -28,13 +28,13 @@ class DbfField:
 
 
 class Command(BaseCommand):
-    help = "Importuje strávníky z Datax KCHSTRAV.DBF (upsert podle osobního čísla CZAKA)."
+    help = "Importuje strávníky z Datax C01.DBF (upsert podle osobního čísla CZAKA)."
 
     def add_arguments(self, parser):
         parser.add_argument(
             "--dbf-path",
-            default=r"E:\KCHSTRAV.DBF",
-            help="Cesta k Datax KCHSTRAV.DBF",
+            default=r"Datax\Kuch\DBF\C01.DBF",
+            help="Cesta k Datax C01.DBF",
         )
         parser.add_argument(
             "--dry-run",
@@ -52,13 +52,18 @@ class Command(BaseCommand):
         rows = self._read_dbf_rows(dbf_path)
         rows = [row for row in rows if (row.get("CZAKA") or "").strip()]
         if not rows:
-            raise CommandError("V KCHSTRAV.DBF nejsou žádní strávníci s osobním číslem (CZAKA).")
+            raise CommandError("V C01.DBF nejsou žádní strávníci s osobním číslem (CZAKA).")
 
         existing_columns = self._get_columns("users_customuser")
         if not existing_columns:
             raise CommandError("Tabulka users_customuser v DB neexistuje.")
+
         has_must_change_password = "must_change_password" in existing_columns
-        has_group_fk = "stravovaci_skupina_id" in existing_columns and "users_stravovaciskupina" in connection.introspection.table_names()
+        has_password_changed_at = "password_changed_at" in existing_columns
+        has_group_fk = (
+            "stravovaci_skupina_id" in existing_columns
+            and "users_stravovaciskupina" in connection.introspection.table_names()
+        )
 
         existing_by_personal = self._load_existing_users_by_personal()
 
@@ -70,7 +75,6 @@ class Command(BaseCommand):
             osobni_cislo = (row.get("CZAKA") or "").strip()
             if not osobni_cislo:
                 continue
-
             if osobni_cislo in existing_by_personal:
                 to_update += 1
             else:
@@ -86,7 +90,9 @@ class Command(BaseCommand):
             )
         )
         if touched_groups:
-            self.stdout.write(self.style.NOTICE(f"Třídy/skupiny v datech: {', '.join(sorted(touched_groups))}"))
+            self.stdout.write(
+                self.style.NOTICE(f"Třídy/skupiny v datech: {', '.join(sorted(touched_groups))}")
+            )
 
         if dry_run:
             self.stdout.write(self.style.WARNING("DRY RUN: žádné změny se neuloží."))
@@ -114,11 +120,11 @@ class Command(BaseCommand):
                 is_active = self._to_is_active(row.get("PLATNY"))
                 password_hash = make_password(osobni_cislo)
 
-                skupina_id = (
-                    ucitele_personal.id
-                    if has_group_fk and osobni_cislo.startswith("9")
-                    else studenti.id if has_group_fk else None
-                )
+                skupina_id = None
+                if has_group_fk:
+                    skupina_id = (
+                        ucitele_personal.id if osobni_cislo.startswith("9") else studenti.id
+                    )
 
                 user = existing_by_personal.get(osobni_cislo)
                 if user is None:
@@ -127,24 +133,26 @@ class Command(BaseCommand):
                         last_name=last_name,
                         osobni_cislo=osobni_cislo,
                     )
-                user_id = self._create_user_sql(
-                    username=username,
-                    password_hash=password_hash,
+                    user_id = self._create_user_sql(
+                        username=username,
+                        password_hash=password_hash,
                         first_name=first_name,
                         last_name=last_name,
                         email=email,
                         osobni_cislo=osobni_cislo,
-                    identifikacni_medium=medium or None,
-                    is_active=is_active,
-                    must_change_password=has_must_change_password,
-                    stravovaci_skupina_id=skupina_id if has_group_fk else None,
-                )
+                        identifikacni_medium=medium or None,
+                        is_active=is_active,
+                        must_change_password=has_must_change_password,
+                        include_password_changed_at=has_password_changed_at,
+                        stravovaci_skupina_id=skupina_id,
+                    )
                     existing_by_personal[osobni_cislo] = {
                         "id": user_id,
                         "username": username,
                         "first_name": first_name,
                         "last_name": last_name,
                         "email": email,
+                        "password": password_hash,
                         "identifikacni_medium": medium or "",
                         "is_active": is_active,
                         "must_change_password": has_must_change_password,
@@ -154,50 +162,41 @@ class Command(BaseCommand):
                     continue
 
                 changed_fields = {}
-                changed = False
                 username = self._build_username(
                     first_name=first_name or user.get("first_name", ""),
                     last_name=last_name or user.get("last_name", ""),
                     osobni_cislo=osobni_cislo,
                     current_user_id=user["id"],
                 )
-                if user["username"] != username:
+                if user.get("username") != username:
                     changed_fields["username"] = username
-                    changed = True
-                if first_name and user["first_name"] != first_name:
+                if first_name and user.get("first_name") != first_name:
                     changed_fields["first_name"] = first_name
-                    changed = True
-                if last_name and user["last_name"] != last_name:
+                if last_name and user.get("last_name") != last_name:
                     changed_fields["last_name"] = last_name
-                    changed = True
-                if email and user["email"] != email:
+                if email and user.get("email") != email:
                     changed_fields["email"] = email
-                    changed = True
                 if medium and (user.get("identifikacni_medium") or "") != medium:
                     changed_fields["identifikacni_medium"] = medium
-                    changed = True
-                if has_group_fk and skupina_id and user.get("stravovaci_skupina_id") != skupina_id:
+                if has_group_fk and user.get("stravovaci_skupina_id") != skupina_id:
                     changed_fields["stravovaci_skupina_id"] = skupina_id
-                    changed = True
-                if bool(user["is_active"]) != is_active:
+                if bool(user.get("is_active")) != is_active:
                     changed_fields["is_active"] = is_active
-                    changed = True
                 if not check_password(osobni_cislo, user.get("password") or ""):
                     changed_fields["password"] = password_hash
-                    if has_must_change_password:
-                        changed_fields["must_change_password"] = True
-                        changed_fields["password_changed_at"] = None
-                    changed = True
+                if has_must_change_password and not user.get("must_change_password", False):
+                    changed_fields["must_change_password"] = True
+                if has_password_changed_at and user.get("password_changed_at", "__missing__") is not None:
+                    changed_fields["password_changed_at"] = None
 
-                if changed:
+                if changed_fields:
                     self._update_user_sql(user["id"], changed_fields)
                     user.update(changed_fields)
                     updated += 1
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Import strávníků dokončen: vytvořeno {created}, aktualizováno {updated}, "
-                f"nové skupiny {created_groups}."
+                f"Import strávníků dokončen: vytvořeno {created}, aktualizováno {updated}, nové skupiny {created_groups}."
             )
         )
 
@@ -251,17 +250,11 @@ class Command(BaseCommand):
     def _get_or_create_datax_groups(self):
         ucitele_personal, ucitele_created = StravovaciSkupina.objects.get_or_create(
             kod=GROUP_TEACHERS_CODE,
-            defaults={
-                "nazev": "Učitelé a personál",
-                "typ_vzdelavani": "JINE",
-            },
+            defaults={"nazev": "Učitelé a personál", "typ_vzdelavani": "JINE"},
         )
         studenti, studenti_created = StravovaciSkupina.objects.get_or_create(
             kod=GROUP_STUDENTS_CODE,
-            defaults={
-                "nazev": "Studenti",
-                "typ_vzdelavani": "SS",
-            },
+            defaults={"nazev": "Studenti", "typ_vzdelavani": "SS"},
         )
         created_groups = int(ucitele_created) + int(studenti_created)
         return ucitele_personal, studenti, created_groups
@@ -289,6 +282,8 @@ class Command(BaseCommand):
         ]
         if "must_change_password" in columns:
             select_cols.append("must_change_password")
+        if "password_changed_at" in columns:
+            select_cols.append("password_changed_at")
         if "stravovaci_skupina_id" in columns:
             select_cols.append("stravovaci_skupina_id")
 
@@ -318,6 +313,7 @@ class Command(BaseCommand):
         identifikacni_medium: str | None,
         is_active: bool,
         must_change_password: bool,
+        include_password_changed_at: bool,
         stravovaci_skupina_id: int | None,
     ) -> int:
         columns = self._get_columns("users_customuser")
@@ -352,6 +348,9 @@ class Command(BaseCommand):
         if "must_change_password" in columns:
             insert_cols.append("must_change_password")
             values.append(must_change_password)
+        if include_password_changed_at and "password_changed_at" in columns:
+            insert_cols.append("password_changed_at")
+            values.append(None)
         if "stravovaci_skupina_id" in columns:
             insert_cols.append("stravovaci_skupina_id")
             values.append(stravovaci_skupina_id)

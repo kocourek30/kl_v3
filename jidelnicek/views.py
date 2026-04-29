@@ -339,6 +339,51 @@ def get_user_day_orders(user):
     return day_groups
 
 
+def build_day_actions_map(user, day_orders, menu_items_by_day):
+    """
+    Připraví akce pro levý panel (objednat/odhlásit celý den) po jednotlivých dnech.
+    """
+    actions = {}
+    day_orders_by_date = {entry["date"]: entry for entry in day_orders}
+    is_staff_mode = bool(user.is_staff or user.is_superuser)
+
+    for target_date, day_items in menu_items_by_day.items():
+        order_entry = day_orders_by_date.get(target_date)
+        if order_entry:
+            order_items = order_entry.get("items", [])
+            actions[target_date] = {
+                "mode": "cancel",
+                "has_order": True,
+                "date": target_date,
+                "label": target_date.strftime("%d.%m.%Y"),
+                "requires_reason": bool(order_entry.get("requires_reason")),
+                "total_price": order_entry.get("total_price") or Decimal("0"),
+                "total_qty": order_entry.get("total_qty") or 0,
+                "first_menu_item_id": order_items[0].menu_item_id if order_items else None,
+                "items": [
+                    {
+                        "name": oi.menu_item.jidlo.nazev,
+                        "qty": oi.quantity or 0,
+                        "line_total": getattr(oi, "line_total", (oi.quantity or 0) * (oi.cena or 0)),
+                    }
+                    for oi in order_items
+                ],
+            }
+            continue
+
+        can_order_day, order_reason = can_order_for_date(user, target_date)
+        actions[target_date] = {
+            "mode": "order" if (is_staff_mode and can_order_day and bool(day_items)) else "none",
+            "has_order": False,
+            "date": target_date,
+            "label": target_date.strftime("%d.%m.%Y"),
+            "order_reason": order_reason or "",
+            "total_items": len(day_items or []),
+        }
+
+    return actions
+
+
 @login_required
 def dashboard(request):
     """Hlavní dashboard - data jen od dneška dál, kalendář lze listovat libovolně"""
@@ -456,6 +501,11 @@ def dashboard(request):
         month_items_count = count_menu_items_for_range(request.user, month_first, last_day_month)
 
     my_day_orders = get_user_day_orders(request.user)
+    day_actions = build_day_actions_map(
+        request.user,
+        my_day_orders,
+        {selected_date: day_ctx.get('menu_items', []), **menu_items_by_day},
+    )
     ankety_prehled = anketni_prehled_uzivatele(request.user, today)
     my_orders = Order.objects.filter(
         user=request.user,
@@ -493,6 +543,7 @@ def dashboard(request):
         'selected_date': selected_date,
         'date_str': selected_date.strftime('%Y-%m-%d'),
         'my_day_orders': my_day_orders,
+        'day_actions': day_actions,
         'ankety_hodnotit': ankety_prehled["hodnotit"],
         'ankety_hotovo': ankety_prehled["hotovo"],
         'ankety_otazky_count': ankety_prehled["otazky_count"],
@@ -546,6 +597,139 @@ def order_create_view(request):
                 'message': 'Objednávky se vytváří automaticky. Uživatelé provádí pouze odhlášku celého dne.',
             },
             status=403,
+        )
+
+    create_day = str(request.POST.get("create_day", "")).lower() in {"1", "true", "yes", "on"}
+
+    if create_day:
+        menu_date_str = request.POST.get('menudate') or request.POST.get('menu_date')
+        try:
+            target_date = datetime.strptime(menu_date_str, '%Y-%m-%d').date()
+        except (TypeError, ValueError):
+            return JsonResponse({'status': 'error', 'message': 'Neplatné datum dne.'}, status=400)
+
+        if target_date < timezone.localdate():
+            return JsonResponse(
+                {'status': 'error', 'message': f'Historický den {target_date.strftime("%d.%m.%Y")} již nelze objednat.'},
+                status=400,
+            )
+
+        can_order_day, day_reason = can_order_for_date(request.user, target_date)
+        if not can_order_day:
+            return JsonResponse({'status': 'error', 'message': day_reason or 'Objednávky pro tento den jsou uzavřené.'}, status=400)
+
+        day_ctx = build_day_menu_context(request.user, target_date)
+        day_items = list(day_ctx.get("menu_items", []))
+        if not day_items:
+            return JsonResponse({'status': 'warning', 'message': 'Pro zvolený den není žádná položka jídelníčku.'})
+
+        existing_order = Order.objects.filter(
+            user=request.user,
+            datum_vydeje=target_date,
+            status__in=OPEN_ORDER_STATUSES,
+        ).first()
+        existing_by_menu_item = {}
+        if existing_order:
+            existing_by_menu_item = {
+                oi.menu_item_id: oi
+                for oi in existing_order.items.select_related("menu_item", "menu_item__jidlo", "menu_item__druh_jidla").all()
+            }
+
+        items_to_create = []
+        total_added_qty = 0
+        total_added_price = Decimal("0")
+        for item in day_items:
+            if item.id in existing_by_menu_item:
+                continue
+
+            can_order_item, item_reason = can_order_for_menuitem_date(request.user, item, target_date)
+            if not can_order_item:
+                return JsonResponse(
+                    {
+                        'status': 'error',
+                        'message': item_reason or f'Položku "{item.jidlo.nazev}" nelze objednat.',
+                    },
+                    status=400,
+                )
+
+            can_group, group_msg = check_group_limit(request.user, item, target_date, 1)
+            if not can_group:
+                return JsonResponse({'status': 'error', 'message': group_msg}, status=400)
+
+            price_per_item = get_user_price_for_item(
+                request.user,
+                item,
+                target_date=target_date,
+                quantity=1,
+                exclude_order_item_id=None,
+            )
+            total_added_price += price_per_item
+            total_added_qty += 1
+            items_to_create.append((item, price_per_item))
+
+        if not items_to_create:
+            return JsonResponse(
+                {
+                    'status': 'warning',
+                    'message': 'Všechna jídla dne už jsou objednaná.',
+                    'my_orders_html': render_to_string(
+                        'includes/_my_orders.html',
+                        {'my_day_orders': get_user_day_orders(request.user)},
+                        request=request,
+                    ),
+                    'refresh_menu': True,
+                }
+            )
+
+        existing_qty = OrderItem.objects.filter(
+            order__user=request.user,
+            order__datum_vydeje=target_date
+        ).aggregate(total=Sum('quantity'))['total'] or 0
+
+        if existing_qty + total_added_qty > 10:
+            return JsonResponse({'status': 'error', 'message': 'Denní limit 10 porcí by byl překročen.'}, status=400)
+
+        ok_balance, balance_reason = OrderValidator.check_user_balance(request.user, total_added_price)
+        if not ok_balance:
+            if balance_reason == "debit_limit_exceeded":
+                return JsonResponse({'status': 'error', 'message': 'Objednávka dne by překročila debetní limit.'}, status=400)
+            return JsonResponse({'status': 'error', 'message': 'Nedostatečný zůstatek pro objednání celého dne.'}, status=400)
+
+        try:
+            with transaction.atomic():
+                order, _ = Order.objects.select_for_update().get_or_create(
+                    user=request.user,
+                    datum_vydeje=target_date
+                )
+                for item, price_per_item in items_to_create:
+                    OrderItem.objects.create(
+                        order=order,
+                        menu_item=item,
+                        quantity=1,
+                        cena=price_per_item,
+                    )
+        except Exception:
+            logger.exception("Chyba při hromadném objednání dne.")
+            return JsonResponse({'status': 'error', 'message': 'Objednání celého dne se nepodařilo dokončit.'}, status=500)
+
+        my_orders_html = render_to_string(
+            'includes/_my_orders.html',
+            {'my_day_orders': get_user_day_orders(request.user)},
+            request=request,
+        )
+        final_balance = get_user_balance(request.user)
+        balance_class = '' if final_balance >= 0 else ''
+        return JsonResponse(
+            {
+                'status': 'success',
+                'message': f'Objednán celý den {target_date.strftime("%d.%m.%Y")} ({len(items_to_create)} položek).',
+                'my_orders_html': my_orders_html,
+                'navbar_balance': f"{final_balance:.0f} Kč",
+                'navbar_balance_class': balance_class,
+                'balance': float(final_balance),
+                'refresh_menu': True,
+                'refresh_date': target_date.strftime("%Y-%m-%d"),
+            }
         )
 
     menu_item_id = request.POST.get('menu_item_id') or request.POST.get('menuitemid')

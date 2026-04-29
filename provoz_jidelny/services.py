@@ -59,41 +59,13 @@ def _format_user_label(user):
     return full_name or getattr(user, "username", "Bez jména")
 
 
-def _build_quick_links(today):
-    return [
-        {
-            "label": "Živý výdej",
-            "description": "Okamžitý vstup do vydávání přes terminál obsluhy.",
-            "icon": "fas fa-cash-register",
-            "url": reverse("vydej_frontend:dashboard"),
-            "tone": "primary",
-            "new_window": True,
-        },
-        {
-            "label": "Přehled pro kuchyni",
-            "description": "Kuchyňský pohled na dnešní výrobu a čekající porce.",
-            "icon": "fas fa-kitchen-set",
-            "url": f"{reverse('admin:vydej_prehledprokuchyni_changelist')}?datum={today.isoformat()}",
-            "tone": "light",
-            "new_window": True,
-        },
-        {
-            "label": "Fronta objednávek",
-            "description": "Kontrola čekajících objednávek a ruční zásahy při směně.",
-            "icon": "fas fa-list-check",
-            "url": reverse("admin:vydej_vydejorder_changelist"),
-            "tone": "light",
-            "new_window": True,
-        },
-        {
-            "label": "Vydané účtenky",
-            "description": "Poslední vydané objednávky a detail výdeje za dnešek.",
-            "icon": "fas fa-receipt",
-            "url": reverse("admin:vydej_vydejniuctenka_changelist"),
-            "tone": "light",
-            "new_window": True,
-        },
-    ]
+def _build_kitchen_window(today):
+    return {
+        "label": "Přehled pro kuchyni",
+        "description": "Samostatné okno s dnešní výrobou a čekajícími porcemi.",
+        "icon": "fas fa-kitchen-set",
+        "url": f"{reverse('admin:vydej_prehledprokuchyni_changelist')}?datum={today.isoformat()}",
+    }
 
 
 def _build_production_groups(pending_items_qs):
@@ -282,6 +254,6 @@ def build_canteen_staff_dashboard():
         "production_groups": production_groups,
         "meal_windows": windows,
         "current_issue_feed": current_issue_feed,
-        "quick_links": _build_quick_links(today),
+        "kitchen_window": _build_kitchen_window(today),
         "notices": notices,
     }

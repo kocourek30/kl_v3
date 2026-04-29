@@ -539,10 +539,10 @@ JAZZMIN_SETTINGS = {
     # >>> HORNÍ HORIZONTÁLNÍ MENU – tlačítka na dashboardy appek <<<
     "topmenu_links": [
         {
-            "name": "Dashboard",
-            "url": "admin:index",
+            "name": "Provozní dashboard",
+            "url": "admin:provoz_jidelny_provoznidashboard_changelist",
             "permissions": ["auth.view_user"],
-            "icon": "fas fa-home",
+            "icon": "fas fa-store",
         },
         # každá appka míří na svůj „dashboard“ (changelist daného pseudo‑modelu)
         {
@@ -569,11 +569,6 @@ JAZZMIN_SETTINGS = {
             "name": "Výdej",
             "url": "admin:vydej_prehledprokuchyni_changelist",
             "icon": "fas fa-dolly",
-        },
-        {
-            "name": "Výdej jídelna",
-            "url": "admin:provoz_jidelny_provoznidashboard_changelist",
-            "icon": "fas fa-store",
         },
         {
             "name": "Dotace",
@@ -687,6 +682,7 @@ JAZZMIN_SETTINGS = {
     "hide_models": [
         "reporty.ReportDummy",
         "prepocty.PrepoctyDummy",
+        "provoz_jidelny.ProvozniDashboard",
         "provoz_jidelny.NastaveniVydaje",
         "objednavky.PriceRecalculationLog",
         "objednavky.PriceRecalculationDetail",

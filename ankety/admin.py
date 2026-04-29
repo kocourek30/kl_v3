@@ -126,6 +126,7 @@ class HodnoceniJidlaAdmin(admin.ModelAdmin):
     def report_context(self, request):
         typ, date_from, date_to = self._report_dates(request)
         data = anketni_report_obdobi(date_from, date_to)
+        monthly_vote = self._monthly_vote_summary(date_from, date_to)
         query = request.GET.copy()
         query.pop("export", None)
         return {
@@ -138,7 +139,53 @@ class HodnoceniJidlaAdmin(admin.ModelAdmin):
             "period_label": self._period_label(typ),
             "period_choices": self._period_choices(),
             "data": data,
+            "monthly_vote": monthly_vote,
             "query_string": query.urlencode(),
+        }
+
+    def _monthly_vote_summary(self, date_from, date_to):
+        ankety_qs = (
+            MesicniAnketa.objects
+            .filter(hlasovani_od__lte=date_to, hlasovani_do__gte=date_from)
+            .prefetch_related("varianty", "hlasy")
+            .order_by("-rok", "-mesic", "-vytvoreno")
+        )
+        latest = ankety_qs.first()
+        if not latest:
+            return {
+                "exists": False,
+                "title": "Měsíční volba menu",
+                "subtitle": "Ve vybraném období zatím není žádná měsíční anketa.",
+                "total_votes": 0,
+                "active_count": 0,
+                "variants": [],
+            }
+
+        variants = []
+        votes = (
+            MesicniAnketaHlas.objects.filter(anketa=latest)
+            .values("varianta_id")
+            .annotate(total=Count("id"))
+        )
+        vote_map = {row["varianta_id"]: row["total"] for row in votes}
+        total_votes = sum(vote_map.values())
+        for var in latest.varianty.all().order_by("poradi", "id"):
+            count = vote_map.get(var.id, 0)
+            pct = round((count * 100 / total_votes), 1) if total_votes else 0
+            variants.append({
+                "name": var.nazev,
+                "count": count,
+                "pct": pct,
+            })
+
+        return {
+            "exists": True,
+            "title": latest.nazev,
+            "subtitle": f"{latest.get_mesic_display()} {latest.rok}",
+            "total_votes": total_votes,
+            "active_count": ankety_qs.filter(aktivni=True).count(),
+            "variants": variants,
+            "is_open": latest.is_open(),
         }
 
     def report_view(self, request):
@@ -188,8 +235,6 @@ class HodnoceniJidlaAdmin(admin.ModelAdmin):
             "nejlepsi": "Nejlépe hodnocená jídla",
             "nejslabsi": "Jídla k pozornosti",
             "nejobjednavanejsi": "Nejčastěji objednávaná jídla",
-            "nejlepsi_druhy": "Nejlépe hodnocená jídla podle druhu",
-            "nejslabsi_druhy": "Jídla k pozornosti podle druhu",
             "otazky": "Otázky v anketě",
             "trendy": "Vývoj podle dní",
             "poznamky": "Poznámky strávníků",
@@ -203,27 +248,6 @@ class HodnoceniJidlaAdmin(admin.ModelAdmin):
             return sorted(data["hodnocena_jidla"], key=lambda row: (row["prumer"], -row["hodnoceni"]))
         if section == "nejobjednavanejsi":
             return sorted(data["jidla"], key=lambda row: (row["objednano"], row["hodnoceni"]), reverse=True)
-        if section == "nejlepsi_druhy":
-            groups = data["nejlepsi_podle_druhu"]
-            if meal_type:
-                for group in groups:
-                    if group["druh_jidla"] == meal_type:
-                        return sorted(
-                            [row for row in data["hodnocena_jidla"] if row["druh_jidla"] == meal_type],
-                            key=lambda row: (row["prumer"], row["hodnoceni"]),
-                            reverse=True,
-                        )
-            return groups
-        if section == "nejslabsi_druhy":
-            groups = data["nejslabsi_podle_druhu"]
-            if meal_type:
-                for group in groups:
-                    if group["druh_jidla"] == meal_type:
-                        return sorted(
-                            [row for row in data["hodnocena_jidla"] if row["druh_jidla"] == meal_type],
-                            key=lambda row: (row["prumer"], -row["hodnoceni"]),
-                        )
-            return groups
         if section == "otazky":
             return data["otazky"]
         if section == "trendy":
@@ -262,7 +286,7 @@ class HodnoceniJidlaAdmin(admin.ModelAdmin):
             rows.append("</table>")
         else:
             rows.append("<table border='1'>")
-            if context["section"] in {"nejlepsi", "nejslabsi", "nejobjednavanejsi", "nejlepsi_druhy", "nejslabsi_druhy"}:
+            if context["section"] in {"nejlepsi", "nejslabsi", "nejobjednavanejsi"}:
                 rows.append("<tr><th>Jídlo</th><th>Druh jídla</th><th>Objednáno</th><th>Vydáno</th><th>Hodnocení</th><th>Průměr</th></tr>")
                 for row in context["detail_rows"]:
                     if isinstance(row, dict) and "jidlo" in row:
@@ -315,7 +339,7 @@ class HodnoceniJidlaAdmin(admin.ModelAdmin):
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ]))
         else:
-            if context["section"] in {"nejlepsi", "nejslabsi", "nejobjednavanejsi", "nejlepsi_druhy", "nejslabsi_druhy"}:
+            if context["section"] in {"nejlepsi", "nejslabsi", "nejobjednavanejsi"}:
                 rows = [["Jídlo", "Druh jídla", "Objednáno", "Vydáno", "Hodnocení", "Průměr"]]
                 rows += [
                     [row["jidlo"], row.get("druh_jidla") or "-", row.get("objednano", "-"), row.get("vydano", "-"), row.get("hodnoceni", "-"), self._fmt(row.get("prumer"))]
