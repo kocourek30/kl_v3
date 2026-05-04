@@ -791,10 +791,10 @@ function connectRFIDBridge() {
         btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Připojuji...';
     }
     
-    console.log('🔌 Připojuji k RFID Bridge na jidelna.kliknijidlo.cz...');
+    console.log('🔌 Připojuji k RFID Bridge přes /socket.io ...');
     
     try {
-        socket = io('http://localhost:3001', {
+        socket = io('/socket.io', {
         transports: ['websocket', 'polling'],
         timeout: 5000,
         reconnection: true,
@@ -851,7 +851,7 @@ function connectRFIDBridge() {
             }
 
             hideRFIDLoading();
-            showNotification('❌ Nelze se připojit k RFID bridge na localhost:3001', 'error');
+            showNotification('❌ Nelze se připojit k RFID bridge', 'error');
         });
         
         socket.io.on('reconnect', (attempt) => {
