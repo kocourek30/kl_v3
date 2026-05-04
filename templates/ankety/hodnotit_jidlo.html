@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Ohodnotit jídlo{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{% static 'ankety/css/ankety_frontend.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="rate-page">
+  <section class="rate-hero">
+    <div class="rate-hero-copy">
+      <span class="rate-eyebrow"><i class="fas fa-star-half-stroke"></i> Hodnocení jídla</span>
+      <h1 class="rate-title">{{ order_item.menu_item.jidlo.nazev }}</h1>
+      <div class="rate-meta">{{ order_item.menu_item.druh_jidla.nazev }} · vydáno {{ order_item.datum_vydani|date:"d.m.Y H:i" }}</div>
+    </div>
+    <div class="rate-summary-card">
+      <strong>Jak hodnotit</strong>
+      <p>Čím víc hvězdiček vybereš, tím lepší známku jídlo dostane. Jedna hvězda znamená slabé hodnocení, pět hvězd velkou spokojenost.</p>
+    </div>
+  </section>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} mb-0">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <form class="rate-card" method="post">
+    {% csrf_token %}
+    {% for otazka in otazky %}
+      <div class="rate-question">
+        <div class="rate-label">{{ otazka.text }}{% if otazka.povinna %} *{% endif %}</div>
+        {% if otazka.napoveda %}<div class="rate-help">{{ otazka.napoveda }}</div>{% endif %}
+        <div class="rate-stars-wrap">
+          <div class="rate-stars" role="radiogroup" aria-label="{{ otazka.text }}">
+            {% for value in "54321" %}
+              <input class="rate-star-input" id="otazka_{{ otazka.id }}_{{ value }}" type="radio" name="otazka_{{ otazka.id }}" value="{{ value }}" {% if otazka.povinna and forloop.first %}required{% endif %}>
+              <label class="rate-star" for="otazka_{{ otazka.id }}_{{ value }}" aria-label="{{ value }} hvězdiček">
+                <i class="fas fa-star"></i>
+              </label>
+            {% endfor %}
+          </div>
+          <div class="rate-stars-scale" aria-hidden="true">
+            <span>Slabé</span>
+            <span>Výborné</span>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+
+    <div class="rate-question">
+      <label class="rate-label" for="poznamka">Poznámka</label>
+      <div class="rate-help">Nepovinně můžeš doplnit, co bylo dobré nebo co zlepšit.</div>
+      <textarea class="rate-note" id="poznamka" name="poznamka"></textarea>
+    </div>
+
+    <div class="rate-actions">
+      <a class="rate-btn rate-btn-light" href="{% url 'ankety:moje_ankety' %}">Zpět</a>
+      <button class="rate-btn rate-btn-primary" type="submit">Odeslat hodnocení</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

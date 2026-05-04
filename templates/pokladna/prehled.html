@@ -1,0 +1,151 @@
+{% extends "pokladna/base_pokladna.html" %}
+
+{% block title %}Přehled pokladny - {{ pokladna.nazev }}{% endblock %}
+
+{% block content %}
+<style>
+  .dash-page { display: grid; gap: 16px; }
+  .dash-head { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .dash-title { margin: 0; font-size: 1.65rem; font-weight: 900; color: #17202a; }
+  .dash-meta { color: #607080; }
+  .dash-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .dash-btn { border: 0; border-radius: 8px; min-height: 42px; padding: 10px 15px; font-weight: 900; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
+  .dash-btn-primary { background: #18a046; color: #fff; }
+  .dash-btn-light { background: #e9eef2; color: #17202a; }
+  .dash-layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+  .dash-card { background: #fff; border: 1px solid #dbe1e8; border-radius: 8px; overflow: hidden; box-shadow: 0 8px 24px rgba(23,32,42,.05); }
+  .dash-card-head { padding: 13px 15px; border-bottom: 1px solid #edf0f3; font-weight: 900; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .dash-card-body { padding: 15px; }
+  .dash-total { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: end; margin-bottom: 16px; }
+  .dash-total-label { color: #607080; font-weight: 700; }
+  .dash-total-value { font-size: 2.35rem; font-weight: 900; color: #17202a; line-height: 1; }
+  .dash-count { background: #eef7f0; color: #135f2d; border-radius: 8px; padding: 10px 12px; font-weight: 900; text-align: right; }
+  .dash-bars { display: grid; gap: 12px; }
+  .dash-bar-row { display: grid; gap: 6px; }
+  .dash-bar-top { display: flex; justify-content: space-between; gap: 12px; font-weight: 900; }
+  .dash-bar-track { height: 15px; border-radius: 999px; background: #edf0f3; overflow: hidden; }
+  .dash-bar-fill { height: 100%; min-width: 4px; border-radius: 999px; }
+  .dash-tiles { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 12px; margin-top: 14px; }
+  .dash-tile { border: 1px solid #edf0f3; border-radius: 8px; padding: 13px; background: #f8fafc; }
+  .dash-tile-label { color: #607080; font-weight: 800; font-size: .86rem; }
+  .dash-tile-value { font-size: 1.25rem; font-weight: 900; margin-top: 4px; }
+  .dash-list { display: grid; }
+  .dash-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px 14px; border-bottom: 1px solid #edf0f3; }
+  .dash-row:last-child { border-bottom: 0; }
+  .dash-name { font-weight: 900; }
+  .dash-small { color: #607080; font-size: .9rem; }
+  .dash-amount { font-weight: 900; white-space: nowrap; text-align: right; }
+  .dash-link { border-radius: 8px; padding: 5px 9px; background: #eef7f0; color: #135f2d; text-decoration: none; font-weight: 900; font-size: .84rem; display: inline-flex; margin-top: 5px; }
+  @media (max-width: 1050px) {
+    .dash-layout { grid-template-columns: 1fr; }
+    .dash-tiles { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+  }
+  @media (max-width: 620px) {
+    .dash-total { grid-template-columns: 1fr; }
+    .dash-tiles { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="dash-page">
+  <div class="dash-head">
+    <div>
+      <h1 class="dash-title">Přehled pokladny</h1>
+      <div class="dash-meta">{{ pokladna.nazev }} · {{ today|date:"d.m.Y" }}</div>
+    </div>
+    <div class="dash-actions">
+      <a class="dash-btn dash-btn-primary" href="{% url 'pokladna:pokladna_ucet' pokladna.id %}"><i class="fas fa-plus"></i> Nový účet</a>
+      <a class="dash-btn dash-btn-light" href="{% url 'pokladna:pokladna_uzavrene_ucty' pokladna.id %}"><i class="fas fa-receipt"></i> Uzavřené doklady</a>
+    </div>
+  </div>
+
+  <div class="dash-layout">
+    <main class="dash-card">
+      <div class="dash-card-head">
+        <span>Dnešní tržba podle způsobu platby</span>
+        <span>{{ pocet_uctu }} dokladů</span>
+      </div>
+      <div class="dash-card-body">
+        <div class="dash-total">
+          <div>
+            <div class="dash-total-label">Celkem dnes</div>
+            <div class="dash-total-value">{{ trzba_celkem|floatformat:-2 }} Kč</div>
+          </div>
+          <div class="dash-count">Uzavřeno {{ pocet_uctu }}</div>
+        </div>
+
+        <div class="dash-bars">
+          {% for p in trzby_podle_plateb %}
+            <div class="dash-bar-row">
+              <div class="dash-bar-top">
+                <span>{{ p.nazev }}</span>
+                <span>{{ p.castka|floatformat:-2 }} Kč · {{ p.procento|floatformat:-2 }} %</span>
+              </div>
+              <div class="dash-bar-track">
+                <div class="dash-bar-fill" style="width: {{ p.procento }}%; background: {{ p.barva }};"></div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+
+        <div class="dash-tiles">
+          {% for p in trzby_podle_plateb %}
+            <div class="dash-tile">
+              <div class="dash-tile-label">{{ p.nazev }}</div>
+              <div class="dash-tile-value">{{ p.castka|floatformat:-2 }} Kč</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </main>
+
+    <aside class="dash-card">
+      <div class="dash-card-head">
+        <span>Otevřené účty</span>
+        <span>{{ otevrene|length }}</span>
+      </div>
+      <div class="dash-list">
+        {% for d in otevrene %}
+          <div class="dash-row">
+            <div>
+              <div class="dash-name">
+                {% if d.zakaznik %}{{ d.zakaznik.get_full_name|default:d.zakaznik.username }}{% else %}Volný účet{% endif %}
+              </div>
+              <div class="dash-small">{{ d.get_stav_display }} · {{ d.datum|date:"H:i" }}</div>
+              {% if d.ceka_na_qr %}
+                <a class="dash-link" href="{% url 'pokladna:pokladna_qr_platba' pokladna.id d.id %}">Dokončit QR</a>
+              {% else %}
+                <a class="dash-link" href="{% url 'pokladna:pokladna_ucet' pokladna.id %}">Pokračovat</a>
+              {% endif %}
+            </div>
+            <div class="dash-amount">{{ d.celkem_s_dph|floatformat:-2 }} Kč</div>
+          </div>
+        {% empty %}
+          <div class="dash-row"><div class="dash-small">Žádné otevřené účty.</div></div>
+        {% endfor %}
+      </div>
+    </aside>
+  </div>
+
+  <section class="dash-card">
+    <div class="dash-card-head">Poslední uzavřené doklady dnes</div>
+    <div class="dash-list">
+      {% for d in uzavrene %}
+        <div class="dash-row">
+          <div>
+            <div class="dash-name">
+              {% if d.zakaznik %}{{ d.zakaznik.get_full_name|default:d.zakaznik.username }}{% else %}Anonymní zákazník{% endif %}
+            </div>
+            <div class="dash-small">{{ d.get_zpusob_platby_display }} · {{ d.uzavren_at|date:"H:i" }}</div>
+          </div>
+          <div>
+            <div class="dash-amount">{{ d.celkem_s_dph|floatformat:-2 }} Kč</div>
+            <a class="dash-link" href="{% url 'pokladna:pokladna_doklad_detail' pokladna.id d.id %}">Detail</a>
+          </div>
+        </div>
+      {% empty %}
+        <div class="dash-row"><div class="dash-small">Dnes zatím není nic uzavřeno.</div></div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

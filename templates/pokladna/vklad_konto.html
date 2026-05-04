@@ -1,0 +1,533 @@
+{% extends "pokladna/base_pokladna.html" %}
+
+{% block title %}Vklad na konto - {{ pokladna.nazev }}{% endblock %}
+
+{% block content %}
+<style>
+  .deposit-page {
+    display: grid;
+    gap: 18px;
+  }
+
+  .deposit-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+
+  .deposit-title {
+    margin: 0;
+    font-size: 1.7rem;
+    font-weight: 900;
+    color: #17202a;
+  }
+
+  .deposit-subtitle {
+    margin-top: 4px;
+    color: #607080;
+    font-weight: 700;
+  }
+
+  .deposit-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(330px, .85fr);
+    gap: 18px;
+    align-items: start;
+  }
+
+  .deposit-panel {
+    background: #fff;
+    border: 1px solid #dfe6ee;
+    border-radius: 8px;
+    box-shadow: 0 .6rem 1.4rem rgba(23,32,42,.06);
+    overflow: hidden;
+  }
+
+  .deposit-panel-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    padding: 16px 18px;
+    border-top: 4px solid #f28f28;
+    border-bottom: 1px solid #edf0f3;
+  }
+
+  .deposit-panel-title {
+    margin: 0;
+    font-size: 1.06rem;
+    font-weight: 900;
+    color: #17202a;
+  }
+
+  .deposit-panel-body {
+    padding: 18px;
+  }
+
+  .deposit-form {
+    display: grid;
+    gap: 16px;
+  }
+
+  .deposit-label {
+    display: block;
+    margin-bottom: 7px;
+    color: #52606d;
+    font-size: .88rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+  }
+
+  .deposit-input,
+  .deposit-textarea {
+    width: 100%;
+    border: 1px solid #cfd8e3;
+    border-radius: 8px;
+    padding: 13px 14px;
+    font-size: 1.02rem;
+    font-weight: 800;
+    background: #fff;
+  }
+
+  .deposit-input:focus,
+  .deposit-textarea:focus {
+    outline: 3px solid rgba(84,174,67,.16);
+    border-color: #54ae43;
+  }
+
+  .deposit-textarea {
+    min-height: 86px;
+    resize: vertical;
+    font-weight: 700;
+  }
+
+  .deposit-search-wrap {
+    position: relative;
+  }
+
+  .deposit-results {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 20;
+    display: none;
+    max-height: 285px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #dfe6ee;
+    border-radius: 8px;
+    box-shadow: 0 .8rem 1.8rem rgba(23,32,42,.14);
+  }
+
+  .deposit-result {
+    width: 100%;
+    border: 0;
+    border-bottom: 1px solid #edf0f3;
+    background: #fff;
+    padding: 12px 14px;
+    text-align: left;
+    font-weight: 850;
+    color: #17202a;
+  }
+
+  .deposit-result:last-child {
+    border-bottom: 0;
+  }
+
+  .deposit-result:hover,
+  .deposit-result:focus {
+    background: #eef8f0;
+  }
+
+  .deposit-selected {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 13px 14px;
+    border-radius: 8px;
+    background: #eef8f0;
+    border: 1px solid #bfe6c8;
+    color: #135f2d;
+    font-weight: 900;
+  }
+
+  .deposit-selected button {
+    border: 0;
+    border-radius: 8px;
+    background: #fff;
+    color: #135f2d;
+    font-weight: 900;
+    padding: 7px 10px;
+  }
+
+  .deposit-amount-row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .deposit-chip {
+    min-height: 46px;
+    border: 0;
+    border-radius: 8px;
+    background: #eef2f6;
+    color: #17202a;
+    font-weight: 900;
+  }
+
+  .deposit-chip:hover {
+    background: #dfe7ee;
+  }
+
+  .deposit-method-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .deposit-method {
+    position: relative;
+    display: grid;
+    place-items: center;
+    min-height: 52px;
+    border-radius: 8px;
+    border: 2px solid #dfe6ee;
+    background: #fff;
+    color: #17202a;
+    font-weight: 950;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .deposit-method input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .deposit-method:has(input:checked) {
+    border-color: #18a046;
+    background: #eaf7ee;
+    color: #135f2d;
+    box-shadow: 0 0 0 3px rgba(24,160,70,.12);
+  }
+
+  .deposit-submit {
+    min-height: 58px;
+    border: 0;
+    border-radius: 8px;
+    background: #18a046;
+    color: #fff;
+    font-size: 1.08rem;
+    font-weight: 950;
+    box-shadow: 0 .45rem 1rem rgba(24,160,70,.22);
+  }
+
+  .deposit-submit:hover {
+    background: #12823a;
+  }
+
+  .deposit-help {
+    margin: 0;
+    color: #607080;
+    font-size: .92rem;
+    font-weight: 700;
+  }
+
+  .deposit-list {
+    display: grid;
+  }
+
+  .deposit-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid #edf0f3;
+  }
+
+  .deposit-item:last-child {
+    border-bottom: 0;
+  }
+
+  .deposit-name {
+    font-weight: 950;
+    color: #17202a;
+  }
+
+  .deposit-meta {
+    color: #607080;
+    font-size: .9rem;
+    font-weight: 700;
+  }
+
+  .deposit-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    border-radius: 999px;
+    background: #eef8f0;
+    color: #135f2d;
+    padding: 2px 9px;
+    font-size: .78rem;
+    font-weight: 950;
+    margin-top: 6px;
+  }
+
+  .deposit-money {
+    color: #12823a;
+    font-size: 1.08rem;
+    font-weight: 950;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  .deposit-empty {
+    padding: 18px;
+    color: #607080;
+    font-weight: 700;
+  }
+
+  @media (max-width: 1100px) {
+    .deposit-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 620px) {
+    .deposit-amount-row {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+</style>
+
+<div class="deposit-page">
+  <div class="deposit-header">
+    <div>
+      <h1 class="deposit-title">Vklad na konto</h1>
+      <div class="deposit-subtitle">{{ pokladna.nazev }} · rychlé dobití zákaznického konta</div>
+    </div>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{% if message.tags == 'error' %}danger{% elif message.tags == 'success' %}success{% else %}info{% endif %} mb-0">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="deposit-grid">
+    <section class="deposit-panel">
+      <div class="deposit-panel-head">
+        <h2 class="deposit-panel-title">Nový vklad</h2>
+        <p class="deposit-help">Vyber zákazníka, zadej částku a potvrď.</p>
+      </div>
+      <div class="deposit-panel-body">
+        <form class="deposit-form" method="post" autocomplete="off">
+          {% csrf_token %}
+          <input type="hidden" name="zakaznik_id" id="depositCustomerId">
+
+          <div>
+            <label class="deposit-label" for="depositCustomerSearch">Zákazník</label>
+            <div id="depositSelected" class="deposit-selected">
+              <span id="depositSelectedName"></span>
+              <button type="button" id="depositCustomerClear">Změnit</button>
+            </div>
+            <div class="deposit-search-wrap" id="depositSearchWrap">
+              <input
+                class="deposit-input"
+                id="depositCustomerSearch"
+                type="search"
+                placeholder="Začni psát jméno, příjmení, přihlašovací jméno nebo osobní číslo"
+              >
+              <div class="deposit-results" id="depositCustomerResults"></div>
+            </div>
+          </div>
+
+          <div>
+            <label class="deposit-label" for="depositAmount">Částka</label>
+            <input
+              class="deposit-input"
+              id="depositAmount"
+              name="castka"
+              type="text"
+              inputmode="decimal"
+              placeholder="např. 500"
+              required
+            >
+            <div class="deposit-amount-row mt-2">
+              <button class="deposit-chip" type="button" data-amount="100">100 Kč</button>
+              <button class="deposit-chip" type="button" data-amount="200">200 Kč</button>
+              <button class="deposit-chip" type="button" data-amount="500">500 Kč</button>
+              <button class="deposit-chip" type="button" data-amount="1000">1 000 Kč</button>
+            </div>
+          </div>
+
+          <div>
+            <div class="deposit-label">Způsob úhrady</div>
+            <div class="deposit-method-row">
+              {% for kod, nazev in zpusoby_uhrady %}
+                <label class="deposit-method">
+                  <input
+                    type="radio"
+                    name="zpusob_uhrady"
+                    value="{{ kod }}"
+                    {% if kod == vychozi_zpusob_uhrady %}checked{% endif %}
+                  >
+                  {{ nazev }}
+                </label>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div>
+            <label class="deposit-label" for="depositNote">Poznámka</label>
+            <textarea
+              class="deposit-textarea"
+              id="depositNote"
+              name="poznamka"
+              placeholder="Volitelné, např. hotovost převzala obsluha"
+            ></textarea>
+          </div>
+
+          <button class="deposit-submit" type="submit">
+            <i class="fas fa-circle-plus me-2"></i>Uložit vklad na konto
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <section class="deposit-panel">
+      <div class="deposit-panel-head">
+        <h2 class="deposit-panel-title">Poslední vklady</h2>
+      </div>
+      {% if posledni_vklady %}
+        <div class="deposit-list">
+          {% for vklad in posledni_vklady %}
+            <div class="deposit-item">
+              <div>
+                <div class="deposit-name">{{ vklad.uzivatel.get_full_name|default:vklad.uzivatel.username }}</div>
+                <div class="deposit-meta">{{ vklad.datum|date:"d.m.Y H:i" }}</div>
+                {% if vklad.zpusob_uhrady %}
+                  <div class="deposit-badge">{{ vklad.get_zpusob_uhrady_display }}</div>
+                {% endif %}
+                {% if vklad.poznamka %}
+                  <div class="deposit-meta">{{ vklad.poznamka|truncatechars:90 }}</div>
+                {% endif %}
+              </div>
+              <div class="deposit-money">{{ vklad.castka|floatformat:2 }} Kč</div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="deposit-empty">Zatím nejsou uložené žádné vklady.</div>
+      {% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    const searchInput = document.getElementById("depositCustomerSearch");
+    const resultsBox = document.getElementById("depositCustomerResults");
+    const selectedBox = document.getElementById("depositSelected");
+    const selectedName = document.getElementById("depositSelectedName");
+    const selectedId = document.getElementById("depositCustomerId");
+    const clearButton = document.getElementById("depositCustomerClear");
+    const searchWrap = document.getElementById("depositSearchWrap");
+    const amountInput = document.getElementById("depositAmount");
+    let searchTimer = null;
+
+    function hideResults() {
+      resultsBox.style.display = "none";
+      resultsBox.innerHTML = "";
+    }
+
+    function selectCustomer(customer) {
+      selectedId.value = customer.id;
+      selectedName.textContent = customer.text;
+      selectedBox.style.display = "flex";
+      searchWrap.style.display = "none";
+      hideResults();
+      amountInput.focus();
+    }
+
+    function renderResults(results) {
+      resultsBox.innerHTML = "";
+      if (!results.length) {
+        const empty = document.createElement("div");
+        empty.className = "deposit-result";
+        empty.textContent = "Nikdo nenalezen.";
+        resultsBox.appendChild(empty);
+        resultsBox.style.display = "block";
+        return;
+      }
+
+      results.forEach((item) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "deposit-result";
+        button.textContent = item.text;
+        button.addEventListener("click", () => selectCustomer(item));
+        resultsBox.appendChild(button);
+      });
+      resultsBox.style.display = "block";
+    }
+
+    async function searchCustomers(query) {
+      if (!query || query.length < 2) {
+        hideResults();
+        return;
+      }
+
+      const url = "{% url 'pokladna:pokladna_zakaznik_search' pokladna.id %}?q=" + encodeURIComponent(query);
+      try {
+        const response = await fetch(url, {
+          headers: { "X-Requested-With": "XMLHttpRequest" }
+        });
+        if (!response.ok) {
+          throw new Error("search failed");
+        }
+        const data = await response.json();
+        renderResults(data.results || []);
+      } catch (error) {
+        resultsBox.innerHTML = '<div class="deposit-result">Vyhledávání teď neodpovídá.</div>';
+        resultsBox.style.display = "block";
+      }
+    }
+
+    searchInput.addEventListener("input", () => {
+      window.clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(() => searchCustomers(searchInput.value.trim()), 180);
+    });
+
+    clearButton.addEventListener("click", () => {
+      selectedId.value = "";
+      selectedName.textContent = "";
+      selectedBox.style.display = "none";
+      searchWrap.style.display = "block";
+      searchInput.value = "";
+      searchInput.focus();
+    });
+
+    document.querySelectorAll("[data-amount]").forEach((button) => {
+      button.addEventListener("click", () => {
+        amountInput.value = button.dataset.amount;
+        amountInput.focus();
+      });
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!resultsBox.contains(event.target) && event.target !== searchInput) {
+        hideResults();
+      }
+    });
+  })();
+</script>
+{% endblock %}

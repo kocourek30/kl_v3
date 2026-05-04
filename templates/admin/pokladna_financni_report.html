@@ -1,0 +1,95 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<style>
+  .rep-page { display: grid; gap: 16px; }
+  .rep-filter { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; background: #fff; border: 1px solid #dbe1e8; border-radius: 8px; padding: 12px; }
+  .rep-filter label { display: grid; gap: 4px; font-weight: 700; color: #607080; }
+  .rep-filter input, .rep-filter select { min-height: 38px; border: 1px solid #dbe1e8; border-radius: 8px; padding: 6px 8px; }
+  .rep-btn { border: 0; border-radius: 8px; min-height: 38px; padding: 8px 12px; background: #18a046; color: #fff; font-weight: 800; text-decoration: none; display: inline-flex; align-items: center; }
+  .rep-btn-light { background: #e9eef2; color: #17202a; }
+  .rep-grid { display: grid; grid-template-columns: repeat(4, minmax(150px,1fr)); gap: 12px; }
+  .rep-card { background: #fff; border: 1px solid #dbe1e8; border-radius: 8px; padding: 14px; }
+  .rep-label { color: #607080; font-weight: 800; }
+  .rep-value { font-size: 1.35rem; font-weight: 900; margin-top: 4px; }
+  .rep-panel { background: #fff; border: 1px solid #dbe1e8; border-radius: 8px; overflow: hidden; }
+  .rep-panel h2 { margin: 0; padding: 12px 14px; border-bottom: 1px solid #edf0f3; font-size: 1rem; font-weight: 900; }
+  .rep-table { width: 100%; border-collapse: collapse; }
+  .rep-table th { background: #f6f8fa; color: #607080; padding: 10px; text-align: left; border-bottom: 1px solid #e5e9ef; }
+  .rep-table td { padding: 10px; border-bottom: 1px solid #edf0f3; }
+  .rep-num { text-align: right; font-weight: 900; white-space: nowrap; }
+</style>
+
+<div class="rep-page">
+  <h1>{{ title }}</h1>
+  <form class="rep-filter" method="get">
+    <label>Pokladna
+      <select name="pokladna">
+        {% for p in pokladny %}
+          <option value="{{ p.id }}" {% if pokladna and p.id == pokladna.id %}selected{% endif %}>{{ p.nazev }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Od <input type="date" name="od" value="{{ datum_od|date:'Y-m-d' }}"></label>
+    <label>Do <input type="date" name="do" value="{{ datum_do|date:'Y-m-d' }}"></label>
+    <button class="rep-btn" type="submit">Zobrazit</button>
+    <a class="rep-btn rep-btn-light" href="?pokladna={{ pokladna.id }}&od={{ datum_od|date:'Y-m-d' }}&do={{ datum_do|date:'Y-m-d' }}&export=xls">Stáhnout XLS</a>
+    <a class="rep-btn rep-btn-light" href="?pokladna={{ pokladna.id }}&od={{ datum_od|date:'Y-m-d' }}&do={{ datum_do|date:'Y-m-d' }}&export=pdf">Stáhnout PDF naležato</a>
+  </form>
+
+  <div class="rep-grid">
+    <div class="rep-card"><div class="rep-label">Pokladní příjem celkem</div><div class="rep-value">{{ celkem|floatformat:-2 }} Kč</div></div>
+    <div class="rep-card"><div class="rep-label">Tržba z prodeje</div><div class="rep-value">{{ prodej_celkem|floatformat:-2 }} Kč</div></div>
+    <div class="rep-card"><div class="rep-label">Vklady na konta</div><div class="rep-value">{{ vklady_celkem|floatformat:-2 }} Kč</div></div>
+    <div class="rep-card"><div class="rep-label">Dokladů</div><div class="rep-value">{{ pocet_dokladu }}</div></div>
+    <div class="rep-card"><div class="rep-label">Pokladní hotovost</div><div class="rep-value">{{ pokladni_hotovost|floatformat:-2 }} Kč</div></div>
+    <div class="rep-card"><div class="rep-label">Období</div><div class="rep-value">{{ datum_od|date:"d.m" }} - {{ datum_do|date:"d.m" }}</div></div>
+  </div>
+
+  <section class="rep-panel">
+    <h2>Pokladní příjem podle platební metody</h2>
+    <table class="rep-table">
+      <tr><th>Platba</th><th class="rep-num">Dokladů</th><th class="rep-num">Částka</th></tr>
+      {% for r in trzby_podle_plateb %}
+        <tr><td>{{ r.nazev }}</td><td class="rep-num">{{ r.pocet }}</td><td class="rep-num">{{ r.castka|floatformat:-2 }} Kč</td></tr>
+      {% endfor %}
+    </table>
+  </section>
+
+  <section class="rep-panel">
+    <h2>DPH</h2>
+    <table class="rep-table">
+      <tr><th>Sazba</th><th class="rep-num">Základ</th><th class="rep-num">DPH</th><th class="rep-num">Celkem</th></tr>
+      {% for r in dph_souhrn %}
+        <tr><td>{{ r.dph_sazba|floatformat:-2 }} %</td><td class="rep-num">{{ r.zaklad|floatformat:-2 }} Kč</td><td class="rep-num">{{ r.dph|floatformat:-2 }} Kč</td><td class="rep-num">{{ r.celkem|floatformat:-2 }} Kč</td></tr>
+      {% empty %}
+        <tr><td colspan="4">Žádná data.</td></tr>
+      {% endfor %}
+    </table>
+  </section>
+
+  <section class="rep-panel">
+    <h2>Druh tržby</h2>
+    <table class="rep-table">
+      <tr><th>Druh</th><th class="rep-num">Množství</th><th class="rep-num">Základ</th><th class="rep-num">DPH</th><th class="rep-num">Celkem</th></tr>
+      {% for r in trzby_podle_druhu %}
+        <tr><td>{{ r.nazev }}</td><td class="rep-num">{{ r.mnozstvi|floatformat:-2 }}</td><td class="rep-num">{{ r.zaklad|floatformat:-2 }} Kč</td><td class="rep-num">{{ r.dph|floatformat:-2 }} Kč</td><td class="rep-num">{{ r.celkem|floatformat:-2 }} Kč</td></tr>
+      {% empty %}
+        <tr><td colspan="5">Žádná data.</td></tr>
+      {% endfor %}
+    </table>
+  </section>
+
+  <section class="rep-panel">
+    <h2>Obrat podle PLU</h2>
+    <table class="rep-table">
+      <tr><th>PLU</th><th class="rep-num">Množství</th><th class="rep-num">Řádků</th><th class="rep-num">Obrat</th></tr>
+      {% for r in plu_obraty %}
+        <tr><td>{{ r.nazev_snapshot|default:"Bez názvu" }}</td><td class="rep-num">{{ r.mnozstvi|floatformat:-2 }}</td><td class="rep-num">{{ r.pocet_radku }}</td><td class="rep-num">{{ r.obrat|floatformat:-2 }} Kč</td></tr>
+      {% empty %}
+        <tr><td colspan="4">Žádná data.</td></tr>
+      {% endfor %}
+    </table>
+  </section>
+</div>
+{% endblock %}

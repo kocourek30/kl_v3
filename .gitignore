@@ -42,6 +42,7 @@ package-lock.json
 .env
 .env.local
 .env.production
+.env.prod
 .env.*.local
 
 # Migration files (volitelné - pokud chceš sdílet)

@@ -1,11 +1,37 @@
 from decimal import Decimal
 from django.db import transaction
-from django.db.models import Sum, F, Q
-from django.utils import timezone
+from django.core.exceptions import ValidationError
 from collections import defaultdict
 
-from .models import Order, OrderItem, PriceRecalculationLog, PriceRecalculationDetail
-from jidelnicek.services import get_user_price_for_item
+from .models import Order, OrderItem, PriceRecalculationLog, PriceRecalculationDetail, OrderValidator
+from dotace.services import vypocet_dotovane_ceny
+
+
+MAX_ORDER_QUANTITY = 10
+EDITABLE_BULK_ORDER_STATUSES = {"zalozena-obsluhou", "objednano"}
+
+
+def validate_order_quantity(value, *, max_quantity=MAX_ORDER_QUANTITY):
+    try:
+        quantity = int(value or 1)
+    except (TypeError, ValueError):
+        raise ValidationError("Množství musí být celé číslo.")
+
+    if quantity < 1:
+        raise ValidationError("Množství musí být alespoň 1.")
+    if quantity > max_quantity:
+        raise ValidationError(f"Najednou lze objednat maximálně {max_quantity} kusů.")
+    return quantity
+
+
+def _get_recalculated_price(user, menu_item, target_date, quantity, exclude_order_item_id=None):
+    return vypocet_dotovane_ceny(
+        user,
+        menu_item,
+        target_date=target_date,
+        quantity=quantity,
+        exclude_order_item_id=exclude_order_item_id,
+    )
 
 
 def recalculate_order_prices(date_from, date_to, user, dry_run=False):
@@ -23,14 +49,20 @@ def recalculate_order_prices(date_from, date_to, user, dry_run=False):
     """
     
     # Najdi všechny položky objednávek v daném období
-    order_items = OrderItem.objects.filter(
-        order__datum_vydeje__gte=date_from,
-        order__datum_vydeje__lte=date_to
-    ).select_related(
-        'order__user',
-        'menu_item__jidlo',
-        'menu_item__druh_jidla'
-    ).order_by('order__datum_vydeje', 'order__user__username')
+    order_items = (
+        OrderItem.objects
+        .filter(
+            order__datum_vydeje__gte=date_from,
+            order__datum_vydeje__lte=date_to,
+        )
+        .select_related(
+            'order__user',
+            'menu_item__jidlo',
+            'menu_item__druh_jidla',
+        )
+        .prefetch_related('order__user__groups__dotacni_politika')
+        .order_by('order__datum_vydeje', 'order__user__username')
+    )
     
     total_items = order_items.count()
     
@@ -49,14 +81,16 @@ def recalculate_order_prices(date_from, date_to, user, dry_run=False):
     total_price_diff = Decimal('0')
     items_changed = 0
     items_unchanged = 0
-    
     # Projdi všechny položky
     for item in order_items:
         old_price = item.cena
-        new_price = get_user_price_for_item(item.order.user, item.menu_item)
-        
-        # Zaokrouhli na 2 desetinná místa
-        new_price = Decimal(str(new_price)).quantize(Decimal('0.01'))
+        new_price = _get_recalculated_price(
+            item.order.user,
+            item.menu_item,
+            item.order.datum_vydeje,
+            item.quantity,
+            exclude_order_item_id=item.pk,
+        )
         price_diff = new_price - old_price
         
         if abs(price_diff) >= Decimal('0.01'):  # Změna alespoň 1 haléř
@@ -104,34 +138,26 @@ def recalculate_order_prices(date_from, date_to, user, dry_run=False):
             note=f"Přepočet cen pro období {date_from.strftime('%d.%m.%Y')} - {date_to.strftime('%d.%m.%Y')}"
         )
         
-        # Ulož detaily změn a aplikuj nové ceny
+        details_to_create = []
+        items_to_update = []
         for change in changes:
             item = change['order_item']
-            
-            # Ulož detail do audit logu
-            PriceRecalculationDetail.objects.create(
-                log=log,
-                order_item=item,
-                old_price=change['old_price'],
-                new_price=change['new_price'],
-                price_diff=change['price_diff']
+            details_to_create.append(
+                PriceRecalculationDetail(
+                    log=log,
+                    order_item=item,
+                    old_price=change['old_price'],
+                    new_price=change['new_price'],
+                    price_diff=change['price_diff'],
+                )
             )
-            
-            # Aktualizuj cenu v OrderItem
+
             item.cena = change['new_price']
-            item.save(update_fields=['cena'])
-            
-            # Aktualizuj zůstatek uživatele
-            user_obj = item.order.user
-            balance_change = change['total_diff']
-            
-            try:
-                current_balance = getattr(user_obj, 'aktualni_zustatek', Decimal('0'))
-                new_balance = current_balance - balance_change
-                user_obj.aktualni_zustatek = new_balance
-                user_obj.save(update_fields=['aktualni_zustatek'])
-            except Exception as e:
-                print(f"⚠️ Chyba aktualizace zůstatku pro {user_obj.username}: {e}")
+            items_to_update.append(item)
+
+
+        PriceRecalculationDetail.objects.bulk_create(details_to_create, batch_size=500)
+        OrderItem.objects.bulk_update(items_to_update, ['cena'], batch_size=500)
     
     return {
         'success': True,
@@ -161,3 +187,135 @@ def get_recalculation_summary_by_user(changes):
         by_user[user]['items_count'] += 1
     
     return dict(by_user)
+
+
+def build_bulk_order_plan(datum_vydeje, menu_items, users):
+    """
+    Připraví náhled hromadného založení objednávek bez zápisu do DB.
+
+    Admin nástroj záměrně neřeší uzávěrku objednávek, ale nesmí tiše přepsat
+    už vydané/uzavřené objednávky a má respektovat konto uživatele.
+    """
+    menu_items = list(menu_items)
+    users = list(users)
+    existing_orders = {
+        order.user_id: order
+        for order in (
+            Order.objects
+            .filter(user__in=users, datum_vydeje=datum_vydeje)
+            .prefetch_related("items")
+        )
+    }
+
+    plan = []
+    summary = {
+        "create": 0,
+        "replace": 0,
+        "skip_status": 0,
+        "skip_balance": 0,
+        "skipped": 0,
+    }
+
+    for user in users:
+        existing_order = existing_orders.get(user.pk)
+        existing_items = existing_order.items.count() if existing_order else 0
+        total_price = sum(
+            (
+                OrderValidator.get_price_for_user(
+                    user,
+                    menu_item,
+                    target_date=datum_vydeje,
+                    quantity=1,
+                ) or Decimal("0")
+            )
+            for menu_item in menu_items
+        )
+
+        entry = {
+            "user": user,
+            "existing_order": existing_order,
+            "existing_items": existing_items,
+            "menu_items_count": len(menu_items),
+            "total_price": total_price,
+            "action": "create",
+            "reason": "",
+        }
+
+        if existing_order:
+            if existing_order.status not in EDITABLE_BULK_ORDER_STATUSES:
+                entry["action"] = "skip_status"
+                entry["reason"] = f"Existující objednávka má stav „{existing_order.get_status_display()}“."
+            else:
+                entry["action"] = "replace"
+                entry["reason"] = "Existující rozpracovaná objednávka bude nahrazena novým obsahem."
+
+        if entry["action"] in {"create", "replace"}:
+            ok_balance, balance_reason = OrderValidator.check_user_balance(user, total_price)
+            if not ok_balance:
+                entry["action"] = "skip_balance"
+                if balance_reason == "insufficient_balance":
+                    entry["reason"] = "Nedostatečný zůstatek."
+                elif balance_reason == "debit_limit_exceeded":
+                    entry["reason"] = "Překročen debetní limit."
+                else:
+                    entry["reason"] = "Objednávku nelze vytvořit kvůli nastavení konta."
+
+        if entry["action"].startswith("skip"):
+            summary["skipped"] += 1
+        summary[entry["action"]] += 1
+        plan.append(entry)
+
+    return {"entries": plan, "summary": summary}
+
+
+def apply_bulk_order_plan(datum_vydeje, menu_items, plan_entries):
+    """
+    Provede pouze položky, které v náhledu vyšly jako create/replace.
+    """
+    menu_items = list(menu_items)
+    created = 0
+    replaced = 0
+
+    with transaction.atomic():
+        for entry in plan_entries:
+            if entry["action"] not in {"create", "replace"}:
+                continue
+
+            user = entry["user"]
+            order, order_created = Order.objects.select_for_update().get_or_create(
+                user=user,
+                datum_vydeje=datum_vydeje,
+                defaults={"status": "zalozena-obsluhou"},
+            )
+
+            if not order_created and order.status not in EDITABLE_BULK_ORDER_STATUSES:
+                # Ochrana proti změně stavu mezi preview a potvrzením.
+                continue
+
+            order.status = "zalozena-obsluhou"
+            order.save(update_fields=["status"])
+            order.items.all().delete()
+
+            OrderItem.objects.bulk_create(
+                [
+                    OrderItem(
+                        order=order,
+                        menu_item=menu_item,
+                        quantity=1,
+                        cena=OrderValidator.get_price_for_user(
+                            user,
+                            menu_item,
+                            target_date=datum_vydeje,
+                            quantity=1,
+                        ),
+                    )
+                    for menu_item in menu_items
+                ]
+            )
+
+            if order_created:
+                created += 1
+            else:
+                replaced += 1
+
+    return {"created": created, "replaced": replaced}

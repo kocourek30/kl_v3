@@ -1,82 +1,216 @@
 {% extends "admin/base_site.html" %}
 
 {% block content %}
-<div class="container-fluid">
-  <div class="row mb-4">
-    <div class="col">
-      <h1 class="mb-2">Přepočty cen</h1>
-      <p class="text-muted">
-        Nástroje pro přepočet cen jídel a přehled historie přepočtů.
-      </p>
-    </div>
-  </div>
-
-  <div class="row">
-    <!-- Karta: Spustit přepočet cen -->
-    <div class="col-md-4 mb-3">
-      <div class="card border-success h-100 shadow-sm">
-        <div class="card-body d-flex flex-column">
-          <h5 class="card-title">
-            <i class="fas fa-play-circle text-success me-2"></i>
-            Spustit přepočet cen
-          </h5>
-          <p class="card-text text-muted">
-            Spustí znovuvýpočet prodejných cen jídel podle aktuálních nákladů
-            na suroviny.
-          </p>
-          <div class="mt-auto">
-            <a href="{% url 'admin:objednavky_order_price_recalculation' %}"
-               class="btn btn-success">
-              Spustit přepočet
-            </a>
-          </div>
+<div class="report-page">
+  <div class="report-shell prepocty-shell">
+    <section class="report-hero prepocty-hero">
+      <div>
+        <span class="report-eyebrow"><i class="fas fa-calculator"></i> Přepočty cen</span>
+        <h1>Přepočty cen</h1>
+        <p>
+          Přepočet cen je citlivé místo mezi jídelníčkem, dotacemi a reálnou cenou objednávek.
+          Tady je rychle vidět, kdy běžel naposledy, jak velký zásah udělal a které položky se změnily nejvíc.
+        </p>
+        <div class="admin-chip-row" style="margin-top: 12px;">
+          <span class="admin-chip"><strong>Aktivní filtr:</strong> {{ selected_label }}</span>
+          {% if latest_run %}
+          <span class="admin-chip"><strong>Poslední běh:</strong> {{ latest_run.created_at|date:"d.m.Y H:i" }}</span>
+          {% else %}
+          <span class="admin-chip"><strong>Poslední běh:</strong> Zatím nikdy</span>
+          {% endif %}
+          {% with audit_card=impact_cards|last %}
+          <span class="admin-chip"><strong>Auditní shoda:</strong> {{ audit_card.value }}</span>
+          {% endwith %}
         </div>
       </div>
+      <div class="report-meta-grid">
+        {% for card in impact_cards %}
+        <div class="report-meta-card">
+          <strong>{{ card.label }}</strong>
+          <span>{{ card.value }}</span>
+          <small>{{ card.meta }}</small>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <div class="admin-nav-pills">
+      <a href="{% url 'admin:prepocty_run_recalculation' %}" class="admin-nav-pill is-active">
+        <i class="fas fa-play-circle"></i> Spustit přepočet
+      </a>
+      <a href="{% url 'admin:prepocty_history' %}" class="admin-nav-pill">
+        <i class="fas fa-history"></i> Historie běhů
+      </a>
+      <a href="{% url 'admin:prepocty_details' %}" class="admin-nav-pill">
+        <i class="fas fa-magnifying-glass-chart"></i> Detaily změn
+      </a>
     </div>
 
-    <!-- Karta: Historie přepočtů -->
-    <div class="col-md-4 mb-3">
-      <div class="card border-primary h-100 shadow-sm">
-        <div class="card-body d-flex flex-column">
-          <h5 class="card-title">
-            <i class="fas fa-history text-primary me-2"></i>
-            Historie přepočtů
-          </h5>
-          <p class="card-text text-muted">
-            Seznam všech proběhlých přepočtů včetně času, uživatele
-            a základních souhrnných informací.
-          </p>
-          <div class="mt-auto">
-            <a href="{% url 'admin:objednavky_pricerecalculationlog_changelist' %}"
-               class="btn btn-outline-primary">
-              Otevřít historii
-            </a>
-          </div>
-        </div>
-      </div>
+    <div class="admin-export-bar">
+      <strong>Období přehledu:</strong>
+      {% for preset in filter_presets %}
+        <a href="?obdobi={{ preset.key }}" class="admin-btn {% if selected_preset == preset.key %}admin-btn--primary{% else %}admin-btn--light{% endif %} admin-btn--small">
+          {{ preset.label }}
+        </a>
+      {% endfor %}
     </div>
 
-    <!-- Karta: Detaily přepočtů -->
-    <div class="col-md-4 mb-3">
-      <div class="card border-info h-100 shadow-sm">
-        <div class="card-body d-flex flex-column">
-          <h5 class="card-title">
-            <i class="fas fa-list text-info me-2"></i>
-            Detaily přepočtů
-          </h5>
-          <p class="card-text text-muted">
-            Detailní záznamy o změnách cen jednotlivých jídel v rámci
-            jednotlivých přepočtů.
-          </p>
-          <div class="mt-auto">
-            <a href="{% url 'admin:objednavky_pricerecalculationdetail_changelist' %}"
-               class="btn btn-outline-info">
-              Zobrazit detaily
-            </a>
-          </div>
+  {% if warning_cards %}
+    <section class="prepocty-alerts">
+      {% for warning in warning_cards %}
+        <article class="prepocty-alert tone-{{ warning.tone }}">
+          <h4>{{ warning.title }}</h4>
+          <p>{{ warning.message }}</p>
+        </article>
+      {% endfor %}
+    </section>
+  {% endif %}
+
+  {% if consistency_checks %}
+    <section class="prepocty-panel admin-panel">
+      <div class="prepocty-panel__head admin-panel-head">
+        <div>
+          <h3 class="mb-1">Auditní shoda logů a detailů</h3>
+          <div class="prepocty-meta">Kontrola, že souhrn běhu odpovídá detailním změnám cen na položkách.</div>
         </div>
       </div>
-    </div>
+      <div class="prepocty-panel__body admin-panel-body">
+        <div class="table-responsive">
+          <table class="prepocty-table admin-table">
+            <thead>
+              <tr>
+                <th>Běh</th>
+                <th>Log položek</th>
+                <th>Detaily</th>
+                <th>Rozdíl v logu</th>
+                <th>Součet detailů</th>
+                <th>Stav</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for check in consistency_checks %}
+                <tr>
+                  <td>{{ check.log.created_at|date:"d.m.Y H:i" }}</td>
+                  <td>{{ check.log.items_affected }}</td>
+                  <td>{{ check.detail_items }}</td>
+                  <td class="prepocty-diff {% if check.log.total_price_diff > 0 %}positive{% elif check.log.total_price_diff < 0 %}negative{% endif %}">
+                    {{ check.log.total_price_diff|floatformat:2 }} Kč
+                  </td>
+                  <td class="prepocty-diff {% if check.detail_total_diff > 0 %}positive{% elif check.detail_total_diff < 0 %}negative{% endif %}">
+                    {{ check.detail_total_diff|floatformat:2 }} Kč
+                  </td>
+                  <td>
+                    <span class="prepocty-status {% if check.matches %}normal{% else %}strong{% endif %}">
+                      {% if check.matches %}Shoda{% else %}Nesoulad{% endif %}
+                    </span>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="prepocty-panels admin-grid admin-grid--split">
+    <article class="prepocty-panel admin-panel">
+      <div class="prepocty-panel__head admin-panel-head">
+        <div>
+          <h3 class="mb-1">Poslední běhy přepočtu</h3>
+          <div class="prepocty-meta">Rychlý přehled posledních auditních záznamů včetně dopadu na objednávky.</div>
+        </div>
+      </div>
+      <div class="prepocty-panel__body admin-panel-body">
+        {% if recent_logs %}
+          <div class="table-responsive">
+            <table class="prepocty-table admin-table">
+              <thead>
+                <tr>
+                  <th>Provedeno</th>
+                  <th>Období</th>
+                  <th>Provedl</th>
+                  <th>Položky</th>
+                  <th>Objednávky</th>
+                  <th>Dopad</th>
+                  <th>Rozdíl</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for log in recent_logs %}
+                  <tr>
+                    <td>{{ log.created_at|date:"d.m.Y H:i" }}</td>
+                    <td>{{ log.date_from|date:"d.m.Y" }} – {{ log.date_to|date:"d.m.Y" }}</td>
+                    <td>{% if log.created_by %}{{ log.created_by.get_full_name|default:log.created_by.username }}{% else %}-{% endif %}</td>
+                    <td>{{ log.items_affected }}</td>
+                    <td>{{ log.orders_affected }}</td>
+                    <td>
+                      <span class="prepocty-status {% if log.is_major_impact %}strong{% else %}normal{% endif %}">
+                        {{ log.impact_label }}
+                      </span>
+                    </td>
+                    <td class="prepocty-diff {% if log.total_price_diff > 0 %}positive{% elif log.total_price_diff < 0 %}negative{% endif %}">
+                      {{ log.total_price_diff|floatformat:2 }} Kč
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="prepocty-empty">Zatím tu není žádný běh přepočtu. Až se první provede, objeví se tady historie i finanční dopad.</div>
+        {% endif %}
+      </div>
+    </article>
+
+    <article class="prepocty-panel admin-panel">
+      <div class="prepocty-panel__head admin-panel-head">
+        <div>
+          <h3 class="mb-1">Největší změny ve filtru {{ selected_label }}</h3>
+          <div class="prepocty-meta">Položky, u kterých se cena po přepočtu změnila s největším skutečným dopadem na řádek.</div>
+        </div>
+      </div>
+      <div class="prepocty-panel__body admin-panel-body">
+        {% if biggest_changes %}
+          <div class="table-responsive">
+            <table class="prepocty-table admin-table">
+              <thead>
+                <tr>
+                  <th>Jídlo</th>
+                  <th>Zákazník</th>
+                  <th>Stará</th>
+                  <th>Nová</th>
+                  <th>Rozdíl</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for detail in biggest_changes %}
+                  <tr>
+                    <td>
+                      <strong>{{ detail.order_item.menu_item.jidlo.nazev }}</strong><br>
+                      <span class="prepocty-meta">{{ detail.order_item.menu_item.druh_jidla.nazev }} • {{ detail.order_item.order.datum_vydeje|date:"d.m.Y" }}</span>
+                    </td>
+                    <td>{{ detail.order_item.order.user.get_full_name|default:detail.order_item.order.user.username }}</td>
+                    <td>{{ detail.old_price|floatformat:2 }} Kč</td>
+                    <td>{{ detail.new_price|floatformat:2 }} Kč</td>
+                    <td class="prepocty-diff {% if detail.line_total_diff > 0 %}positive{% elif detail.line_total_diff < 0 %}negative{% endif %}">
+                      {{ detail.line_total_diff|floatformat:2 }} Kč
+                      <span class="prepocty-meta prepocty-meta--inline">{{ detail.price_diff|floatformat:2 }} Kč za kus • {{ detail.order_item.quantity }} ks</span>
+                      {% if detail.is_major_impact %}
+                        <span class="prepocty-status strong prepocty-status--stacked">Vyžaduje kontrolu</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="prepocty-empty">Ve zvoleném období zatím nevznikly žádné detailní změny cen.</div>
+        {% endif %}
+      </div>
+    </article>
+  </section>
   </div>
 </div>
 {% endblock %}

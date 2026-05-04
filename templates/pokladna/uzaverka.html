@@ -1,0 +1,143 @@
+{% extends "pokladna/base_pokladna.html" %}
+
+{% block title %}Denní uzávěrka - {{ pokladna.nazev }}{% endblock %}
+
+{% block content %}
+<style>
+  .close-page { display: grid; gap: 16px; max-width: 1180px; margin: 0 auto; }
+  .close-head { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .close-title { margin: 0; font-size: 1.65rem; font-weight: 900; color: #17202a; }
+  .close-meta { color: #607080; }
+  .close-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+  .close-card { background: #fff; border: 1px solid #dbe1e8; border-radius: 8px; overflow: hidden; box-shadow: 0 8px 24px rgba(23,32,42,.05); }
+  .close-card h2 { margin: 0; padding: 13px 15px; font-size: 1rem; font-weight: 900; border-bottom: 1px solid #edf0f3; }
+  .close-body { padding: 15px; display: grid; gap: 12px; }
+  .close-big { border-radius: 8px; background: #eef7f0; border: 1px solid #b9dfc2; padding: 16px; }
+  .close-big-label { color: #135f2d; font-weight: 900; }
+  .close-big-value { font-size: 2.35rem; font-weight: 900; color: #135f2d; line-height: 1; margin-top: 6px; }
+  .close-table { width: 100%; border-collapse: collapse; }
+  .close-table th { background: #f6f8fa; color: #607080; font-size: .86rem; text-align: left; padding: 11px 12px; border-bottom: 1px solid #e5e9ef; }
+  .close-table td { padding: 12px; border-bottom: 1px solid #edf0f3; }
+  .close-table tr:last-child td { border-bottom: 0; }
+  .close-num { text-align: right; white-space: nowrap; font-weight: 900; }
+  .close-form label { display: grid; gap: 5px; color: #607080; font-weight: 800; font-size: .86rem; }
+  .close-form input, .close-form textarea { border: 1px solid #dbe1e8; border-radius: 8px; min-height: 42px; padding: 8px 10px; }
+  .close-form textarea { min-height: 90px; resize: vertical; }
+  .close-btn { border: 0; border-radius: 8px; min-height: 50px; padding: 12px 16px; background: #18a046; color: #fff; font-weight: 900; }
+  .close-link { border-radius: 8px; min-height: 42px; padding: 10px 14px; background: #e9eef2; color: #17202a; text-decoration: none; font-weight: 900; display: inline-flex; align-items: center; }
+  .close-warning { border-radius: 8px; background: #fff5df; border: 1px solid #f2c572; color: #754a00; padding: 12px; font-weight: 800; }
+  @media (max-width: 900px) { .close-grid { grid-template-columns: 1fr; } }
+</style>
+
+<div class="close-page">
+  <div class="close-head">
+    <div>
+      <h1 class="close-title">Denní uzávěrka</h1>
+      <div class="close-meta">{{ pokladna.nazev }} · {{ datum|date:"d.m.Y" }}</div>
+    </div>
+    {% if uzaverka %}
+      <a class="close-link" href="{% url 'pokladna:pokladna_uzaverka_detail' pokladna.id uzaverka.id %}">Zobrazit uzávěrku</a>
+    {% endif %}
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{% if message.tags == 'error' %}danger{% elif message.tags == 'success' %}success{% else %}info{% endif %} mb-0">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="close-grid">
+    <main class="close-card">
+      <h2>Tržby k uzavření</h2>
+      <div class="close-body">
+        <div class="close-big">
+          <div class="close-big-label">Hotovost k odevzdání</div>
+          <div class="close-big-value">{{ k_odevzdani|floatformat:-2 }} Kč</div>
+        </div>
+        <table class="close-table">
+          <thead>
+            <tr>
+              <th>Způsob platby</th>
+              <th class="text-end">Dokladů</th>
+              <th class="text-end">Částka</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in trzby_podle_plateb %}
+              <tr>
+                <td>{{ p.nazev }}</td>
+                <td class="close-num">{{ p.pocet }}</td>
+                <td class="close-num">{{ p.castka|floatformat:-2 }} Kč</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <table class="close-table">
+          <thead>
+            <tr>
+              <th>Vklady na konta</th>
+              <th class="text-end">Vkladů</th>
+              <th class="text-end">Částka</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in vklady_kont.polozky %}
+              <tr>
+                <td>{{ p.nazev }}</td>
+                <td class="close-num">{{ p.pocet }}</td>
+                <td class="close-num">{{ p.castka|floatformat:-2 }} Kč</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </main>
+
+    <aside class="close-card">
+      <h2>Vytvořit uzávěrku</h2>
+      <form class="close-body close-form" method="post">
+        {% csrf_token %}
+        <input type="hidden" name="datum" value="{{ datum|date:'Y-m-d' }}">
+        {% if uzaverka %}
+          <div class="close-warning">Uzávěrka pro tento den už existuje. Opětovným uložením ji přepočítáš.</div>
+        {% endif %}
+        <label>Spočtená hotovost k odevzdání
+          <input type="number" name="hotovost_spoctena" step="0.01" value="{{ k_odevzdani|stringformat:'.2f' }}">
+        </label>
+        <div class="close-meta">Pokladní základ, který zůstává v pokladně: {{ pokladni_zaklad|floatformat:-2 }} Kč</div>
+        <div class="close-meta">Očekávaná hotovost v zásuvce před odevzdáním: {{ predpokladana_hotovost|floatformat:-2 }} Kč</div>
+        <label>Poznámka
+          <textarea name="poznamka" placeholder="Nepovinné upřesnění uzávěrky"></textarea>
+        </label>
+        <button class="close-btn" type="submit">Vytvořit uzávěrku</button>
+      </form>
+    </aside>
+  </div>
+
+  <section class="close-card">
+    <h2>DPH v uzavíraných tržbách</h2>
+    <table class="close-table">
+      <thead>
+        <tr>
+          <th>Sazba DPH</th>
+          <th class="text-end">Základ</th>
+          <th class="text-end">DPH</th>
+          <th class="text-end">Celkem</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in dph_souhrn %}
+          <tr>
+            <td>{{ d.dph_sazba|floatformat:-2 }} %</td>
+            <td class="close-num">{{ d.zaklad|floatformat:-2 }} Kč</td>
+            <td class="close-num">{{ d.dph|floatformat:-2 }} Kč</td>
+            <td class="close-num">{{ d.celkem|floatformat:-2 }} Kč</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4">Žádné položky k DPH.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endblock %}

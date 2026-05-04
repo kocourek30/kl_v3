@@ -1,37 +1,21 @@
 from django import forms
-from django.contrib import admin
-from dotace.models import SkupinoveNastaveni, CustomUser
+
+from .models import CustomUser, Vklad
+
 
 class VkladForm(forms.ModelForm):
+    """Formulář pro ruční vklad na konto.
+
+    Uživatelé s povoleným čerpáním do debetu jsou schválně vynechaní, protože
+    jejich konto se vyrovnává systémovým nulováním.
+    """
+
     class Meta:
         model = Vklad
-        fields = '__all__'
+        fields = "__all__"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Omezit volbu uživatelů, které mají cerpani_debit == False
-        allowed_users = CustomUser.objects.filter(
-            groups__nastaveni__cerpani_debit=False
+        self.fields["uzivatel"].queryset = CustomUser.objects.exclude(
+            groups__nastaveni__cerpani_debit=True
         ).distinct()
-        self.fields['uzivatel'].queryset = allowed_users
-
-@admin.register(Vklad)
-class VkladAdmin(admin.ModelAdmin):
-    form = VkladForm
-    list_display = ('uzivatel', 'castka', 'datum', 'poznamka')
-    search_fields = ('uzivatel__username', 'uzivatel__osobni_cislo')
-    list_filter = ('datum',)
-
-    def save_model(self, request, obj, form, change):
-        skupina = obj.uzivatel.groups.first()
-        if skupina:
-            try:
-                nastaveni = skupina.nastaveni
-                if nastaveni.cerpani_debit:
-                    from django.core.exceptions import ValidationError
-                    raise ValidationError(f"Uživatel {obj.uzivatel} má nastaveno čerpání debetu, nelze přidat vklad.")
-            except SkupinoveNastaveni.DoesNotExist:
-                pass
-        else:
-            raise ValidationError("Uživatel není přiřazen ke skupině, nelze vytvořit vklad.")
-        super().save_model(request, obj, form, change)

@@ -1,0 +1,346 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'admin_dashboard/css/dashboard.css' %}">
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const switches = Array.from(document.querySelectorAll("[data-visibility-switch]"));
+
+  function syncSwitch(label) {
+    const checkbox = label.querySelector("input[type='checkbox']");
+    const text = label.querySelector("[data-visibility-switch-label]");
+    if (!checkbox || !text) {
+      return;
+    }
+
+    const onText = label.dataset.onText || "Zobrazit";
+    const offText = label.dataset.offText || "Skrýt";
+    label.classList.toggle("is-visible", checkbox.checked);
+    text.textContent = checkbox.checked ? onText : offText;
+  }
+
+  function syncChildrenForAppCard(appCard) {
+    const appSwitch = appCard.querySelector("[data-visibility-scope='app'] input[type='checkbox']");
+    if (!appSwitch) {
+      return;
+    }
+    appCard.classList.toggle("is-app-hidden", !appSwitch.checked);
+  }
+
+  switches.forEach(function (label) {
+    const checkbox = label.querySelector("input[type='checkbox']");
+    if (!checkbox) {
+      return;
+    }
+    syncSwitch(label);
+    checkbox.addEventListener("change", function () {
+      syncSwitch(label);
+      const appCard = label.closest(".ops-visibility-app-card");
+      if (appCard) {
+        syncChildrenForAppCard(appCard);
+      }
+    });
+  });
+
+  document.querySelectorAll(".ops-visibility-app-card").forEach(syncChildrenForAppCard);
+});
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="ops-page admin-shell admin-shell--wide">
+  <section class="ops-hero admin-hero">
+    <div class="ops-hero-main">
+      <span class="ops-kicker admin-kicker">Pohled rolí po přihlášení</span>
+      <h1>Co která role v adminu opravdu uvidí</h1>
+      <p>
+        Na jednom místě nastavíš, jak bude admin po přihlášení pro jednotlivé role vypadat. Můžeš skrýt celé appky,
+        jen konkrétní položky nebo rychlé odkazy, aniž bys tím rozbil samotné fungování aplikace.
+      </p>
+    </div>
+    <div class="ops-hero-actions">
+      <a class="admin-btn admin-btn--secondary" href="{% url 'admin:admin_dashboard_dashboardtask_changelist' %}">Zpět na Admin přehled</a>
+    </div>
+  </section>
+
+  <section class="ops-card">
+    <div class="ops-card-head">
+      <h2>Rychlý souhrn</h2>
+      <span class="ops-muted">Nejdůležitější přehled před tím, než upravíš, co role v adminu uvidí.</span>
+    </div>
+    <div class="ops-health-grid">
+      {% for card in visibility_summary_cards %}
+      <div class="ops-health-card {{ card.tone }}">
+        <span class="ops-health-label">{{ card.label }}</span>
+        <strong class="ops-health-value">{{ card.value }}</strong>
+        <span class="ops-health-hint">{{ card.hint }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <form method="post" class="ops-card ops-card--matrix">
+    {% csrf_token %}
+    <div class="ops-card-head">
+      <div>
+        <h2>Matice rolí a oprávnění</h2>
+        <span class="ops-muted">Každá buňka říká, jak silný přístup má daná role do konkrétní části systému.</span>
+      </div>
+      <div class="ops-module-actions">
+        <span class="dash-badge neutral">Bez přístupu</span>
+        <span class="dash-badge neutral">Náhled</span>
+        <span class="dash-badge warning">Správa</span>
+        <span class="dash-badge good">Plná kontrola</span>
+        <button type="submit" name="matrix_action" value="reset_defaults" class="admin-btn admin-btn--light">Použít doporučené bezpečné role</button>
+        <button type="submit" class="admin-btn admin-btn--primary">Uložit změny</button>
+      </div>
+    </div>
+    <div class="ops-table-wrap ops-table-wrap--matrix">
+      <table class="ops-table ops-table--matrix">
+        <thead>
+          <tr>
+            <th>Role</th>
+            {% for area in areas %}
+            <th>{{ area.name }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td class="ops-matrix-role-cell">
+              <strong>{{ row.name }}</strong>
+              <div class="ops-muted">{{ row.description }}</div>
+              <div class="ops-matrix-role-meta">
+                <span class="dash-badge neutral">{{ row.group_name }}</span>
+                <span class="ops-muted">{{ row.user_count }} uživatelů</span>
+              </div>
+            </td>
+            {% for assignment in row.assignments %}
+            <td class="ops-matrix-select-cell">
+              <label class="ops-matrix-select-wrap">
+                <span class="sr-only">{{ row.name }} / {{ assignment.area_name }}</span>
+                <select name="{{ assignment.field_name }}" class="ops-matrix-select ops-matrix-select--{{ assignment.tone }}">
+                  {% for value, label in choices %}
+                  <option value="{{ value }}"{% if value == assignment.level %} selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="ops-form-footer">
+      <button type="submit" class="admin-btn admin-btn--primary">Uložit změny oprávnění</button>
+    </div>
+  </form>
+
+  <form method="post" class="ops-card ops-card--matrix">
+    {% csrf_token %}
+    <input type="hidden" name="matrix_action" value="save_visibility">
+    <div class="ops-card-head">
+      <div>
+        <h2>Vzhled adminu pro jednotlivé role</h2>
+        <span class="ops-muted">Tahle vrstva řídí jen to, co člověk po přihlášení uvidí. App dál funguje normálně a nic se tím bezpečnostně neblokuje.</span>
+      </div>
+      <div class="ops-module-actions">
+        <span class="dash-badge good">Zobrazit</span>
+        <span class="dash-badge neutral">Skrýt</span>
+        <button type="submit" class="admin-btn admin-btn--primary">Uložit viditelnost</button>
+      </div>
+    </div>
+    <div class="ops-role-note">
+      <span class="ops-role-note-label">Doporučení pro práci</span>
+      <p>Nejprve skryj celé appky, které role vůbec nepotřebuje. Pak teprve jemně dolaď jednotlivé položky uvnitř ponechaných appek.</p>
+    </div>
+    <div class="ops-visibility-stack">
+      {% for row in rows %}
+      <details class="ops-disclosure ops-disclosure--role-visibility" {% if forloop.first %}open{% endif %}>
+        <summary class="ops-disclosure-summary">
+          <div class="ops-disclosure-main">
+            <strong>{{ row.name }}</strong>
+            <span class="ops-muted">{{ row.best_for|default:row.description }}</span>
+          </div>
+          <div class="ops-disclosure-meta">
+            <span class="dash-badge neutral">{{ row.group_name }}</span>
+            <span class="dash-badge good">{{ row.user_count }} uživatelů</span>
+            <span class="ops-disclosure-toggle">Zobrazit detail</span>
+          </div>
+        </summary>
+        <div class="ops-disclosure-body">
+          <div class="ops-role-note">
+            <span class="ops-role-note-label">Jak to funguje</span>
+            <p>Vypnutá appka skryje celou sekci. Vypnutá položka schová jen konkrétní model nebo rychlou akci uvnitř povolené appky.</p>
+          </div>
+          <div class="ops-visibility-app-grid">
+            {% for app in row.visibility_apps %}
+            <section class="ops-visibility-app-card">
+              <div class="ops-visibility-app-head">
+                <div>
+                  <strong>{{ app.app_name }}</strong>
+                  <div class="ops-muted">{{ app.app_label }}</div>
+                </div>
+                <label
+                  class="ops-visibility-switch{% if app.visible %} is-visible{% endif %}"
+                  data-visibility-switch
+                  data-visibility-scope="app"
+                  data-on-text="Appka viditelná"
+                  data-off-text="Appka skrytá"
+                >
+                  <input type="checkbox" name="{{ app.field_name }}"{% if app.visible %} checked{% endif %}>
+                  <span class="ops-visibility-switch-track">
+                    <span class="ops-visibility-switch-thumb"></span>
+                  </span>
+                  <span class="ops-visibility-switch-label" data-visibility-switch-label>{% if app.visible %}Appka viditelná{% else %}Appka skrytá{% endif %}</span>
+                </label>
+              </div>
+              <div class="ops-visibility-item-list">
+                {% for item in app.items %}
+                <div class="ops-visibility-item">
+                  <div class="ops-visibility-item-main">
+                    <strong>{{ item.name }}</strong>
+                    <span class="ops-muted">{{ item.hint }}</span>
+                  </div>
+                  <label
+                    class="ops-visibility-switch ops-visibility-switch--item{% if item.visible %} is-visible{% endif %}"
+                    data-visibility-switch
+                    data-visibility-scope="item"
+                    data-on-text="Zobrazit"
+                    data-off-text="Skrýt"
+                  >
+                    <input type="checkbox" name="{{ item.field_name }}"{% if item.visible %} checked{% endif %}>
+                    <span class="ops-visibility-switch-track">
+                      <span class="ops-visibility-switch-thumb"></span>
+                    </span>
+                    <span class="ops-visibility-switch-label" data-visibility-switch-label>{% if item.visible %}Zobrazit{% else %}Skrýt{% endif %}</span>
+                  </label>
+                </div>
+                {% endfor %}
+              </div>
+            </section>
+            {% endfor %}
+          </div>
+        </div>
+      </details>
+      {% endfor %}
+    </div>
+    <div class="ops-form-footer">
+      <button type="submit" class="admin-btn admin-btn--primary">Uložit viditelnost v adminu</button>
+    </div>
+  </form>
+
+  <details class="ops-card ops-card--advanced">
+    <summary class="ops-disclosure-summary">
+      <div class="ops-disclosure-main">
+        <strong>Pokročilé: skutečná oprávnění a dopad na uživatele</strong>
+        <span class="ops-muted">Tu část použij jen tehdy, když chceš měnit, co role opravdu smí dělat, ne jen co uvidí.</span>
+      </div>
+      <div class="ops-disclosure-meta">
+        <span class="dash-badge warning">Pokročilé</span>
+        <span class="ops-disclosure-toggle">Zobrazit detail</span>
+      </div>
+    </summary>
+    <div class="ops-disclosure-body">
+      <form method="post" class="ops-card ops-card--matrix ops-card--nested">
+        {% csrf_token %}
+        <div class="ops-card-head">
+          <div>
+            <h2>Skutečná oprávnění rolí</h2>
+            <span class="ops-muted">Tahle matice řídí reálný přístup do oblastí systému. To už je bezpečnostní vrstva, ne jen kosmetika adminu.</span>
+          </div>
+          <div class="ops-module-actions">
+            <span class="dash-badge neutral">Bez přístupu</span>
+            <span class="dash-badge neutral">Náhled</span>
+            <span class="dash-badge warning">Správa</span>
+            <span class="dash-badge good">Plná kontrola</span>
+            <button type="submit" name="matrix_action" value="reset_defaults" class="admin-btn admin-btn--light">Použít doporučené bezpečné role</button>
+            <button type="submit" class="admin-btn admin-btn--primary">Uložit oprávnění</button>
+          </div>
+        </div>
+        <div class="ops-health-grid ops-health-grid--compact">
+          {% for card in summary_cards %}
+          <div class="ops-health-card {{ card.tone }}">
+            <span class="ops-health-label">{{ card.label }}</span>
+            <strong class="ops-health-value">{{ card.value }}</strong>
+            <span class="ops-health-hint">{{ card.hint }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="ops-table-wrap ops-table-wrap--matrix">
+          <table class="ops-table ops-table--matrix">
+            <thead>
+              <tr>
+                <th>Role</th>
+                {% for area in areas %}
+                <th>{{ area.name }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+              <tr>
+                <td class="ops-matrix-role-cell">
+                  <strong>{{ row.name }}</strong>
+                  <div class="ops-muted">{{ row.description }}</div>
+                  <div class="ops-matrix-role-meta">
+                    <span class="dash-badge neutral">{{ row.group_name }}</span>
+                    <span class="ops-muted">{{ row.user_count }} uživatelů</span>
+                  </div>
+                </td>
+                {% for assignment in row.assignments %}
+                <td class="ops-matrix-select-cell">
+                  <label class="ops-matrix-select-wrap">
+                    <span class="sr-only">{{ row.name }} / {{ assignment.area_name }}</span>
+                    <select name="{{ assignment.field_name }}" class="ops-matrix-select ops-matrix-select--{{ assignment.tone }}">
+                      {% for value, label in choices %}
+                      <option value="{{ value }}"{% if value == assignment.level %} selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                </td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="ops-form-footer">
+          <button type="submit" class="admin-btn admin-btn--primary">Uložit změny oprávnění</button>
+        </div>
+      </form>
+
+      <section class="ops-card ops-card--nested">
+        <div class="ops-card-head">
+          <h2>Kdo už role používá</h2>
+          <span class="ops-muted">Rychlá kontrola, na koho mají změny okamžitý dopad.</span>
+        </div>
+        <div class="ops-role-usage-grid">
+          {% for row in rows %}
+          <div class="ops-role-usage-card">
+            <div class="ops-role-usage-head">
+              <strong>{{ row.name }}</strong>
+              <span class="dash-badge neutral">{{ row.user_count }} uživatelů</span>
+            </div>
+            <div class="ops-muted">{{ row.best_for|default:row.description }}</div>
+            {% if row.users_preview %}
+            <div class="ops-access-meta">
+              {% for username in row.users_preview %}
+              <span class="dash-badge neutral">{{ username }}</span>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="ops-muted">Zatím nikomu nepřiřazeno.</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+    </div>
+  </details>
+</div>
+{% endblock %}

@@ -1,0 +1,132 @@
+{% extends "admin/base.html" %}
+{% load i18n static jazzmin admin_urls %}
+
+{% block page_content %}
+    {% if not is_popup and admin_license_footer.warning_message %}
+        <div class="content border-bottom-0 pb-0">
+            <div class="container-fluid">
+                <div class="admin-license-alert admin-license-alert--{{ admin_license_footer.warning_tone }}">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>{{ admin_license_footer.warning_message }}</span>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+    {{ block.super }}
+{% endblock %}
+
+{% block sidebar %}
+    {% if jazzmin_settings.show_sidebar %}
+        {% get_side_menu as side_menu_list %}
+
+        <aside class="main-sidebar elevation-4 {{ jazzmin_ui.sidebar_classes }}" id="jazzy-sidebar">
+            <a href="{% url 'admin:index' %}" class="brand-link {{ jazzmin_ui.brand_classes }}" id="jazzy-logo">
+                <img src="{% static jazzmin_settings.site_logo %}" alt="{{ jazzmin_settings.site_header }} Logo" class="{{ jazzmin_settings.site_logo_classes }} brand-image elevation-3" style="opacity: .8">
+                <span class="brand-text font-weight-light">{{ jazzmin_settings.site_brand }}</span>
+            </a>
+
+            <div class="sidebar">
+                <div class="user-panel mt-3 pb-3 mb-3 d-flex">
+                    <div class="image">
+                        <i class="fas fa-inverse user-profile fa-user-circle"></i>
+                    </div>
+                    <div class="info">
+                        {% if perms|can_view_self %}
+                            <a href="{% jazzy_admin_url request.user request.current_app|default:"admin" %}" class="d-block admin-user-name">{{ admin_user_display_name }}</a>
+                        {% else %}
+                            <span class="d-block admin-user-name">{{ admin_user_display_name }}</span>
+                        {% endif %}
+                        {% if admin_user_role_label %}
+                            <span class="admin-user-role">{{ admin_user_role_label }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <nav class="mt-2">
+                    <ul class="nav nav-pills nav-sidebar flex-column {{ jazzmin_ui.sidebar_list_classes }}" data-widget="treeview" role="menu" data-collapsible="false">
+                        <li class="nav-item">
+                            <a href="{% url 'admin:index' %}" class="nav-link">
+                                <i class="nav-icon fas fa-th-large"></i>
+                                <p>{% trans 'Dashboard' %}</p>
+                            </a>
+                        </li>
+
+                        {% if jazzmin_settings.navigation_expanded %}
+                            {% for app in side_menu_list %}
+                                <li class="nav-header">{{ app.name }}</li>
+                                {% for model in app.models %}
+                                    <li class="nav-item">
+                                        {% if model.url %}
+                                            <a href="{{ model.url }}" class="nav-link">
+                                                <i class="nav-icon {{ model.icon }}"></i> <p>{{ model.name }}</p>
+                                            </a>
+                                        {% else %}
+                                            <span class="nav-link disabled">
+                                                <i class="nav-icon {{ model.icon }}"></i> <p>{{ model.name }}</p>
+                                            </span>
+                                        {% endif %}
+                                    </li>
+                                {% endfor %}
+                            {% endfor %}
+                        {% else %}
+                            {% for app in side_menu_list %}
+                                <li class="nav-item has-treeview">
+                                    <a href="#" class="nav-link">
+                                        <i class="nav-icon {{ app.icon }}"></i>
+                                        <p>{{ app.name|truncatechars:21 }} <i class="fas fa-angle-left right"></i></p>
+                                    </a>
+                                    <ul class="nav nav-treeview" style="display: none;">
+                                        {% for model in app.models %}
+                                            <li class="nav-item">
+                                                <a href="{% if model.url %}{{ model.url }}{% else %}javascript:void(0){% endif %}" class="nav-link">
+                                                    <i class="nav-icon {{ model.icon }}"></i>
+                                                    <p>{{ model.name }}</p>
+                                                </a>
+                                            </li>
+                                        {% endfor %}
+                                    </ul>
+                                </li>
+                            {% endfor %}
+                        {% endif %}
+                    </ul>
+                </nav>
+
+                {% if admin_license_footer.status_label %}
+                    <div class="admin-license-sidebar-widget admin-license-sidebar-widget--{{ admin_license_footer.tone }}">
+                        <div class="admin-license-sidebar-widget__label">Licence</div>
+                        <div class="admin-license-sidebar-widget__status">
+                            <span class="admin-license-sidebar-widget__badge">
+                                <i class="{{ admin_license_footer.icon }}"></i>
+                                {{ admin_license_footer.status_label|default:"Bez licence" }}
+                            </span>
+                        </div>
+                        <div class="admin-license-sidebar-widget__body">
+                            <strong>{{ admin_license_footer.customer_name|default:"Bez přiřazeného zákazníka" }}</strong>
+                            {% if admin_license_footer.valid_until_display %}
+                                <span>Platná do {{ admin_license_footer.valid_until_display }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+        </aside>
+    {% endif %}
+{% endblock %}
+
+{% block footer %}
+    {% if not is_popup %}
+        <footer class="main-footer {{ jazzmin_ui.footer_classes }}">
+            <div class="float-right d-none d-sm-inline admin-footer-stack">
+                <div class="admin-license-footer__meta">
+                    <b>{% trans 'Jazzmin version' %}</b> {% get_jazzmin_version %}
+                </div>
+            </div>
+            {% autoescape off %}
+                <strong>{% trans 'Copyright' %} &copy; {% now 'Y' %} {{ jazzmin_settings.copyright }}.</strong> {% trans 'All rights reserved.' %}
+            {% endautoescape %}
+        </footer>
+        {% if jazzmin_settings.show_ui_builder %}
+            {% include 'jazzmin/includes/ui_builder_panel.html' %}
+        {% endif %}
+    {% endif %}
+{% endblock %}

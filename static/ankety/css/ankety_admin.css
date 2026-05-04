@@ -1,0 +1,527 @@
+.ankety-page {
+    width: 100%;
+}
+
+.ankety-shell {
+    gap: 1.35rem;
+}
+
+.ankety-hero {
+    align-items: start;
+}
+
+.ankety-chip-row {
+    margin-top: 0.9rem;
+}
+
+.ankety-meta-grid {
+    align-self: stretch;
+}
+
+.ankety-filter-panel {
+    padding-bottom: 1rem;
+}
+
+.ankety-filter-panel[hidden],
+.ankety-custom-period-panel[hidden] {
+    display: none !important;
+}
+
+.ankety-period-panel {
+    padding: 1rem 1.1rem;
+}
+
+.ankety-period-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.9rem 1rem;
+}
+
+.ankety-period-bar__label {
+    color: #496255;
+    font-weight: 800;
+    font-size: 0.94rem;
+}
+
+.ankety-period-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+}
+
+.ankety-period-pill {
+    appearance: none;
+    border: 1px solid #bcd9bf;
+    background: #fff;
+    color: #1f6d33;
+    padding: 0.68rem 1rem;
+    border-radius: 999px;
+    font-weight: 800;
+    font-size: 0.94rem;
+    line-height: 1;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 18px rgba(87, 143, 69, 0.08);
+    transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease, background 0.16s ease, color 0.16s ease;
+    cursor: pointer;
+    min-width: 9.8rem;
+}
+
+.ankety-period-pill:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 24px rgba(87, 143, 69, 0.12);
+    color: #155c2b !important;
+    border-color: #8ec18d;
+    text-decoration: none;
+}
+
+.ankety-period-pill.is-active {
+    color: #ffffff !important;
+    border-color: #54ae43;
+    background: linear-gradient(135deg, #54ae43 0%, #6ec451 100%);
+    box-shadow: 0 16px 26px rgba(84, 174, 67, 0.2);
+}
+
+.ankety-period-pill:not(.is-active),
+.ankety-period-pill:not(.is-active):visited,
+.ankety-period-pill:not(.is-active):focus {
+    color: #1f6d33 !important;
+    text-decoration: none !important;
+}
+
+.ankety-period-pill.is-active:visited,
+.ankety-period-pill.is-active:focus {
+    color: #ffffff !important;
+}
+
+.ankety-custom-period-panel {
+    display: grid;
+    gap: 0.95rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e8efea;
+}
+
+.ankety-custom-form {
+    margin-top: 1rem;
+}
+
+.ankety-custom-period-panel__intro {
+    color: #5d6d5f;
+    font-size: 0.96rem;
+    line-height: 1.5;
+}
+
+.ankety-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, min(260px, 100%)));
+    align-items: end;
+}
+
+.ankety-custom-period-field {
+    display: grid !important;
+    gap: 0.45rem;
+}
+
+.ankety-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 1rem;
+}
+
+.ankety-panels {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.ankety-type-bars {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.85rem;
+}
+
+.ankety-type-bars--compact {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.ankety-type-bar-card {
+    padding: 0.9rem 1rem;
+    border-radius: 1rem;
+    border: 1px solid #dfeadd;
+    background: linear-gradient(180deg, #ffffff 0%, #f9fcf8 100%);
+}
+
+.ankety-type-bar-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.9rem;
+    align-items: baseline;
+    margin-bottom: 0.5rem;
+}
+
+.ankety-type-bar-head strong {
+    color: #17311f;
+    font-weight: 800;
+}
+
+.ankety-type-bar-head span {
+    color: #5a6b60;
+    font-size: 0.9rem;
+    text-align: right;
+}
+
+.ankety-type-bar-track {
+    height: 0.72rem;
+    border-radius: 999px;
+    background: #e8f0e6;
+    overflow: hidden;
+}
+
+.ankety-type-bar-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #58b63f 0%, #84cf50 100%);
+}
+
+.ankety-type-bar-fill--warm {
+    background: linear-gradient(90deg, #f3a321 0%, #f7bf57 100%);
+}
+
+.ankety-type-group-list {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.ankety-type-group-card {
+    padding: 0.9rem 0.95rem;
+    border: 1px solid #e5ece4;
+    border-radius: 1rem;
+    background: linear-gradient(180deg, #ffffff 0%, #fbfdf9 100%);
+}
+
+.ankety-type-group-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 0.8rem;
+    flex-wrap: wrap;
+}
+
+.ankety-type-group-head h4 {
+    margin: 0 0 0.16rem;
+    color: #17311f;
+    font-size: 1rem;
+}
+
+.ankety-type-group-head span {
+    color: #5f6d63;
+    font-size: 0.92rem;
+}
+
+.ankety-panel .admin-panel-head h3 {
+    margin: 0;
+    font-size: 1.02rem;
+    font-weight: 900;
+    color: #17311f;
+}
+
+.ankety-table-wrap {
+    box-shadow: none;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.ankety-table-wrap table {
+    border-radius: 1rem;
+    overflow: hidden;
+    width: 100%;
+    table-layout: fixed;
+}
+
+.ankety-table-wrap th,
+.ankety-table-wrap td {
+    padding: 0.5rem 0.55rem;
+    line-height: 1.22;
+    vertical-align: middle;
+}
+
+.ankety-table-wrap th:first-child,
+.ankety-table-wrap td:first-child {
+    padding-left: 0.7rem;
+}
+
+.ankety-table-wrap th:last-child,
+.ankety-table-wrap td:last-child {
+    padding-right: 0.7rem;
+}
+
+.ankety-col-rank {
+    width: 3.1rem;
+    text-align: center;
+}
+
+.ankety-col-meal {
+    width: 41%;
+}
+
+.ankety-col-action {
+    width: 8.8rem;
+    white-space: nowrap;
+}
+
+.ankety-table-wrap th.text-right,
+.ankety-table-wrap td.text-right {
+    width: 7.2rem;
+    text-align: right;
+}
+
+.ankety-meal-name {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    color: #1b2b22;
+    line-height: 1.16;
+    max-height: 2.4em;
+    word-break: break-word;
+    text-wrap: pretty;
+}
+
+.ankety-table-wrap td,
+.ankety-table-wrap th {
+    overflow-wrap: anywhere;
+}
+
+.ankety-detail-link {
+    display: inline-flex;
+    margin-top: 0.28rem;
+    color: #176a32;
+    font-weight: 800;
+    text-decoration: none;
+    font-size: 0.84rem;
+}
+
+.ankety-detail-link:hover {
+    color: #0f5a28;
+    text-decoration: underline;
+}
+
+.ankety-rank {
+    width: 2rem;
+    height: 2rem;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 999px;
+    background: #ecf8ea;
+    color: #1f7b2b;
+    font-weight: 900;
+}
+
+.ankety-rank--warn {
+    background: #fff1e4;
+    color: #c25b05;
+}
+
+.ankety-rating {
+    --rating: 0;
+    position: relative;
+    display: inline-block;
+    width: 5.8rem;
+    height: 1rem;
+    font-size: 1rem;
+    line-height: 1;
+    letter-spacing: 0.08rem;
+    white-space: nowrap;
+    font-family: Arial, sans-serif;
+    vertical-align: middle;
+}
+
+.ankety-rating::before {
+    content: "★★★★★";
+    display: block;
+    color: #d9e0d8;
+}
+
+.ankety-rating::after {
+    content: "★★★★★";
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: calc((var(--rating) / 5) * 100%);
+    overflow: hidden;
+    white-space: nowrap;
+    color: #f5a623;
+}
+
+.ankety-rating--large {
+    width: 6.1rem;
+    font-size: 1.02rem;
+}
+
+.ankety-score-stack {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    min-width: 8.4rem;
+    width: 100%;
+}
+
+.ankety-score-stack strong {
+    font-size: 0.92rem;
+    color: #445466;
+    min-width: 2.9rem;
+    text-align: right;
+}
+
+.ankety-score-stack--large strong {
+    font-size: 1.05rem;
+    color: #233427;
+}
+
+.ankety-comments {
+    display: grid;
+    gap: 0.8rem;
+}
+
+.ankety-comment {
+    padding: 1rem 1.05rem;
+    border: 1px solid #e6edf1;
+    border-radius: 1rem;
+    background: linear-gradient(180deg, #ffffff 0%, #fbfdfc 100%);
+}
+
+.ankety-comment strong {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: #1b2b22;
+}
+
+.ankety-comment p {
+    margin: 0.45rem 0 0;
+    color: #435567;
+}
+
+.ankety-comment--inline {
+    margin-top: 0.85rem;
+}
+
+.ankety-detail-stack {
+    display: grid;
+    gap: 1rem;
+}
+
+.ankety-detail-card {
+    padding: 1rem 1.05rem;
+    border: 1px solid #e7edf1;
+    border-radius: 1rem;
+    background: linear-gradient(180deg, #ffffff 0%, #fbfdfc 100%);
+}
+
+.ankety-detail-card__head {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: start;
+    flex-wrap: wrap;
+}
+
+.ankety-answer-list {
+    display: grid;
+    gap: 0.65rem;
+    margin-top: 0.95rem;
+}
+
+.ankety-answer-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+    padding: 0.7rem 0.8rem;
+    border-radius: 0.9rem;
+    background: #f8fbf8;
+    border: 1px solid #e3ece5;
+}
+
+.ankety-answer-score {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.ankety-empty {
+    padding: 1rem 1.05rem;
+    border: 1px dashed #d8e2e7;
+    border-radius: 1rem;
+    color: #667685;
+    font-weight: 700;
+    background: #fbfcfd;
+}
+
+.ankety-table-wrap td.text-wrap {
+    min-width: 0;
+}
+
+.ankety-table-wrap .report-field-note {
+    margin-top: 0.18rem;
+    white-space: nowrap;
+}
+
+@media (max-width: 1199.98px) {
+    .ankety-filter-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .ankety-panels {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .ankety-period-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .ankety-period-pills {
+        width: 100%;
+    }
+
+    .ankety-period-pill {
+        flex: 1 1 calc(50% - 0.65rem);
+    }
+
+    .ankety-filter-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ankety-kpi-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ankety-rating {
+        margin-left: 0;
+    }
+
+    .ankety-detail-card__head,
+    .ankety-answer-item {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .ankety-answer-score {
+        justify-content: flex-start;
+    }
+
+    .ankety-col-action {
+        width: auto;
+        white-space: normal;
+    }
+}

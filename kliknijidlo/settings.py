@@ -1,13 +1,29 @@
 import os
-import secrets
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+TESTING = "test" in sys.argv
+LOCAL_RUNSERVER = "runserver" in sys.argv
 
 
 load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+
+def env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def env_list(name, default):
+    value = os.getenv(name)
+    if not value:
+        return default
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 # --- SECURITY ---
@@ -16,24 +32,46 @@ if not SECRET_KEY:
     SECRET_KEY = 'django-insecure-dev-key-temporary'
 
 
-DEBUG = 'True'
+DEBUG = env_bool('DJANGO_DEBUG', default=True)
 
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = env_list(
+    'DJANGO_ALLOWED_HOSTS',
+    [
+        '127.0.0.1',
+        'localhost',
+        '10.0.0.108',
+        'jidelna.kliknijidlo.cz',
+        'www.jidelna.kliknijidlo.cz',
+    ],
+)
+
+if LOCAL_RUNSERVER:
+    for host in ['127.0.0.1', 'localhost', '0.0.0.0', '10.0.0.108', 'testserver']:
+        if host not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(host)
 
 
 # --- CLOUDFLARE & HTTPS FIX ---
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 
-CSRF_TRUSTED_ORIGINS = [
-    'https://jidelna.kliknijidlo.cz',
-    'http://jidelna.kliknijidlo.cz',
-    'http://10.0.0.108:8000',
-]
+CSRF_TRUSTED_ORIGINS = env_list(
+    'CSRF_TRUSTED_ORIGINS',
+    [
+        'http://127.0.0.1:8000',
+        'http://localhost:8000',
+        'https://jidelna.kliknijidlo.cz',
+        'http://jidelna.kliknijidlo.cz',
+        'http://10.0.0.108:8000',
+    ],
+)
 
 
-if not DEBUG:
+if not DEBUG and not LOCAL_RUNSERVER:
+    if SECRET_KEY == 'django-insecure-dev-key-temporary':
+        raise ValueError("DJANGO_SECRET_KEY must be set in production.")
+
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_SSL_REDIRECT = True
@@ -45,14 +83,24 @@ else:
     CSRF_COOKIE_SECURE = False
     SECURE_SSL_REDIRECT = False
 
+if TESTING:
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    SECURE_SSL_REDIRECT = False
+
 
 # --- SESSION SETTINGS ---
-SESSION_COOKIE_HTTPONLY = False
+SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = 'Lax'
-SESSION_SAVE_EVERY_REQUEST = True
+SESSION_SAVE_EVERY_REQUEST = False
 SESSION_COOKIE_AGE = 86400  # 24 hodin
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = 'same-origin'
+X_FRAME_OPTIONS = 'DENY'
+KIOSK_AUTO_LOGIN_ENABLED = env_bool('KIOSK_AUTO_LOGIN_ENABLED', default=False)
+RFID_API_TOKEN = os.getenv("RFID_API_TOKEN", "").strip()
 
 
 # --- APPS ---
@@ -65,6 +113,9 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     'django_extensions',
+    "admin_dashboard",
+    "licencovani",
+    "provoz_jidelny",
     "users",
     "jidelnicek",
     "objednavky",
@@ -77,9 +128,12 @@ INSTALLED_APPS = [
     'vydej',
     'vydej_frontend',
     'reporty',
+    "finance",
+    "fakturace",
     'prepocty',
     'sklad',
     "pokladna",
+    "ankety",
 ]
 
 
@@ -91,21 +145,45 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'users.middleware.ForcePasswordChangeMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    'admin_dashboard.middleware.ModuleAccessMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
 
-# --- DATABASE: lokálně jen SQLite, bez ohledu na DEBUG/ENV ---
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+LOGS_DIR = BASE_DIR / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
+
+db_engine = os.getenv('DB_ENGINE', 'django.db.backends.sqlite3')
+if db_engine == 'django.db.backends.sqlite3':
+    DATABASES = {
+        "default": {
+            "ENGINE": db_engine,
+            "NAME": os.getenv('DB_NAME', str(BASE_DIR / 'db.sqlite3')),
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": db_engine,
+            "NAME": os.getenv('DB_NAME', 'kliknijidlo_dev'),
+            "USER": os.getenv('DB_USER', 'kliknijidlo_user'),
+            "PASSWORD": os.getenv('DB_PASSWORD', ''),
+            "HOST": os.getenv('DB_HOST', '127.0.0.1'),
+            "PORT": os.getenv('DB_PORT', '5432'),
+            "OPTIONS": {
+                "sslmode": os.getenv('DB_SSLMODE') or 'prefer',
+            },
+        }
+    }
 
 
-if not DEBUG and not DATABASES['default'].get('PASSWORD'):
+if (
+    not DEBUG
+    and DATABASES['default']['ENGINE'] != 'django.db.backends.sqlite3'
+    and not DATABASES['default'].get('PASSWORD')
+):
     raise ValueError("DB_PASSWORD must be set in production!")
 
 
@@ -130,6 +208,14 @@ USE_I18N = True
 USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Local override for auth migrations:
+# Some workstation Python installs may contain non-project auth migrations
+# (e.g. accidental 0013/0014 files). Pinning auth migration module keeps
+# project migrations deterministic and prevents broken external dependencies.
+MIGRATION_MODULES = {
+    "auth": "kliknijidlo.auth_migrations",
+}
+
 
 TEMPLATES = [
     {
@@ -143,7 +229,10 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'users.context_processors.user_balance',
+                'users.context_processors.admin_user_identity',
                 'canteen_settings.context_processors.footer_info',
+                'admin_dashboard.context_processors.frontend_feature_flags',
+                'licencovani.context_processors.admin_license_footer',
             ],
         },
     },
@@ -196,7 +285,7 @@ LOGGING = {
         'file': {
             'level': 'WARNING',
             'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs', 'django.log'),
+            'filename': os.path.join(LOGS_DIR, 'django.log'),
             'maxBytes': 1024 * 1024 * 10,
             'backupCount': 5,
             'formatter': 'verbose',
@@ -204,7 +293,7 @@ LOGGING = {
         'security_file': {
             'level': 'WARNING',
             'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs', 'security.log'),
+            'filename': os.path.join(LOGS_DIR, 'security.log'),
             'maxBytes': 1024 * 1024 * 10,
             'backupCount': 5,
             'formatter': 'verbose',
@@ -295,17 +384,21 @@ JAZZMIN_SETTINGS = {
         # === APP IKONY ===
         "auth": "fas fa-shield-alt",
         "users": "fas fa-user-friends",
+        "admin_dashboard": "fas fa-screwdriver-wrench",
         "jidelnicek": "fas fa-utensils",
         "objednavky": "fas fa-shopping-cart",
         "vydej": "fas fa-dolly",
+        "provoz_jidelny": "fas fa-store",
         "vydej_jidel": "fas fa-concierge-bell",
         "dotace": "fas fa-file-contract",
         "canteen_settings": "fas fa-gear",
-        "frontend": "fas fa-globe",
-        "reporty": "fas fa-chart-mixed",
+        "reporty": "fas fa-chart-line",
+        "finance": "fas fa-coins",
+        "fakturace": "fas fa-file-invoice-dollar",
         "prepocty": "fas fa-calculator",
         "sklad": "fas fa-warehouse",
         "pokladna": "fas fa-cash-register",
+        "ankety": "fas fa-star-half-stroke",
         "import_export": "fas fa-file-import",
         "widget_tweaks": "fas fa-wand-magic-sparkles",
         "vydej_frontend": "fas fa-window-restore",
@@ -315,12 +408,19 @@ JAZZMIN_SETTINGS = {
         "users.Vklad": "fas fa-cash-register",
         "users.CustomUser": "fas fa-id-card-alt",
 
+        # === ADMIN DASHBOARD ===
+        "admin_dashboard.DashboardTask": "fas fa-gauge-high",
+        "admin_dashboard.TaskRun": "fas fa-clock-rotate-left",
+        "admin_dashboard.AppModuleToggle": "fas fa-toggle-on",
+        "admin_dashboard.AdminViewAccess": "fas fa-user-lock",
+
         # === JIDELNICEK ===
         "jidelnicek.Alergen": "fas fa-triangle-exclamation",
         "jidelnicek.DruhJidla": "fas fa-utensils",
         "jidelnicek.Jidlo": "fas fa-bowl-food",
         "jidelnicek.Jidelnicek": "fas fa-calendar-days",
         "jidelnicek.PolozkaJidelnicku": "fas fa-list-ul",
+        "jidelnicek.MenuImportRun": "fas fa-file-arrow-down",
 
         # === OBJEDNAVKY ===
         "objednavky.Order": "fas fa-shopping-basket",
@@ -333,6 +433,8 @@ JAZZMIN_SETTINGS = {
         "vydej.VydejOrder": "fas fa-shopping-cart",
         "vydej.PrehledProKuchyni": "fas fa-kitchen-set",
         "vydej.VydejSettings": "fas fa-sliders-h",
+        "provoz_jidelny.ProvozniDashboard": "fas fa-store",
+        "provoz_jidelny.NastaveniVydaje": "fas fa-stopwatch-20",
         "vydej.VydejniUctenka": "fas fa-receipt",
         "vydej.PolozkaUctenky": "fas fa-list-ol",
         "vydej.StornovaneObjednavky": "fas fa-trash-alt",
@@ -360,7 +462,14 @@ JAZZMIN_SETTINGS = {
 
         # === REPORTY / PREPOCTY ===
         "reporty.ReportDummy": "fas fa-chart-pie",
+        "finance.FinancniDashboard": "fas fa-chart-line",
+        "fakturace.FakturacniNastaveni": "fas fa-sliders",
+        "fakturace.FakturacniDavka": "fas fa-file-invoice-dollar",
+        "fakturace.FakturacniPolozka": "fas fa-list-check",
         "prepocty.PrepoctyDummy": "fas fa-calculator",
+        "licencovani": "fas fa-key",
+        "licencovani.LicenseConfig": "fas fa-id-badge",
+        "licencovani.LicenseEvent": "fas fa-clock-rotate-left",
 
         # === SKLAD ===
         "sklad.Surovina": "fas fa-carrot",
@@ -370,6 +479,11 @@ JAZZMIN_SETTINGS = {
         "sklad.RecepturaPolozka": "fas fa-list-ul",
         "sklad.PrijemSkladu": "fas fa-truck-loading",
         "sklad.PolozkaPrijmu": "fas fa-plus-square",
+        "sklad.Dodavatel": "fas fa-truck",
+        "sklad.KomponentaJidla": "fas fa-layer-group",
+        "sklad.SarzeSkladu": "fas fa-box-open",
+        "sklad.OdpisExpirace": "fas fa-calendar-times",
+        "sklad.SkladovaUzaverka": "fas fa-lock",
         "sklad.Inventura": "fas fa-clipboard-check",
         "sklad.PolozkaInventury": "fas fa-list-check",
         "sklad.InventurniDoklad": "fas fa-file-invoice",
@@ -387,7 +501,14 @@ JAZZMIN_SETTINGS = {
         "pokladna.Pokladna": "fas fa-cash-register",
         "pokladna.PokladniDoklad": "fas fa-file-invoice-dollar",
         "pokladna.PokladniPolozka": "fas fa-list-ol",
+        "pokladna.PokladniUzaverka": "fas fa-clipboard-check",
         "pokladna.PokladnaTile": "fas fa-square",
+        "ankety.AnketniOtazka": "fas fa-circle-question",
+        "ankety.HodnoceniJidla": "fas fa-star",
+        "ankety.OdpovedHodnoceni": "fas fa-list-check",
+        "ankety.MesicniAnketa": "fas fa-calendar-check",
+        "ankety.MesicniAnketaVarianta": "fas fa-list-ul",
+        "ankety.MesicniAnketaHlas": "fas fa-check-to-slot",
 
         # === AUTH fallback ===
         "auth.User": "fas fa-user-circle",
@@ -396,33 +517,43 @@ JAZZMIN_SETTINGS = {
 
     "order_with_respect_to": [
         "users",
+        "admin_dashboard",
         "jidelnicek",
         "objednavky",
         "vydej",
+        "provoz_jidelny",
         "vydej_jidel",
         "dotace",
         "canteen_settings",
-        "frontend",
         "reporty",
+        "finance",
+        "fakturace",
         "prepocty",
+        "licencovani",
         "auth",
         "sklad",
         "pokladna",
+        "ankety",
     ],
 
     # >>> HORNÍ HORIZONTÁLNÍ MENU – tlačítka na dashboardy appek <<<
     "topmenu_links": [
         {
-            "name": "Dashboard",
-            "url": "admin:index",
+            "name": "Provozní dashboard",
+            "url": "admin:provoz_jidelny_provoznidashboard_changelist",
             "permissions": ["auth.view_user"],
-            "icon": "fas fa-home",
+            "icon": "fas fa-store",
         },
         # každá appka míří na svůj „dashboard“ (changelist daného pseudo‑modelu)
         {
             "name": "Uživatelé",
             "url": "admin:users_customuser_changelist",
             "icon": "fas fa-user-friends",
+        },
+        {
+            "name": "Admin přehled",
+            "url": "admin:admin_dashboard_dashboardtask_changelist",
+            "icon": "fas fa-screwdriver-wrench",
         },
         {
             "name": "Jídelníček",
@@ -440,11 +571,6 @@ JAZZMIN_SETTINGS = {
             "icon": "fas fa-dolly",
         },
         {
-            "name": "Výdej jídelna",
-            "url": "admin:vydej_jidel_vydejsettings_change",
-            "icon": "fas fa-concierge-bell",
-        },
-        {
             "name": "Dotace",
             "url": "admin:dotace_dotacnipolitika_changelist",
             "icon": "fas fa-file-contract",
@@ -455,14 +581,19 @@ JAZZMIN_SETTINGS = {
             "icon": "fas fa-gear",
         },
         {
-            "name": "Frontend",
-            "url": "admin:frontend_page_changelist",
-            "icon": "fas fa-globe",
-        },
-        {
             "name": "Reporty",
             "url": "admin:reporty_reportdummy_changelist",
             "icon": "fas fa-chart-line",
+        },
+        {
+            "name": "Finance",
+            "url": "admin:finance_financnidashboard_changelist",
+            "icon": "fas fa-coins",
+        },
+        {
+            "name": "Fakturace",
+            "url": "admin:fakturace_fakturacnidavka_changelist",
+            "icon": "fas fa-file-invoice-dollar",
         },
         {
             "name": "Přepočty",
@@ -481,20 +612,27 @@ JAZZMIN_SETTINGS = {
     "custom_css": "css/custom-admin.css",
 
     "custom_links": {
+        "users": [
+            {
+                "name": "Nulování kont",
+                "url": "admin:users_vklad_nulovani_konta",
+                "icon": "fas fa-rotate-left",
+            },
+        ],
         "prepocty": [
             {
                 "name": "Spustit přepočet cen",
-                "url": "admin:objednavky_order_price_recalculation",
+                "url": "admin:prepocty_run_recalculation",
                 "icon": "fas fa-play-circle",
             },
             {
                 "name": "Historie přepočtů",
-                "url": "admin:objednavky_pricerecalculationlog_changelist",
+                "url": "admin:prepocty_history",
                 "icon": "fas fa-history",
             },
             {
                 "name": "Detaily přepočtů",
-                "url": "admin:objednavky_pricerecalculationdetail_changelist",
+                "url": "admin:prepocty_details",
                 "icon": "fas fa-list",
             },
         ],
@@ -504,11 +642,48 @@ JAZZMIN_SETTINGS = {
                 "url": "admin:sklad_mesicni_spotrebni_kos",
                 "icon": "fas fa-chart-pie",
             },
+            {
+                "name": "Zdraví skladu",
+                "url": "admin:sklad_zdravi_skladu",
+                "icon": "fas fa-heartbeat",
+            },
+            {
+                "name": "Doklady k opravě",
+                "url": "admin:sklad_doklady_k_oprave",
+                "icon": "fas fa-triangle-exclamation",
+            },
+            {
+                "name": "Návrh nákupu",
+                "url": "admin:sklad_navrh_nakupu",
+                "icon": "fas fa-cart-plus",
+            },
+        ],
+        "ankety": [
+            {
+                "name": "Vyhodnocení anket",
+                "url": "admin:ankety_report",
+                "icon": "fas fa-chart-simple",
+            },
+            {
+                "name": "Měsíční volba menu",
+                "url": "admin:ankety_mesicnianketa_changelist",
+                "icon": "fas fa-ballot-check",
+            },
+        ],
+        "reporty": [
+            {
+                "name": "Přehled reportů",
+                "url": "admin:reporty_reportdummy_changelist",
+                "icon": "fas fa-chart-line",
+            },
         ],
     },
 
     "hide_models": [
+        "reporty.ReportDummy",
         "prepocty.PrepoctyDummy",
+        "provoz_jidelny.ProvozniDashboard",
+        "provoz_jidelny.NastaveniVydaje",
         "objednavky.PriceRecalculationLog",
         "objednavky.PriceRecalculationDetail",
     ],
@@ -549,15 +724,25 @@ JAZZMIN_UI_TWEAKS = {
     "actions_sticky_top": False,
 }
 
+LICENSE_PUBLIC_KEY_PATH = BASE_DIR / "data" / "licencovani" / "public_key.pem"
+LICENSE_PRIVATE_KEY_PATH = BASE_DIR / "data" / "licencovani" / "private_key.pem"
+LICENSE_ENFORCEMENT = os.getenv("LICENSE_ENFORCEMENT", "false").lower() == "true"
 
-# DEBUG: lokální SQLite místo Postgresu
-if DEBUG:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
+
+if DATABASES["default"]["ENGINE"] == "django.db.backends.sqlite3" and "test" not in sys.argv:
+    DATABASES["default"].setdefault("OPTIONS", {}).setdefault("timeout", 30)
+
+    from django.db.backends.signals import connection_created
+
+    def _configure_local_sqlite(sender, connection, **kwargs):
+        if connection.vendor != "sqlite":
+            return
+        with connection.cursor() as cursor:
+            cursor.execute("PRAGMA journal_mode=OFF")
+            cursor.execute("PRAGMA synchronous=OFF")
+            cursor.execute("PRAGMA temp_store=MEMORY")
+
+    connection_created.connect(_configure_local_sqlite)
 
 
 # =============================================================================

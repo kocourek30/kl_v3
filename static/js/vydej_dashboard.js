@@ -104,10 +104,27 @@ function showRFIDWaiting() {
     const errorState = document.getElementById('rfidErrorState');
     const loadingOverlay = document.getElementById('rfidLoadingOverlay');
     
-    if (waitingState) waitingState.style.display = 'flex';
-    if (successState) successState.style.display = 'none';
-    if (errorState) errorState.style.display = 'none';
-    if (loadingOverlay) loadingOverlay.style.display = 'none';
+    if (waitingState) {
+        waitingState.hidden = false;
+        waitingState.setAttribute('aria-hidden', 'false');
+        waitingState.style.display = 'flex';
+    }
+    if (successState) {
+        successState.style.display = 'none';
+        successState.hidden = true;
+        successState.setAttribute('aria-hidden', 'true');
+    }
+    if (errorState) {
+        errorState.style.display = 'none';
+        errorState.classList.remove('error-shown');
+        errorState.hidden = true;
+        errorState.setAttribute('aria-hidden', 'true');
+    }
+    if (loadingOverlay) {
+        loadingOverlay.style.display = 'none';
+        loadingOverlay.hidden = true;
+        loadingOverlay.setAttribute('aria-hidden', 'true');
+    }
     
     currentRFIDOrder = null;
     // ⏱ AUTO ISSUE – při návratu do waiting vždy stopni timeout
@@ -118,6 +135,9 @@ function showRFIDWaiting() {
 function showRFIDLoading() {
     const loadingOverlay = document.getElementById('rfidLoadingOverlay');
     if (loadingOverlay) {
+        loadingOverlay.hidden = false;
+        loadingOverlay.setAttribute('aria-hidden', 'false');
+        loadingOverlay.classList.remove('state-hidden');
         loadingOverlay.style.display = 'flex';
     }
 }
@@ -127,6 +147,9 @@ function hideRFIDLoading() {
     const loadingOverlay = document.getElementById('rfidLoadingOverlay');
     if (loadingOverlay) {
         loadingOverlay.style.display = 'none';
+        loadingOverlay.classList.add('state-hidden');
+        loadingOverlay.hidden = true;
+        loadingOverlay.setAttribute('aria-hidden', 'true');
     }
 }
 
@@ -136,9 +159,29 @@ function hideRFIDStates() {
     const successState = document.getElementById('rfidSuccessState');
     const errorState = document.getElementById('rfidErrorState');
     
-    if (waitingState) waitingState.style.display = 'none';
-    if (successState) successState.style.display = 'none';
-    if (errorState) errorState.style.display = 'none';
+    if (waitingState) {
+        waitingState.style.display = 'none';
+        waitingState.hidden = true;
+        waitingState.setAttribute('aria-hidden', 'true');
+    }
+    if (successState) {
+        successState.style.display = 'none';
+        successState.hidden = true;
+        successState.setAttribute('aria-hidden', 'true');
+    }
+    if (errorState) {
+        errorState.style.display = 'none';
+        errorState.classList.remove('error-shown');
+        errorState.hidden = true;
+        errorState.setAttribute('aria-hidden', 'true');
+    }
+    hideRFIDLoading();
+}
+
+function forceRFIDIdleState() {
+    window.rfidProcessing = false;
+    hideRFIDLoading();
+    showRFIDWaiting();
 }
 
 
@@ -202,6 +245,8 @@ function showRFIDAlreadyIssued(orderData) {
     
     const successState = document.getElementById('rfidSuccessState');
     if (successState) {
+        successState.hidden = false;
+        successState.setAttribute('aria-hidden', 'false');
         successState.style.display = 'block';
     }
     
@@ -259,6 +304,8 @@ function showRFIDSuccess(orderData) {
     
     const successState = document.getElementById('rfidSuccessState');
     if (successState) {
+        successState.hidden = false;
+        successState.setAttribute('aria-hidden', 'false');
         successState.style.display = 'block';
     }
     
@@ -316,6 +363,8 @@ function showRFIDError(errorMessage, rfidTag) {
     
     const errorState = document.getElementById('rfidErrorState');
     if (errorState) {
+        errorState.hidden = false;
+        errorState.setAttribute('aria-hidden', 'false');
         errorState.style.display = 'flex';
         errorState.style.zIndex = '1000'; // Nad loading
     }
@@ -742,10 +791,10 @@ function connectRFIDBridge() {
         btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Připojuji...';
     }
     
-    console.log('🔌 Připojuji k RFID Bridge na jidelna.kliknijidlo.cz...');
+    console.log('🔌 Připojuji k RFID Bridge přes /socket.io ...');
     
     try {
-        socket = io('http://localhost:3001', {
+        socket = io('/socket.io', {
         transports: ['websocket', 'polling'],
         timeout: 5000,
         reconnection: true,
@@ -800,8 +849,9 @@ function connectRFIDBridge() {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-plug me-2"></i> Připojit Bridge';
             }
-            
-            showNotification('❌ Nelze se připojit k RFID bridge na localhost:3001', 'error');
+
+            hideRFIDLoading();
+            showNotification('❌ Nelze se připojit k RFID bridge', 'error');
         });
         
         socket.io.on('reconnect', (attempt) => {
@@ -950,6 +1000,9 @@ async function issueSingleItemGroup(itemIds, itemName, itemQuantity, button) {
 function initDashboard() {
     console.log('🚀 Inicializuji RFID Dashboard...');
     
+    // Vynucený výchozí stav (ochrana proti zaseknutému overlayi z cache/staršího JS)
+    forceRFIDIdleState();
+
     // Spusť hodiny
     updateTime();
     setInterval(updateTime, 1000);
@@ -972,6 +1025,13 @@ function initDashboard() {
             refreshDashboardData();
         }
     }, 10000);
+
+    // Fail-safe: pokud by loading overlay visel bez aktivního procesu, schovej ho
+    setInterval(() => {
+        if (!window.rfidProcessing) {
+            hideRFIDLoading();
+        }
+    }, 1000);
     
     // ⚡ OKAMŽITÉ AUTO-CONNECT (bez setTimeout)
     console.log('⏱️ Spouštím auto-connect k RFID Bridge...');

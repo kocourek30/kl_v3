@@ -1,0 +1,206 @@
+<style>
+  .customer-layout {
+    --customer-green: #54ae43;
+    --customer-orange: #f28c28;
+    --customer-border: #dde5df;
+    --customer-muted: #667085;
+    align-items: flex-start;
+  }
+
+  .customer-sidebar {
+    display: grid;
+    gap: 12px;
+  }
+
+  .customer-card,
+  .customer-panel {
+    background: #fff;
+    border: 1px solid var(--customer-border);
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(16, 24, 40, 0.06);
+  }
+
+  .customer-card {
+    padding: 16px;
+  }
+
+  .customer-card-identity {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-top: 4px solid var(--customer-orange);
+  }
+
+  .customer-avatar {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    background: #eef8ec;
+    color: var(--customer-green);
+    font-size: 1.2rem;
+  }
+
+  .customer-name {
+    font-weight: 800;
+    color: #1f2933;
+  }
+
+  .customer-meta,
+  .customer-panel-subtitle {
+    color: var(--customer-muted);
+    font-size: 0.9rem;
+  }
+
+  .customer-card-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    color: #1f2933;
+    font-weight: 800;
+  }
+
+  .customer-balance-row,
+  .customer-limit {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 0;
+    font-size: 0.92rem;
+  }
+
+  .customer-balance-total {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--customer-border);
+    font-weight: 800;
+  }
+
+  .customer-balance-total strong {
+    font-size: 1.2rem;
+  }
+
+  .customer-limit {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--customer-border);
+    color: var(--customer-muted);
+  }
+
+  .customer-nav {
+    display: grid;
+    gap: 8px;
+  }
+
+  .customer-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--customer-border);
+    border-radius: 8px;
+    background: #fff;
+    color: #1f2933;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .customer-nav-link:hover,
+  .customer-nav-link.active {
+    border-color: var(--customer-green);
+    background: #eef8ec;
+    color: #247a22;
+  }
+
+  .customer-panel {
+    overflow: hidden;
+  }
+
+  .customer-panel-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 20px;
+    border-top: 4px solid var(--customer-green);
+    border-bottom: 1px solid var(--customer-border);
+  }
+
+  .customer-panel-title {
+    margin: 0;
+    font-weight: 850;
+    color: #1f2933;
+  }
+
+  .customer-panel-body {
+    padding: 20px;
+  }
+
+  .customer-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .customer-info-item {
+    padding: 12px;
+    border: 1px solid var(--customer-border);
+    border-radius: 8px;
+    background: #f8faf9;
+  }
+
+  .customer-info-label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--customer-muted);
+    font-size: 0.85rem;
+    font-weight: 700;
+  }
+
+  .customer-section-title {
+    margin: 22px 0 12px;
+    color: #1f2933;
+    font-weight: 800;
+  }
+
+  .customer-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 18px;
+  }
+
+  .customer-btn-primary {
+    border: 0;
+    border-radius: 8px;
+    background: var(--customer-green);
+    color: #fff;
+    font-weight: 800;
+    padding: 11px 18px;
+  }
+
+  .customer-btn-primary:hover {
+    background: #469738;
+    color: #fff;
+  }
+
+  .customer-filter .btn-check:checked + .btn-outline-success,
+  .customer-filter .btn-outline-success:hover {
+    background-color: var(--customer-green);
+    border-color: var(--customer-green);
+    color: white;
+  }
+
+  @media (max-width: 767.98px) {
+    .customer-info-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .customer-panel-header {
+      display: block;
+    }
+  }
+</style>

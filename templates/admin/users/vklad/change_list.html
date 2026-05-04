@@ -1,9 +1,172 @@
-{% extends "admin/change_list.html" %}
+{% extends "admin/base_site.html" %}
+{% load static admin_list %}
 
-{% block object-tools %}
+{% block extrahead %}
   {{ block.super }}
+  <link rel="stylesheet" href="{% static 'users/css/vklad_list_admin.css' %}">
+{% endblock %}
 
-  <a href="{% url 'admin:users_vklad_nulovani_konta' %}" class="btn btn-danger"><i class="fas fa-eraser"></i> Nulovat konta zákazníků</a>
+{% block content %}
+<div class="vklad-list-page admin-shell admin-shell--wide">
+  <section class="vklad-list-hero">
+    <div class="vklad-list-hero-main">
+      <span class="vklad-list-kicker">Finance uživatelů</span>
+      <h1>Vklady na konta</h1>
+      <p>
+        Přehled všech vkladů, nulování i plateb z účtu. Rychlé filtrování podle stavu, období, pokladny a uživatele.
+      </p>
+      <div class="vklad-list-chip-row">
+        <span class="vklad-list-chip"><strong>Celkem po filtru:</strong> {{ vklad_total_count }}</span>
+        <span class="vklad-list-chip"><strong>Na stránce:</strong> {{ vklad_rows_on_page }}</span>
+        <span class="vklad-list-chip"><strong>Součet na stránce:</strong> {{ vklad_amount_sum_on_page|floatformat:2 }} Kč</span>
+        <span class="vklad-list-chip"><strong>Standard:</strong> {{ vklad_status_standard }}</span>
+        <span class="vklad-list-chip"><strong>Nulování:</strong> {{ vklad_status_nulovani }}</span>
+        <span class="vklad-list-chip"><strong>Platba účtu:</strong> {{ vklad_status_platba }}</span>
+      </div>
+    </div>
+    <div class="vklad-list-hero-actions">
+      <a href="{% url 'admin:users_vklad_add' %}" class="admin-btn admin-btn--primary">
+        <i class="fas fa-plus"></i>
+        Nový vklad
+      </a>
+      <a href="{% url 'admin:users_vklad_nulovani_konta' %}" class="admin-btn admin-btn--light">
+        <i class="fas fa-eraser"></i>
+        Nulovat konta zákazníků
+      </a>
+    </div>
+  </section>
 
+  <section class="admin-filter-panel">
+    <form method="get" class="admin-filter-form">
+      <div class="admin-filter-grid vklad-list-filter-grid">
+        <div class="admin-field admin-field--span-2">
+          <label for="id_uzivatel">Uživatel</label>
+          <input type="text" id="id_uzivatel" name="uzivatel" value="{{ vklad_filter_user }}" placeholder="username, jméno, příjmení nebo osobní číslo">
+        </div>
+        <div class="admin-field">
+          <label for="id_stav">Stav</label>
+          <select id="id_stav" name="stav">
+            <option value="">Všechny stavy</option>
+            {% for value,label in vklad_status_choices %}
+              <option value="{{ value }}" {% if vklad_filter_status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="admin-field">
+          <label for="id_uhrada">Způsob úhrady</label>
+          <select id="id_uhrada" name="uhrada">
+            <option value="">Vše</option>
+            {% for value,label in vklad_payment_choices %}
+              <option value="{{ value }}" {% if vklad_filter_payment == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="admin-field">
+          <label for="id_pokladna">Pokladna</label>
+          <select id="id_pokladna" name="pokladna">
+            <option value="">Všechny pokladny</option>
+            {% for item in vklad_pokladna_options %}
+              <option value="{{ item.pokladna_id }}" {% if vklad_filter_pokladna == item.pokladna_id|stringformat:'s' %}selected{% endif %}>{{ item.pokladna__nazev }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="admin-field">
+          <label for="id_od">Datum od</label>
+          <input type="date" id="id_od" name="od" value="{{ vklad_filter_date_from }}">
+        </div>
+        <div class="admin-field">
+          <label for="id_do">Datum do</label>
+          <input type="date" id="id_do" name="do" value="{{ vklad_filter_date_to }}">
+        </div>
+        <div class="admin-field">
+          <label for="id_castka_od">Částka od (Kč)</label>
+          <input type="text" id="id_castka_od" name="castka_od" value="{{ vklad_filter_amount_from }}" placeholder="např. 50">
+        </div>
+        <div class="admin-field">
+          <label for="id_castka_do">Částka do (Kč)</label>
+          <input type="text" id="id_castka_do" name="castka_do" value="{{ vklad_filter_amount_to }}" placeholder="např. 5000">
+        </div>
+      </div>
+      <div class="admin-filter-actions">
+        <button type="submit" class="admin-btn admin-btn--primary">
+          <i class="fas fa-search"></i>
+          Filtrovat vklady
+        </button>
+        {% if vklad_filters_active %}
+          <a href="{% url 'admin:users_vklad_changelist' %}" class="admin-btn admin-btn--light">
+            <i class="fas fa-rotate-left"></i>
+            Zrušit filtry
+          </a>
+        {% endif %}
+      </div>
+    </form>
+  </section>
 
+  <section class="food-bulk-panel">
+    <form method="post" action="{% url 'admin:users_vklad_bulk_apply' %}{% if vklad_bulk_querystring %}?{{ vklad_bulk_querystring }}{% endif %}" class="food-bulk-panel__form">
+      {% csrf_token %}
+      <div class="food-bulk-panel__title">
+        <strong>Hromadné operace nad aktuálním filtrem</strong>
+        <span>Rychlá korekce platebního způsobu u vybraného bloku dat.</span>
+      </div>
+      <div class="food-bulk-panel__controls">
+        <select name="bulk_operation">
+          <option value="">Vyber operaci</option>
+          <option value="set_cash">Nastavit způsob úhrady: Hotově</option>
+          <option value="set_card">Nastavit způsob úhrady: Kartou</option>
+          <option value="set_qr">Nastavit způsob úhrady: QR platbou</option>
+        </select>
+        <button type="submit" class="admin-btn admin-btn--light" onclick="return confirm('Opravdu provést hromadnou operaci nad aktuálním filtrem?');">
+          <i class="fas fa-bolt"></i>
+          Provést hromadně
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <section class="vklad-list-grid">
+    {% for row in vklad_rows %}
+      <article class="vklad-row-card">
+        <div class="vklad-row-card__main">
+          <h2>
+            <a href="{% url 'admin:users_customuser_change' row.uzivatel_id %}" class="vklad-row-card__title-link">
+              {{ row.uzivatel.get_full_name|default:row.uzivatel.username }}
+            </a>
+          </h2>
+          <div class="vklad-row-card__meta">
+            <span class="vklad-row-card__pill">@{{ row.uzivatel.username }}</span>
+            {% if row.uzivatel.osobni_cislo %}<span class="vklad-row-card__pill">Osobní číslo: {{ row.uzivatel.osobni_cislo }}</span>{% endif %}
+            {% if row.pokladna %}<span class="vklad-row-card__pill">Pokladna: {{ row.pokladna }}</span>{% endif %}
+            <span class="vklad-row-card__pill">{{ row.datum|date:"d.m.Y H:i" }}</span>
+          </div>
+          <div class="vklad-row-card__meta">
+            <span class="vklad-row-card__status {% if row.status == 'standard' %}ok{% elif row.status == 'nulovani_konta' %}warn{% else %}muted{% endif %}">
+              {{ row.get_status_display }}
+            </span>
+            <span class="vklad-row-card__status muted">{{ row.get_zpusob_uhrady_display|default:"Bez způsobu úhrady" }}</span>
+            {% if row.poznamka %}<span class="vklad-row-card__note">{{ row.poznamka }}</span>{% endif %}
+          </div>
+        </div>
+        <div class="vklad-row-card__side">
+          <div class="vklad-row-card__amount">{{ row.castka|floatformat:2 }} Kč</div>
+          <a href="{% url 'admin:users_vklad_change' row.pk %}" class="admin-btn admin-btn--light admin-btn--compact">
+            <i class="fas fa-pen"></i>
+            Detail / edit
+          </a>
+        </div>
+      </article>
+    {% empty %}
+      <section class="vklad-list-empty-state">
+        <strong>Žádné vklady k zobrazení</strong>
+        <span>Zkus upravit filtr nebo období.</span>
+      </section>
+    {% endfor %}
+  </section>
+
+  {% if cl and cl.result_count %}
+    <section class="vklad-list-pagination">
+      {% pagination cl %}
+    </section>
+  {% endif %}
+</div>
 {% endblock %}

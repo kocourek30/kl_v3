@@ -22,27 +22,62 @@ class DotaceProJidelniskouSkupinuInline(admin.TabularInline):
     model = DotaceProJidelniskouSkupinu
     extra = 1
     autocomplete_fields = ["jidelniskova_skupina"]
-    fields = ("jidelniskova_skupina", "procento", "castka")
-    verbose_name = "Dotace pro skupinu jídla"
-    verbose_name_plural = "Dotace pro skupiny jídel"
+    fields = ("jidelniskova_skupina", "procento", "castka", "denni_limit", "mesicni_limit")
+    verbose_name = "Dotace podle druhu jídla"
+    verbose_name_plural = "Dotace podle druhů jídel"
 
 
 @admin.register(DotacniPolitika)
 class DotacniPolitikaAdmin(admin.ModelAdmin):
     fieldsets = (
         (
-            None,
+            "Komu pravidlo platí",
             {
                 "fields": ("skupina",),
                 "description": (
-                    'Zvol skupinu uživatelů. Detailní dotace pro druhy jídel '
-                    'nastav dole v sekci "Dotace pro skupiny jídel".'
+                    "Dotační politika se váže na uživatelskou skupinu. "
+                    "Uživatel získá první dotační politiku podle svých skupin."
+                ),
+            },
+        ),
+        (
+            "Výše dotace",
+            {
+                "fields": ("procento", "castka"),
+                "description": (
+                    "Nastav výchozí dotaci na jednu porci. Procentní a pevná "
+                    "částka se sčítají, výsledná dotace ale nikdy nesníží cenu pod 0 Kč."
+                ),
+            },
+        ),
+        (
+            "Bezpečnostní limity",
+            {
+                "fields": (
+                    "denni_limit",
+                    "mesicni_limit",
+                    "denni_limit_castka",
+                    "mesicni_limit_castka",
+                ),
+                "description": (
+                    "Limity chrání rozpočet. Hodnota 0 znamená bez limitu. "
+                    "Početní limity počítají dotované porce, finanční limity "
+                    "počítají skutečnou poskytnutou dotaci v Kč."
                 ),
             },
         ),
     )
     inlines = [DotaceProJidelniskouSkupinuInline]
-    list_display = ("skupina",)
+    list_display = (
+        "skupina",
+        "procento",
+        "castka",
+        "denni_limit",
+        "mesicni_limit",
+        "denni_limit_castka",
+        "mesicni_limit_castka",
+    )
+    list_filter = ("skupina",)
 
 
 @admin.register(SkupinoveNastaveni)

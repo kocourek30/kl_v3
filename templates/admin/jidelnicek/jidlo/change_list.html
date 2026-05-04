@@ -1,0 +1,219 @@
+{% extends "admin/base_site.html" %}
+{% load static admin_list %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'jidelnicek/css/food_list_admin.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="food-list-page admin-shell admin-shell--wide">
+  <section class="food-list-hero">
+    <div class="food-list-hero-main">
+      <span class="food-list-kicker">Katalog jídel</span>
+      <h1>Přehled jídel</h1>
+      <p>
+        Rychlý pracovní seznam pro vedoucí jídelny. Najdeš v něm jídla podle názvu, zkontroluješ druh, cenu,
+        alergeny, skladovou návaznost i složení a jedním klikem přejdeš do úpravy.
+      </p>
+      <div class="food-list-chip-row">
+        <span class="food-list-chip"><strong>Celkem jídel:</strong> {{ food_total_count }}</span>
+        <span class="food-list-chip"><strong>Na stránce:</strong> {{ food_cards_on_page }}</span>
+        <span class="food-list-chip"><strong>S fotkou:</strong> {{ food_page_photo_total }}</span>
+        <span class="food-list-chip"><strong>S výživou:</strong> {{ food_page_nutrition_total }}</span>
+        <span class="food-list-chip"><strong>S komponenty:</strong> {{ food_page_component_total }}</span>
+        <span class="food-list-chip"><strong>Se surovinami:</strong> {{ food_page_ingredient_total }}</span>
+      </div>
+    </div>
+    <div class="food-list-hero-actions">
+      <a href="{% url 'admin:jidelnicek_jidlo_add' %}" class="admin-btn admin-btn--primary">
+        <i class="fas fa-plus"></i>
+        Nové jídlo
+      </a>
+      <a href="{% url 'admin:jidelnicek_jidelnicek_changelist' %}" class="admin-btn admin-btn--light">
+        <i class="fas fa-calendar-days"></i>
+        Otevřít jídelníčky
+      </a>
+    </div>
+  </section>
+
+  <section class="admin-filter-panel">
+    <form method="get" class="admin-filter-form">
+      <div class="admin-filter-grid food-list-filter-grid">
+        <div class="admin-field admin-field--span-2">
+          <label for="id_q">Najít jídlo</label>
+          <input
+            type="text"
+            id="id_q"
+            name="q"
+            value="{{ food_search_query }}"
+            placeholder="Např. řízek, guláš, jogurt, kuskus…"
+          >
+        </div>
+        <div class="admin-field">
+          <label for="id_druh">Druh jídla</label>
+          <select id="id_druh" name="druh">
+            <option value="">Všechny druhy</option>
+            {% for kind in food_kind_options %}
+              <option value="{{ kind.pk }}" {% if food_selected_kind == kind.pk|stringformat:'s' %}selected{% endif %}>{{ kind.nazev }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="admin-field">
+          <label for="id_foto">Fotka</label>
+          <select id="id_foto" name="foto">
+            <option value="">Vše</option>
+            <option value="with" {% if food_photo_state == "with" %}selected{% endif %}>Jen s fotkou</option>
+            <option value="without" {% if food_photo_state == "without" %}selected{% endif %}>Jen bez fotky</option>
+          </select>
+        </div>
+        <div class="admin-field">
+          <label for="id_pouziti">Použití v jídelníčku</label>
+          <select id="id_pouziti" name="pouziti">
+            <option value="">Vše</option>
+            <option value="used" {% if food_usage_state == "used" %}selected{% endif %}>Jen použitá</option>
+            <option value="unused" {% if food_usage_state == "unused" %}selected{% endif %}>Jen nepoužitá</option>
+          </select>
+        </div>
+        <div class="admin-field">
+          <label for="id_pripravenost">Připravenost</label>
+          <select id="id_pripravenost" name="pripravenost">
+            <option value="">Vše</option>
+            <option value="ready" {% if food_readiness_state == "ready" %}selected{% endif %}>Plně připravená</option>
+            <option value="incomplete" {% if food_readiness_state == "incomplete" %}selected{% endif %}>Nedokončená</option>
+          </select>
+        </div>
+        <div class="admin-field">
+          <label for="id_alergeny">Alergeny</label>
+          <select id="id_alergeny" name="alergeny">
+            <option value="">Vše</option>
+            <option value="with" {% if food_allergen_state == "with" %}selected{% endif %}>Jen s alergeny</option>
+            <option value="without" {% if food_allergen_state == "without" %}selected{% endif %}>Jen bez alergenů</option>
+          </select>
+        </div>
+        <div class="admin-field">
+          <label for="id_cena_od">Cena od (Kč)</label>
+          <input type="text" id="id_cena_od" name="cena_od" value="{{ food_min_price }}" placeholder="např. 30">
+        </div>
+        <div class="admin-field">
+          <label for="id_cena_do">Cena do (Kč)</label>
+          <input type="text" id="id_cena_do" name="cena_do" value="{{ food_max_price }}" placeholder="např. 120">
+        </div>
+      </div>
+      <div class="admin-filter-actions">
+        <button type="submit" class="admin-btn admin-btn--primary">
+          <i class="fas fa-search"></i>
+          Zobrazit jídla
+        </button>
+        {% if food_filters_active %}
+          <a href="{% url 'admin:jidelnicek_jidlo_changelist' %}" class="admin-btn admin-btn--light">
+            <i class="fas fa-rotate-left"></i>
+            Zrušit filtry
+          </a>
+        {% endif %}
+      </div>
+    </form>
+  </section>
+
+  <section class="food-bulk-panel">
+    <form method="post" action="{% url 'admin:jidelnicek_jidlo_bulk_apply' %}{% if food_bulk_querystring %}?{{ food_bulk_querystring }}{% endif %}" class="food-bulk-panel__form">
+      {% csrf_token %}
+      <div class="food-bulk-panel__title">
+        <strong>Hromadné operace nad aktuálním filtrem</strong>
+        <span>Operace se provede nad právě zobrazeným výběrem jídel.</span>
+      </div>
+      <div class="food-bulk-panel__controls">
+        <select name="bulk_operation">
+          <option value="">Vyber operaci</option>
+          <option value="fill_icons">Doplnit chybějící ikony jídel</option>
+          <option value="fill_photos_ai">Vygenerovat AI návrhy fotek (ke schválení)</option>
+          <option value="sync_plu">Synchronizovat PLU položky</option>
+        </select>
+        <button type="submit" class="admin-btn admin-btn--light">
+          <i class="fas fa-bolt"></i>
+          Provést hromadně
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <section class="food-list-grid">
+    {% for food in food_cards %}
+      <article class="food-row-card">
+        <div class="food-row-card__media">
+          <div class="food-row-card__plate">
+            <span class="food-row-card__kind-badge">{{ food.kind_name }}</span>
+            {% if food.obj.foto %}
+              <img src="{{ food.obj.foto.url }}" alt="{{ food.obj.nazev }}">
+            {% else %}
+              <i class="{{ food.preview_icon }}"></i>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="food-row-card__main">
+          <div class="food-row-card__heading">
+            <div class="food-row-card__title-row">
+              <h2><a href="{{ food.edit_url }}" class="food-row-card__title-link">{{ food.obj.nazev }}</a></h2>
+            </div>
+          </div>
+
+          <div class="food-row-card__info">
+            <div class="food-row-card__checklist-items">
+              <span class="food-row-card__check {% if food.has_components %}is-ready{% else %}is-missing{% endif %}">
+                <i class="fas {% if food.has_components %}fa-check-circle{% else %}fa-circle{% endif %}"></i>
+                Komponenty
+              </span>
+              <span class="food-row-card__check {% if food.has_ingredients %}is-ready{% else %}is-missing{% endif %}">
+                <i class="fas {% if food.has_ingredients %}fa-check-circle{% else %}fa-circle{% endif %}"></i>
+                Suroviny / receptura
+              </span>
+              <span class="food-row-card__check {% if food.allergens_count %}is-ready{% else %}is-missing{% endif %}">
+                <i class="fas {% if food.allergens_count %}fa-check-circle{% else %}fa-circle{% endif %}"></i>
+                Alergeny
+              </span>
+              <span class="food-row-card__check {% if food.has_nutrition %}is-ready{% else %}is-missing{% endif %}">
+                <i class="fas {% if food.has_nutrition %}fa-check-circle{% else %}fa-circle{% endif %}"></i>
+                Výživa
+              </span>
+              <span class="food-row-card__check {% if food.has_photo %}is-ready{% else %}is-missing{% endif %}">
+                <i class="fas {% if food.has_photo %}fa-check-circle{% else %}fa-circle{% endif %}"></i>
+                Fotka
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="food-row-card__actions">
+          <div class="food-row-card__action-meta">
+            <div class="food-row-card__readiness" style="--progress: {{ food.readiness_percent }};">
+              <div class="food-row-card__readiness-ring">
+                <div class="food-row-card__readiness-value">{{ food.readiness_percent }}%</div>
+              </div>
+              <span>{{ food.readiness_filled }}/{{ food.readiness_total }} připraveno</span>
+            </div>
+            <span class="food-row-card__price">{{ food.price_label }}</span>
+          </div>
+          <a href="{{ food.edit_url }}" class="admin-btn admin-btn--light admin-btn--compact">
+            <i class="fas fa-pen"></i>
+            Editovat
+          </a>
+        </div>
+      </article>
+    {% empty %}
+      <section class="food-list-empty-state">
+        <strong>Žádná jídla k zobrazení</strong>
+        <span>
+          Zkus upravit hledání nebo filtry, případně založ nové jídlo do katalogu.
+        </span>
+      </section>
+    {% endfor %}
+  </section>
+
+  {% if cl and cl.result_count %}
+    <section class="food-list-pagination">
+      {% pagination cl %}
+    </section>
+  {% endif %}
+</div>
+{% endblock %}

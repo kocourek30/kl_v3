@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, date, time
+from copy import copy
 from calendar import Calendar
+import logging
 from urllib.parse import urlencode
 
 from django.utils import timezone
@@ -10,20 +12,43 @@ from django.db.models import Sum
 # MODELY
 from canteen_settings.models import GroupOrderLimit, OrderClosingTime
 from dotace.models import DotaceProJidelniskouSkupinu, DotacniPolitika, SkupinoveNastaveni
-from objednavky.models import Order, OrderItem
+from objednavky.models import Order, OrderItem, OrderValidator
 from jidelnicek.models import Jidelnicek, PolozkaJidelnicku
 from canteen_settings.utils import is_ordering_allowed, get_order_closing_datetime
+from users.group_utils import (
+    get_effective_user_groups,
+    get_first_group_setting,
+    get_primary_effective_group,
+)
 
-from sklad.utils import odeber_ze_skladu_pro_jidlo
+logger = logging.getLogger(__name__)
 
 
+def can_user_access_menu_item(user, menu_item):
+    """
+    Rozhodne, zda uživatel smí daný druh jídla vidět a objednat.
+    """
+    # Úplné obcházení pravidel patří jen superuserům.
+    # Běžný staff účet (např. testovací zaměstnanec, kiosk) se má řídit
+    # stejnými pravidly viditelnosti jako ostatní uživatelé.
+    if getattr(user, "is_superuser", False):
+        return True
+
+    allowed_groups = list(menu_item.druh_jidla.viditelne_pro_skupiny.all())
+    if not allowed_groups:
+        return True
+
+    direct_group_ids = {group.pk for group in get_effective_user_groups(user)}
+    return any(group.pk in direct_group_ids for group in allowed_groups)
 
 
 @transaction.atomic
 def mark_order_as_issued(order: Order):
     """
-    Označí objednávku / položky jako vydané a odečte suroviny ze skladu.
-    Volat při skutečném výdeji (u vás ve vydej_frontend).
+    Označí objednávku a její položky jako vydané.
+
+    Důležité: tato služba nesmí odepisovat suroviny ze skladu. Skladový odpis
+    řeší pouze skladová výdejka, aby nemohlo dojít k dvojímu odečtu zásob.
     """
     if order.status in ("vydano", "nevyzvednuto"):
         return  # už kompletně řešená objednávka
@@ -33,13 +58,6 @@ def mark_order_as_issued(order: Order):
     for item in order.items.select_related("menu_item__jidlo").all():
         if item.vydano:
             continue
-
-        jidlo = item.menu_item.jidlo
-        pocet = item.quantity
-
-        ok, _ = odeber_ze_skladu_pro_jidlo(jidlo, pocet)
-        if not ok:
-            raise ValueError(f"Nedostatek surovin pro {jidlo.nazev}")
 
         item.vydano = True
         item.datum_vydani = now
@@ -72,17 +90,16 @@ def mark_order_as_not_picked(order: Order):
 # ✅ NAHRAĎ FUNKCI can_order_for_date
 def can_order_for_date(user=None, target_date=None):
     """Kontroluje, zda lze objednávat na dané datum podle nastavení uzavírací doby"""
-    print(
-        f"\n🔥 can_order_for_date: user={user.username if user else 'None'}, "
-        f"target_date={target_date}, is_staff={user.is_staff if user else False}"
-    )
+    if target_date and target_date < timezone.localdate():
+        return (
+            False,
+            f"Objednávky na {target_date.strftime('%d.%m.%Y')} již nelze vytvářet ani měnit.",
+        )
 
     if user and getattr(user, "is_staff", False):
-        print("   👑 Admin → POVOLENO")
         return True, ""
 
     if not target_date:
-        print("   ⚠️ Žádné target_date → POVOLENO")
         return True, ""
 
     try:
@@ -97,17 +114,12 @@ def can_order_for_date(user=None, target_date=None):
                 msg = (
                     f"Objednávky na {target_date.strftime('%d.%m.%Y')} nejsou povoleny"
                 )
-            print(f"   ❌ ZAKÁZÁNO: {msg}")
             return False, msg
 
-        print("   ✅ POVOLENO")
         return True, ""
 
-    except Exception as e:
-        print(f"   ❌ CHYBA: {e}")
-        import traceback
-
-        traceback.print_exc()
+    except Exception:
+        logger.exception("Chyba při kontrole možnosti objednání.")
         return True, ""
 
 
@@ -116,7 +128,7 @@ def check_group_limit(user, menu_item, target_date, quantity):
     if user.is_staff:
         return True, ""
 
-    user_group = user.groups.first()
+    user_group = get_primary_effective_group(user)
     if not user_group:
         return True, ""
 
@@ -185,7 +197,13 @@ def get_user_order_items(user):
             order__status__in=["zalozena-obsluhou", "objednano"],
         )
         .select_related("order", "menu_item__jidlo", "menu_item__druh_jidla")
-        .order_by("order__datum_vydeje", "menu_item__id")
+        .order_by(
+            "order__datum_vydeje",
+            "menu_item__druh_jidla__poradi",
+            "menu_item__druh_jidla__nazev",
+            "menu_item__jidlo__nazev",
+            "menu_item__id",
+        )
     )
 
     items_list = []
@@ -205,44 +223,17 @@ def get_user_order_items(user):
     return items_list
 
 
-def get_user_price_for_item(user, item):
+def get_user_price_for_item(user, item, target_date=None, quantity=1, exclude_order_item_id=None):
     try:
-        base_price = getattr(item.jidlo, "cena", 0)
-        if base_price == 0:
-            return 0
+        from dotace.services import vypocet_dotovane_ceny
 
-        dotacni_politika = None
-        for group in user.groups.all():
-            try:
-                dotacni_politika = group.dotacni_politika
-                break
-            except DotacniPolitika.DoesNotExist:
-                continue
-
-        if not dotacni_politika:
-            return base_price
-
-        specific_dotace = DotaceProJidelniskouSkupinu.objects.filter(
-            dotacni_politika=dotacni_politika,
-            jidelniskova_skupina=item.druh_jidla,
-        ).first()
-
-        if specific_dotace:
-            procento = specific_dotace.procento or dotacni_politika.procento
-            castka = specific_dotace.castka or dotacni_politika.castka
-        else:
-            procento = dotacni_politika.procento
-            castka = dotacni_politika.castka
-
-        if procento > 0:
-            sleva = base_price * (procento / 100)
-            final_price = max(0, base_price - sleva)
-        elif castka > 0:
-            final_price = max(0, base_price - castka)
-        else:
-            final_price = base_price
-
-        return round(final_price, 2)
+        return vypocet_dotovane_ceny(
+            user,
+            item,
+            target_date=target_date,
+            quantity=quantity,
+            exclude_order_item_id=exclude_order_item_id,
+        )
     except Exception:
         return getattr(item.jidlo, "cena", 0)
 
@@ -250,66 +241,36 @@ def get_user_price_for_item(user, item):
 def check_user_balance_for_item(user, item_price):
     """Kontroluje zůstatek uživatele pro objednávku položky"""
     try:
-        zustatek = user.aktualni_zustatek or 0
-        zustatek = float(zustatek)
-        item_price = float(item_price)
-        predikce_zustatek = zustatek - item_price
+        item_price = float(item_price or 0)
+        aktualni_zustatek = float(user.aktualni_zustatek or 0)
+        ok_balance, reason = OrderValidator.check_user_balance(user, item_price)
+        if ok_balance:
+            return True, None
 
-        if predikce_zustatek < 0:
-            nastaveni = None
-            for group in user.groups.all():
-                try:
-                    nastaveni = group.nastaveni
-                    break
-                except SkupinoveNastaveni.DoesNotExist:
-                    continue
+        if reason == "debit_limit_exceeded":
+            nastaveni = get_first_group_setting(user)
+            debit_limit = float(getattr(nastaveni, "debit_limit", 0) or 0)
+            predikce_zustatku = aktualni_zustatek - item_price
+            return False, {
+                "type": "predicted_debit_limit",
+                "required": debit_limit,
+                "current": predikce_zustatku,
+                "predicted": True,
+                "message": "Objednávka by překročila debetní limit",
+            }
 
-            if nastaveni and nastaveni.nutnost_dobit and zustatek < item_price:
-                error_info = {
-                    "type": "insufficient_balance",
-                    "required": item_price,
-                    "current": zustatek,
-                    "message": "Nedostatečný zůstatek",
-                }
-                return False, error_info
-
-            if nastaveni and nastaveni.cerpani_debit:
-                debit_limit = float(nastaveni.debit_limit or 0)
-                if predikce_zustatek < debit_limit:
-                    error_info = {
-                        "type": "predicted_debit_limit",
-                        "required": debit_limit,
-                        "current": predikce_zustatek,
-                        "predicted": True,
-                        "message": "Objednávka by překročila debetní limit",
-                    }
-                    return False, error_info
-
-            if nastaveni and zustatek < float(getattr(nastaveni, "debit_limit", 0)):
-                debit_limit = float(nastaveni.debit_limit or 0)
-                error_info = {
-                    "type": "debit_limit",
-                    "required": debit_limit,
-                    "current": zustatek,
-                    "message": "Překročen debetní limit",
-                }
-                return False, error_info
-
-            if not nastaveni and zustatek < item_price:
-                error_info = {
-                    "type": "insufficient_balance",
-                    "required": item_price,
-                    "current": zustatek,
-                    "message": "Nedostatečný zůstatek",
-                }
-                return False, error_info
-
-        return True, None
+        return False, {
+            "type": "insufficient_balance",
+            "required": item_price,
+            "current": aktualni_zustatek,
+            "message": "Nedostatečný zůstatek",
+        }
     except Exception:
+        logger.exception("Chyba při kontrole zůstatku uživatele pro položku.")
         return True, None
 
 
-def validate_item_for_display(user, item, target_date):
+def validate_item_for_display(user, item, target_date, order_item_lookup=None):
     """
     Validuje položku pro zobrazení (stavy, limity, ceny) - S current_order_item_id
     + nastavuje hide_quantity podle GroupOrderLimit
@@ -324,11 +285,17 @@ def validate_item_for_display(user, item, target_date):
     item.current_order_item_id = None
     item.max_order_quantity = 10
     item.closing_info = ""
-    item.display_price = get_user_price_for_item(user, item)
+    item.display_price = get_user_price_for_item(user, item, target_date)
     item.hide_quantity = False
+    auto_order_mode = not (getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
+
+    if auto_order_mode:
+        # Uživatelé objednávky nevytváří ručně – objednávky se zakládají importem.
+        item.hide_quantity = True
+        item.max_order_quantity = 1
 
     # ✅ SKRYTÍ MNOŽSTVÍ PODLE GROUP LIMITU
-    user_group = user.groups.first()
+    user_group = get_primary_effective_group(user)
     if user_group:
         limit_setting = GroupOrderLimit.objects.filter(
             group=user_group,
@@ -342,6 +309,15 @@ def validate_item_for_display(user, item, target_date):
             elif limit_setting.max_orders_per_day > 1:
                 item.hide_quantity = False
                 item.max_order_quantity = limit_setting.max_orders_per_day
+
+    try:
+        from dotace.services import ma_pocetni_limit_dotace
+
+        if ma_pocetni_limit_dotace(user, item):
+            item.hide_quantity = True
+            item.max_order_quantity = 1
+    except Exception:
+        logger.exception("Chyba při kontrole početního limitu dotace.")
 
     # ✅ ČASOVÉ PRAVIDLO PRO OBJEDNÁNÍ/ZMĚNU – PER POLOŽKA
     from objednavky.views import (
@@ -365,11 +341,16 @@ def validate_item_for_display(user, item, target_date):
 
     # ✅ NAJDI OBJEDNÁVKU UŽIVATELE
     try:
-        user_order = OrderItem.objects.get(
-            menu_item=item,
-            order__user=user,
-            order__datum_vydeje=target_date,
-        )
+        if order_item_lookup is not None:
+            user_order = order_item_lookup.get((target_date, item.id))
+            if user_order is None:
+                raise OrderItem.DoesNotExist()
+        else:
+            user_order = OrderItem.objects.get(
+                menu_item=item,
+                order__user=user,
+                order__datum_vydeje=target_date,
+            )
         item.order_status = "ordered"
         item.current_quantity = user_order.quantity
         item.current_order_item_id = user_order.id
@@ -383,6 +364,11 @@ def validate_item_for_display(user, item, target_date):
             item.validation_error = "order_closed"
             item.can_order = False
             item.can_cancel = False
+        elif auto_order_mode:
+            item.order_status = "active"
+            item.can_order = False
+            item.can_cancel = False
+            item.validation_error = "auto_order_managed"
         else:
             item.order_status = "active"
             can_order_balance, balance_info = check_user_balance_for_item(
@@ -397,7 +383,11 @@ def validate_item_for_display(user, item, target_date):
                 item.can_cancel = False
 
     # ✅ GROUP LIMIT (jen pokud může objednávat)
-    if item.order_status in ["active", "ordered"] and item.can_order:
+    if (
+        not auto_order_mode
+        and item.order_status in ["active", "ordered"]
+        and item.can_order
+    ):
         quantity_check, limit_error = check_group_limit(user, item, target_date, 1)
         if not quantity_check:
             item.can_order = False
@@ -410,7 +400,7 @@ def validate_item_for_display(user, item, target_date):
 def get_group_order_limit(user, druh_jidla):
     """Vrátí maximální počet objednávek pro skupinu a druh jídla"""
     try:
-        user_group = user.groups.first()
+        user_group = get_primary_effective_group(user)
         if not user_group:
             return 0
 
@@ -425,15 +415,18 @@ def get_group_order_limit(user, druh_jidla):
 
 # ✅ Pomocná funkce: filtrování položek podle skupiny uživatele
 def _filter_items_for_user_group(user, items_qs):
-    group = user.groups.first()
-    if not group:
+    if getattr(user, "is_superuser", False):
+        return items_qs.distinct()
+
+    groups = get_effective_user_groups(user)
+    if not groups:
         # uživatel bez skupiny → vidí jen druhy bez omezení
         return items_qs.filter(
             models.Q(druh_jidla__viditelne_pro_skupiny__isnull=True)
         ).distinct()
 
     return items_qs.filter(
-        models.Q(druh_jidla__viditelne_pro_skupiny=group)
+        models.Q(druh_jidla__viditelne_pro_skupiny__in=groups)
         | models.Q(druh_jidla__viditelne_pro_skupiny__isnull=True)
     ).distinct()
 
@@ -499,14 +492,28 @@ def build_day_menu_context(user, selected_date):
             PolozkaJidelnicku.objects.filter(jidelnicek__in=jidelnicky_den)
             .select_related("jidelnicek", "jidlo", "druh_jidla")
             .prefetch_related("jidlo__alergeny")
-            .order_by("druh_jidla__nazev", "jidlo__nazev")
+            .order_by("druh_jidla__poradi", "druh_jidla__nazev", "jidlo__nazev")
         )
 
         # ✅ filtrovat podle skupiny uživatele
         menu_items = _filter_items_for_user_group(user, menu_items)
 
+        order_item_lookup = {
+            (selected_date, oi.menu_item_id): oi
+            for oi in OrderItem.objects.filter(
+                order__user=user,
+                order__datum_vydeje=selected_date,
+                menu_item__in=menu_items,
+            ).select_related("order", "menu_item")
+        }
+
         for item in menu_items:
-            validate_item_for_display(user, item, selected_date)
+            validate_item_for_display(
+                user,
+                item,
+                selected_date,
+                order_item_lookup=order_item_lookup,
+            )
             item.target_date = selected_date
             item.common_allergens = item.jidlo.spolecne_alergeny(user)
 
@@ -523,61 +530,76 @@ def build_day_menu_context(user, selected_date):
     }
 
 
-def build_week_menu_context(user, selected_date):
-    """Build context pro týden - ZOBRAZÍ VŠECHNY DNY S JÍDELNÍČKEM - DEBUG"""
+def _build_range_menu_context(user, start_date, end_date, orderable_only=False):
     menu_items_by_day = {}
-    week_start = selected_date - timedelta(days=selected_date.weekday())
-    week_end = week_start + timedelta(days=6)
 
-    print(
-        f"🔍 TÝDEN DEBUG: selected_date={selected_date}, "
-        f"week_start={week_start}, week_end={week_end}"
-    )
-
-    current = week_start
-    while current <= week_end:
-        print(f"   📅 Zpracovávám den: {current}")
-
-        jidelnicky_den = Jidelnicek.objects.filter(
-            platnost_od__lte=current,
-            platnost_do__gte=current,
+    jidelnicky = list(
+        Jidelnicek.objects.filter(
+            platnost_od__lte=end_date,
+            platnost_do__gte=start_date,
         )
+        .only("id", "platnost_od", "platnost_do")
+        .order_by("platnost_od", "id")
+    )
+    if not jidelnicky:
+        return {"menu_items_by_day": {}, "menu_items_by_day_grouped": {}}
 
-        print(f"      📋 Nalezeno jídelníčků: {jidelnicky_den.count()}")
-        for j in jidelnicky_den:
-            print(f"         📄 Jídelníček {j.id}: {j.platnost_od} → {j.platnost_do}")
+    jidelnicek_ids = [j.id for j in jidelnicky]
+    day_items_qs = (
+        PolozkaJidelnicku.objects.filter(jidelnicek_id__in=jidelnicek_ids)
+        .select_related("jidelnicek", "jidlo", "druh_jidla")
+        .prefetch_related("jidlo__alergeny")
+        .order_by("druh_jidla__poradi", "druh_jidla__nazev", "jidlo__nazev")
+    )
+    day_items_qs = _filter_items_for_user_group(user, day_items_qs)
 
-        if jidelnicky_den.exists():
-            day_items = (
-                PolozkaJidelnicku.objects.filter(jidelnicek__in=jidelnicky_den)
-                .select_related("jidelnicek", "jidlo", "druh_jidla")
-                .prefetch_related("jidlo__alergeny")
-                .order_by("druh_jidla__nazev", "jidlo__nazev")
-            )
+    items_by_jidelnicek_id = {}
+    for item in day_items_qs:
+        items_by_jidelnicek_id.setdefault(item.jidelnicek_id, []).append(item)
 
-            # ✅ filtrovat podle skupiny uživatele
-            day_items = _filter_items_for_user_group(user, day_items)
+    order_item_lookup = {
+        (oi.order.datum_vydeje, oi.menu_item_id): oi
+        for oi in OrderItem.objects.filter(
+            order__user=user,
+            order__datum_vydeje__gte=start_date,
+            order__datum_vydeje__lte=end_date,
+            menu_item__jidelnicek_id__in=jidelnicek_ids,
+        ).select_related("order", "menu_item")
+    }
 
-            print(f"      🍽️ Nalezeno položek (po filtraci): {day_items.count()}")
+    current = start_date
+    while current <= end_date:
+        if orderable_only:
+            can_order_day, _ = can_order_for_date(user, current)
+            if not can_order_day:
+                current += timedelta(days=1)
+                continue
 
-            items_list = []
-            for item in day_items:
-                validate_item_for_display(user, item, current)
+        active_jidelnicky = [
+            j.id for j in jidelnicky if j.platnost_od <= current <= j.platnost_do
+        ]
+        if not active_jidelnicky:
+            current += timedelta(days=1)
+            continue
+
+        day_items = []
+        for jidelnicek_id in active_jidelnicky:
+            for base_item in items_by_jidelnicek_id.get(jidelnicek_id, []):
+                item = copy(base_item)
+                validate_item_for_display(
+                    user,
+                    item,
+                    current,
+                    order_item_lookup=order_item_lookup,
+                )
                 item.target_date = current
-                items_list.append(item)
-                item.common_allergens = item.jidlo.spolecne_alergeny(user) 
-                print(f"         ✅ Položka: {item.jidlo.nazev} (ID={item.id})")
+                item.common_allergens = item.jidlo.spolecne_alergeny(user)
+                day_items.append(item)
 
-            if items_list:
-                menu_items_by_day[current] = items_list
-                print(f"      ✅ Přidáno {len(items_list)} položek pro {current}")
-        else:
-            print(f"      ⚠️ Žádný jídelníček pro {current}")
+        if day_items:
+            menu_items_by_day[current] = day_items
 
         current += timedelta(days=1)
-
-    print(f"✅ TÝDEN VÝSLEDEK: {len(menu_items_by_day)} dnů s jídlem")
-    print(f"   📊 Dny: {list(menu_items_by_day.keys())}")
 
     menu_items_by_day_grouped = {}
     for day, items in menu_items_by_day.items():
@@ -589,84 +611,37 @@ def build_week_menu_context(user, selected_date):
             day_grouped[druh].append(item)
         menu_items_by_day_grouped[day] = day_grouped
 
-    print(f"✅ SESKUPENÍ: {len(menu_items_by_day_grouped)} dnů")
-    print("─" * 80)
-
     return {
         "menu_items_by_day": menu_items_by_day,
         "menu_items_by_day_grouped": menu_items_by_day_grouped,
+    }
+
+
+def build_week_menu_context(user, selected_date):
+    """Build context pro týden - zobrazí všechny dny s jídelníčkem."""
+    week_start = selected_date - timedelta(days=selected_date.weekday())
+    week_end = week_start + timedelta(days=6)
+    range_context = _build_range_menu_context(
+        user,
+        week_start,
+        week_end,
+        orderable_only=False,
+    )
+    return {
+        **range_context,
         "week_start": week_start,
         "week_end": week_end,
     }
 
 
 def build_month_menu_context(user, first_day_month, last_day_month):
-    """Build context pro měsíc - ZOBRAZÍ VŠECHNY DNY S JÍDELNÍČKEM - DEBUG"""
-    menu_items_by_day = {}
-
-    print(f"🔍 MĚSÍC DEBUG: {first_day_month} → {last_day_month}")
-
-    jidelnicky_mesic = Jidelnicek.objects.filter(
-        platnost_od__lte=last_day_month,
-        platnost_do__gte=first_day_month,
+    """Build context pro měsíc - zobrazí pouze objednatelné dny s jídelníčkem."""
+    return _build_range_menu_context(
+        user,
+        first_day_month,
+        last_day_month,
+        orderable_only=True,
     )
-
-    print(f"   📋 Jídelníčky v měsíci: {jidelnicky_mesic.count()}")
-    for j in jidelnicky_mesic:
-        print(f"      📄 {j.id}: {j.platnost_od} → {j.platnost_do}")
-
-    current_date = first_day_month
-    days_processed = 0
-
-    while current_date <= last_day_month:
-        jidelnicky_den = Jidelnicek.objects.filter(
-            platnost_od__lte=current_date,
-            platnost_do__gte=current_date,
-        )
-
-        if jidelnicky_den.exists():
-            day_items = (
-                PolozkaJidelnicku.objects.filter(jidelnicek__in=jidelnicky_den)
-                .select_related("jidelnicek", "jidlo", "druh_jidla")
-                .prefetch_related("jidlo__alergeny")
-                .order_by("druh_jidla__nazev", "jidlo__nazev")
-            )
-
-            # ✅ filtrovat podle skupiny uživatele
-            day_items = _filter_items_for_user_group(user, day_items)
-
-            items_list = []
-            for item in day_items:
-                validate_item_for_display(user, item, current_date)
-                item.target_date = current_date
-                items_list.append(item)
-                item.common_allergens = item.jidlo.spolecne_alergeny(user) 
-
-            if items_list:
-                menu_items_by_day[current_date] = items_list
-                days_processed += 1
-                if days_processed <= 5:
-                    print(f"   ✅ {current_date}: {len(items_list)} položek")
-
-        current_date += timedelta(days=1)
-
-    print(f"✅ MĚSÍC VÝSLEDEK: {len(menu_items_by_day)} dnů s jídlem")
-    print("─" * 80)
-
-    menu_items_by_day_grouped = {}
-    for day, items in menu_items_by_day.items():
-        day_grouped = {}
-        for item in items:
-            druh = item.druh_jidla
-            if druh not in day_grouped:
-                day_grouped[druh] = []
-            day_grouped[druh].append(item)
-        menu_items_by_day_grouped[day] = day_grouped
-
-    return {
-        "menu_items_by_day": menu_items_by_day,
-        "menu_items_by_day_grouped": menu_items_by_day_grouped,
-    }
 
 
 def build_dashboard_redirect_from_post(request):

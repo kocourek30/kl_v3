@@ -1,0 +1,92 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+{% load form_tags %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'sklad/css/sklad_admin_views.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="admin-shell admin-shell--wide sklad-page">
+  <section class="admin-hero">
+    <div class="admin-kicker">Nákupní plánování</div>
+    <h1>{{ title }}</h1>
+    <p>Dopočet budoucího nákupu z očekávané spotřeby, minima na skladě a dostupných dodavatelů.</p>
+  </section>
+
+  <section class="admin-filter-panel">
+    <form method="get" class="admin-filter-form">
+      <div class="sklad-form-inline">
+        <div class="admin-field">
+          <label for="{{ form.date_from.id_for_label }}">Od data</label>
+          {{ form.date_from|add_class:"form-control" }}
+        </div>
+        <div class="admin-field">
+          <label for="{{ form.date_to.id_for_label }}">Do data</label>
+          {{ form.date_to|add_class:"form-control" }}
+        </div>
+        <div class="admin-field">
+          <label for="{{ form.dodavatel.id_for_label }}">Dodavatel</label>
+          {{ form.dodavatel|add_class:"form-control" }}
+        </div>
+        <div class="admin-field">
+          <button type="submit" class="admin-btn admin-btn--primary">
+            <i class="fas fa-calculator"></i> Spočítat návrh
+          </button>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  {% if data %}
+    <section class="admin-panel">
+      <div class="admin-panel-head">
+        <strong>Návrh nákupu {{ data.date_from|date:"d.m.Y" }} – {{ data.date_to|date:"d.m.Y" }}</strong>
+        <div class="sklad-actions">
+          <span class="sklad-badge">Odhad celkem {{ data.odhad_celkem|floatformat:-2 }} Kč</span>
+          <a class="admin-btn admin-btn--small admin-btn--light" href="{{ xlsx_url }}">
+            <i class="fas fa-file-excel"></i> XLSX
+          </a>
+        </div>
+      </div>
+      <div class="admin-panel-body p-0">
+        <div class="sklad-table-wrapper">
+          <table class="sklad-table">
+            <thead>
+              <tr>
+                <th>Surovina</th>
+                <th>Stav</th>
+                <th>Minimum</th>
+                <th>Plán</th>
+                <th>Nakoupit</th>
+                <th>Dodavatel</th>
+                <th>Cena</th>
+                <th>Odhad</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in data.radky %}
+                <tr>
+                  <td><strong>{{ row.surovina.nazev }}</strong></td>
+                  <td>{{ row.aktualni_display }}</td>
+                  <td>{{ row.minimum_display }}</td>
+                  <td>{{ row.plan_display }}</td>
+                  <td><strong>{{ row.chybi_display }}</strong></td>
+                  <td>{{ row.dodavatel|default:"–" }}</td>
+                  <td>{{ row.cena_display }}</td>
+                  <td>{{ row.odhad_ceny|floatformat:-2 }} Kč</td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="8" class="sklad-empty">Pro zvolené období není potřeba nic dokoupit.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}

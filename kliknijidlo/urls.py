@@ -15,6 +15,7 @@ urlpatterns = [
     path('vydej/', include('vydej_frontend.urls')),  
     path('accounts/profile/', RedirectView.as_view(url='/jidelnicek/dashboard/', permanent=False)),
     path("pokladna/", include("pokladna.urls")),
+    path("ankety/", include("ankety.urls")),
 
     
 ] 

@@ -3,154 +3,36 @@
 
 {% block extrahead %}
 {{ block.super }}
-<style>
-    .vydej-container {
-        margin: 20px 0;
-    }
-    
-    .vydej-stats {
-        background: #f8f8f8;
-        border: 1px solid #ddd;
-        padding: 15px;
-        margin-bottom: 20px;
-    }
-    
-    .vydej-stats h3 {
-        margin-top: 0;
-        color: #333;
-        font-size: 16px;
-        font-weight: bold;
-    }
-    
-    .den-sekce {
-        background: white;
-        border: 1px solid #ddd;
-        margin-bottom: 20px;
-        border-radius: 3px;
-        overflow: hidden;
-    }
-    
-    .den-header {
-        background: #417690;
-        color: white;
-        padding: 12px 15px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    
-    .den-header h3 {
-        margin: 0;
-        font-size: 16px;
-        font-weight: bold;
-    }
-    
-    .den-header-info {
-        display: flex;
-        gap: 15px;
-        font-size: 13px;
-    }
-    
-    .den-badge {
-        background: rgba(255,255,255,0.2);
-        padding: 4px 10px;
-        border-radius: 3px;
-    }
-    
-    .uzavirka-badge {
-        padding: 4px 10px;
-        border-radius: 3px;
-        font-size: 12px;
-    }
-    
-    .uzavirka-otevreno {
-        background: #d4edda;
-        color: #155724;
-    }
-    
-    .uzavirka-uzavreno {
-        background: #f8d7da;
-        color: #721c24;
-    }
-    
-    .den-obsah {
-        padding: 15px;
-    }
-    
-    .jidlo-skupina {
-        margin-bottom: 20px;
-    }
-    
-    .jidlo-skupina h4 {
-        margin: 0 0 10px 0;
-        padding-bottom: 8px;
-        border-bottom: 2px solid #79aec8;
-        color: #417690;
-        font-size: 14px;
-        font-weight: bold;
-    }
-    
-    .jidlo-polozka {
-        padding: 10px;
-        margin: 8px 0;
-        background: #fafafa;
-        border-left: 3px solid #79aec8;
-    }
-    
-    .jidlo-polozka-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 8px;
-    }
-    
-    .jidlo-nazev {
-        font-weight: bold;
-        color: #333;
-    }
-    
-    .jidlo-pocet {
-        background: #417690;
-        color: white;
-        padding: 3px 10px;
-        border-radius: 3px;
-        font-size: 12px;
-        font-weight: bold;
-    }
-    
-    .uzivatel-list {
-        font-size: 12px;
-        color: #666;
-        padding-left: 10px;
-    }
-    
-    .uzivatel-list div {
-        padding: 3px 0;
-        border-left: 2px solid #e0e0e0;
-        padding-left: 8px;
-        margin: 2px 0;
-    }
-    
-    .prazdny-den {
-        padding: 20px;
-        text-align: center;
-        color: #999;
-    }
-</style>
 {% endblock %}
 
 {% block content %}
 <div class="vydej-container">
     
-    <!-- Stats -->
-    <div class="vydej-stats">
-        <h3>📋 Přehled výdeje jídel</h3>
-        <p style="margin: 5px 0 0 0; color: #666;">
-            Zobrazeny dny s objednávkami od {{ "now"|date:"j.n.Y" }} na dalších 30 dní
-        </p>
+    <div class="vydej-hero">
+        <div>
+            <h3>Výdejový pult na příští dny</h3>
+            <p>
+                Rychlý přehled toho, co je potřeba vydat v nejbližších dnech. Počítají se jen
+                objednávky, které ještě nejsou kompletně vydané, takže obsluha vidí skutečně
+                rozpracovanou frontu.
+            </p>
+        </div>
+        <div class="vydej-kpis">
+            <div class="vydej-kpi">
+                <div class="vydej-kpi-label">Dny s výdejem</div>
+                <div class="vydej-kpi-value">{{ total_dni_s_vydejem }}</div>
+            </div>
+            <div class="vydej-kpi">
+                <div class="vydej-kpi-label">Objednávky</div>
+                <div class="vydej-kpi-value">{{ board_total_objednavek }}</div>
+            </div>
+            <div class="vydej-kpi">
+                <div class="vydej-kpi-label">Nevydané kusy</div>
+                <div class="vydej-kpi-value">{{ board_total_kusu }}</div>
+            </div>
+        </div>
     </div>
     
-    <!-- Jednotlivé dny -->
     {% for den in stats_vsechny_dny %}
     <div class="den-sekce">
         <div class="den-header">
@@ -194,8 +76,8 @@
                 </div>
                 {% endfor %}
             {% else %}
-                <div class="prazdny-den">
-                    Žádné objednávky
+                <div class="prazdny-den den-mini-empty">
+                    Na tento den zatím není nic k výdeji.
                 </div>
             {% endif %}
         </div>

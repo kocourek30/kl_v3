@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "payload": {
+    "license_id": "KJ-2026-001",
+    "customer_name": "SOUz Chvaletice",
+    "organization_name": "Střední odborné učiliště Chvaletice",
+    "license_type": "annual-onprem",
+    "instance_id": "11111111-2222-3333-4444-555555555555",
+    "valid_from": "2026-05-01",
+    "valid_until": "2027-04-30",
+    "support_until": "2027-04-30",
+    "grace_until": "2027-06-15",
+    "modules": ["ankety", "pokladna", "finance", "sklad"],
+    "allowed_terminals": 2,
+    "notes": "Produkční licence pro jednu provozovnu."
+  },
+  "signature": "BASE64_ED25519_SIGNATURE"
+}

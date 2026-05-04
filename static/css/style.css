@@ -160,4 +160,344 @@
     }
 }
 
+/* ========== APLIKAČNÍ FRONTEND: RESPONZIVNÍ POLISH ========== */
+[data-jidelnicek-dashboard] .nav-tabs {
+    border-bottom: none;
+}
+
+[data-jidelnicek-dashboard] .custom-menu-tabs-modern {
+    background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(245,249,245,0.94));
+}
+
+[data-jidelnicek-dashboard] .custom-menu-tabs-modern .nav-link {
+    min-height: 64px;
+    border: none;
+    color: #1f3b28;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+}
+
+[data-jidelnicek-dashboard] .custom-menu-tabs-modern .nav-link.active {
+    color: #fff;
+    background: linear-gradient(135deg, var(--primary-color), #439336) !important;
+}
+
+[data-jidelnicek-dashboard] .modern-card,
+[data-jidelnicek-dashboard] .modern-day-section,
+.modern-orders-container .order-item-card {
+    border: 1px solid rgba(84, 174, 67, 0.12);
+}
+
+[data-jidelnicek-dashboard] .modern-calendar-table td,
+[data-jidelnicek-dashboard] .modern-calendar-table th {
+    vertical-align: middle;
+}
+
+[data-jidelnicek-dashboard] .menu-item-wrapper + .menu-item-wrapper {
+    margin-top: 0.9rem;
+}
+
+[data-jidelnicek-dashboard] .compact-title {
+    font-size: clamp(1.15rem, 2vw, 1.55rem);
+}
+
+.menu-item-card {
+    overflow: hidden;
+}
+
+.menu-item-card .mi-title {
+    word-break: break-word;
+}
+
+.menu-item-card .mi-meta {
+    width: 100%;
+}
+
+.menu-item-card .qty-action-group {
+    display: flex;
+    align-items: stretch;
+    width: 100%;
+}
+
+.menu-item-card .mi-btn-fixed {
+    min-height: 48px;
+}
+
+[data-jidelnicek-dashboard] .modern-day-section > h6.text-muted.small.fw-semibold,
+.tab-content .modern-day-section > h6.text-muted.small.fw-semibold {
+    display: none !important;
+}
+
+.modern-orders-container .order-item-card {
+    border-radius: 18px !important;
+}
+
+.modern-orders-container .order-total {
+    color: #1f7a34 !important;
+}
+
+.empty-orders-state {
+    min-height: 240px;
+}
+
+@media (max-width: 991.98px) {
+    [data-jidelnicek-dashboard] .position-sticky {
+        position: static !important;
+    }
+
+    [data-jidelnicek-dashboard] .custom-menu-tabs-modern {
+        display: grid;
+        grid-template-columns: 1fr;
+        border-radius: 18px !important;
+        overflow: hidden;
+    }
+
+    [data-jidelnicek-dashboard] .nav-item {
+        min-width: 0;
+    }
+
+    [data-jidelnicek-dashboard] .modern-card.compact {
+        border-radius: 18px !important;
+    }
+}
+
+@media (max-width: 767.98px) {
+    [data-jidelnicek-dashboard] .menu-item-wrapper + .menu-item-wrapper,
+    .tab-content .menu-item-wrapper + .menu-item-wrapper {
+        margin-top: 1.75rem !important;
+    }
+
+    [data-jidelnicek-dashboard] {
+        margin-top: 0 !important;
+    }
+
+    [data-jidelnicek-dashboard] .row.g-4 {
+        gap: 1rem !important;
+    }
+
+    [data-jidelnicek-dashboard] .custom-menu-tabs-modern.compact {
+        margin-bottom: 1rem !important;
+        box-shadow: 0 12px 28px rgba(31, 59, 40, 0.12) !important;
+    }
+
+    [data-jidelnicek-dashboard] .custom-menu-tabs-modern .nav-link {
+        min-height: 52px;
+        font-size: 0.92rem;
+        padding: 0.8rem 0.9rem !important;
+        justify-content: space-between;
+    }
+
+    [data-jidelnicek-dashboard] .custom-menu-tabs-modern .badge {
+        min-width: 1.9rem;
+        min-height: 1.9rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        padding: 0 !important;
+    }
+
+    [data-jidelnicek-dashboard] .modern-calendar-table {
+        table-layout: fixed;
+    }
+
+    [data-jidelnicek-dashboard] .modern-calendar-table .day-cell-soft {
+        padding: 0.25rem !important;
+    }
+
+    [data-jidelnicek-dashboard] .modern-calendar-table .menu-day-link-soft,
+    [data-jidelnicek-dashboard] .modern-calendar-table td > div {
+        padding: 0.45rem 0.1rem !important;
+        min-height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .menu-item-card {
+        border-radius: 22px !important;
+        box-shadow: 0 12px 30px rgba(20, 38, 24, 0.09) !important;
+        overflow: visible !important;
+        margin-top: 1.1rem !important;
+    }
+
+    .menu-item-card .menu-item-grid {
+        grid-template-columns: 1fr;
+        gap: 0.55rem;
+    }
+
+    .menu-item-card .mi-block,
+    .menu-item-card .mi-block-full,
+    .menu-item-card .mi-info,
+    .menu-item-card .mi-price,
+    .menu-item-card .mi-action {
+        justify-content: center;
+        width: 100%;
+        grid-column: auto;
+    }
+
+    .menu-item-card .mi-info-inner,
+    .menu-item-card .mi-price {
+        text-align: center;
+        align-items: center;
+    }
+
+    .menu-item-card .mi-plate {
+        width: min(80vw, 216px) !important;
+        height: min(80vw, 216px) !important;
+    }
+
+    .menu-item-card .mi-plate-inner {
+        width: min(64vw, 170px) !important;
+        height: min(64vw, 170px) !important;
+    }
+
+    .menu-item-card .mi-icon {
+        margin-top: -2.55rem !important;
+        margin-bottom: -0.35rem !important;
+    }
+
+    .menu-item-card .mi-type-badge-plate {
+        top: 19px !important;
+        right: 20px !important;
+    }
+
+    .menu-item-card .mi-type-text,
+    .menu-item-card .mi-druh,
+    .menu-item-card .mi-meal-type {
+        display: none !important;
+    }
+
+    .menu-item-card .mi-price-main {
+        font-size: 1.65rem;
+    }
+
+    .menu-item-card .mi-title {
+        text-align: center !important;
+        max-width: 18rem;
+        margin-inline: auto;
+        font-size: 1.18rem !important;
+        line-height: 1.2 !important;
+    }
+
+    .menu-item-card .mi-meta {
+        text-align: left !important;
+    }
+
+    .menu-item-card .mi-alergens,
+    .menu-item-card .mi-nutrition {
+        margin-bottom: 0 !important;
+        padding-block: 0.42rem !important;
+    }
+
+    .menu-item-card .mi-block-full .ajax-order-form {
+        justify-content: center !important;
+    }
+
+    .menu-item-card .mi-btn-fixed {
+        max-width: 21rem;
+    }
+
+    .menu-item-card .qty-action-group {
+        flex-direction: column;
+        gap: 0.75rem;
+        align-items: center;
+    }
+
+    .menu-item-card .qty-action-group .ms-2 {
+        margin-left: 0 !important;
+    }
+
+    .modern-orders-container .order-meta,
+    .modern-orders-container .order-details {
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem !important;
+    }
+
+    .modern-orders-container .order-total {
+        font-size: 1.55rem !important;
+    }
+
+    .modern-orders-container .order-item-card {
+        border-radius: 18px !important;
+        box-shadow: 0 10px 24px rgba(20, 38, 24, 0.07) !important;
+    }
+
+    .modern-orders-container .empty-orders-state {
+        min-height: 0;
+        padding: 1.5rem 1rem !important;
+        border-radius: 18px;
+    }
+
+    .modern-orders-container .empty-state-icon {
+        margin-bottom: 1rem !important;
+    }
+
+    .modern-orders-container h5 {
+        font-size: 1rem;
+    }
+
+    .modern-orders-container p {
+        font-size: 0.9rem;
+        margin-bottom: 1rem !important;
+    }
+
+    .survey-widget {
+        border-radius: 16px !important;
+        margin-bottom: 0.9rem !important;
+    }
+
+    .survey-widget-head,
+    .survey-widget-empty,
+    .survey-widget-done {
+        padding-inline: 1rem !important;
+    }
+
+    .account-balance-modern {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+
+    .account-balance-modern .h6 {
+        font-size: 1.1rem;
+        font-weight: 800;
+    }
+}
+
+@media (max-width: 575.98px) {
+    [data-jidelnicek-dashboard] .menu-item-wrapper + .menu-item-wrapper,
+    .tab-content .menu-item-wrapper + .menu-item-wrapper {
+        margin-top: 1.55rem !important;
+    }
+
+    [data-jidelnicek-dashboard] .custom-menu-tabs-modern .nav-link {
+        min-height: 50px;
+        font-size: 0.88rem;
+        padding: 0.78rem 0.85rem !important;
+    }
+
+    [data-jidelnicek-dashboard] .dashboard-sidebar .card-body,
+    [data-jidelnicek-dashboard] .dashboard-sidebar .card-header {
+        padding-inline: 0.9rem !important;
+    }
+
+    .menu-item-card {
+        margin-top: 1rem !important;
+    }
+
+    .menu-item-card .mi-plate {
+        width: min(76vw, 198px) !important;
+        height: min(76vw, 198px) !important;
+    }
+
+    .menu-item-card .mi-plate-inner {
+        width: min(60vw, 158px) !important;
+        height: min(60vw, 158px) !important;
+    }
+}
+
 

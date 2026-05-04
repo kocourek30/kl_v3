@@ -8,13 +8,13 @@ def read_rfid_code():
         ser.close()
         return code
     except Exception as e:
-        print(f"Error reading RFID: {e}")
+        print(f"Chyba při čtení RFID: {e}")
         return None
 
 if __name__ == "__main__":
     while True:
         code = read_rfid_code()
         if code:
-            print(f"Read RFID code: {code}")
-            # Poslat na API serveru
+            print(f"Přečtený RFID kód: {code}")
+            # Poslat na API server.
             requests.post("http://localhost:8000/api/rfid_login/", data={"rfid": code})

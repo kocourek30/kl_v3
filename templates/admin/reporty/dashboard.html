@@ -1,126 +1,9 @@
 {% extends "admin/base_site.html" %}
 {% load static %}
+{% load reporty_tags %}
 
 {% block extrahead %}
-
-<!-- Import Select2 pro hezčí rozbalovací seznamy (volitelné, pokud ho máš v projektu) -->
-<style>
-    :root {
-        --my-green: #28a745;
-        --my-orange: #fd7e14;
-    }
-
-    #content-main {
-        margin-left: 0 !important;
-        width: 100% !important;
-    }
-    
-    .custom-period-fields {
-        display: none;
-    }
-    
-    /* Vylepšení tabulky */
-    .report-table {
-        width: 100%;
-        overflow-x: auto;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        margin-top: 20px;
-    }
-    
-    .report-table table {
-        width: 100%;
-        border-collapse: collapse;
-        background: white;
-    }
-    
-    .report-table th {
-        background-color: var(--my-green) !important;
-        color: white !important;
-        font-weight: bold;
-        text-transform: uppercase;
-        font-size: 0.85rem;
-        letter-spacing: 0.5px;
-        border: none !important;
-    }
-    
-    .report-table td {
-        border-bottom: 1px solid #eee;
-    }
-
-    .report-table tr:hover {
-        background-color: #f8f9fa;
-    }
-    
-    .report-table tfoot td {
-        background-color: #fff3e0; /* Jemně oranžové pozadí pro součty */
-        font-weight: bold;
-        border-top: 2px solid var(--my-orange);
-    }
-    
-    /* Bootstrap-like tlačítka navigace */
-    .nav-pills .nav-link.active {
-        background-color: var(--my-green);
-    }
-
-    .report-buttons {
-        margin-bottom: 25px;
-        padding-bottom: 15px;
-        border-bottom: 1px solid #ddd;
-    }
-
-    .btn-report {
-        margin-right: 10px;
-        margin-bottom: 10px;
-        font-weight: 500;
-        border: 2px solid var(--my-green);
-        color: var(--my-green);
-        background: transparent;
-    }
-
-    .btn-report:hover {
-        background: var(--my-green);
-        color: white;
-    }
-
-    .btn-report.active {
-        background: var(--my-green);
-        color: white;
-        box-shadow: 0 4px 6px rgba(40, 167, 69, 0.2);
-    }
-
-    /* Sekce filtrů */
-    .filter-card {
-        background: #fdfdfd;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-        padding: 20px;
-        margin-bottom: 20px;
-    }
-
-    .filter-label {
-        font-weight: bold;
-        color: #555;
-        margin-bottom: 5px;
-        display: block;
-    }
-
-    /* Úprava form-control pro Django formy */
-    .filter-card select, .filter-card input {
-        width: 100%;
-        padding: 8px;
-        border-radius: 4px;
-        border: 1px solid #ccc;
-    }
-
-    .export-section {
-        background: #f8f9fa;
-        padding: 15px;
-        border-radius: 8px;
-        border-left: 5px solid var(--my-orange);
-        margin-top: 10px;
-    }
-</style>
+{{ block.super }}
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -142,92 +25,258 @@ document.addEventListener('DOMContentLoaded', function() {
 {% endblock %}
 
 {% block content %}
-<div id="content-main">
-    <h1 class="mb-4">📊 Reporty </h1>
-    
-    {# Navigace mezi reporty - Bootstrap Style #}
-    <div class="report-buttons">
+<div class="report-page">
+    <div class="report-shell">
+    <div class="report-hero">
+        <div>
+            <span class="report-eyebrow"><i class="fas fa-chart-line"></i> Reporty jídelny</span>
+            <h1>{{ report_title }}</h1>
+            <p>{{ report_description }}</p>
+            <div class="admin-chip-row" style="margin-top: 12px;">
+                <span class="admin-chip"><strong>Období:</strong> {{ period_label }}</span>
+                <span class="admin-chip"><strong>Skupina:</strong> {{ selected_group_label }}</span>
+                <span class="admin-chip"><strong>Zákazník:</strong> {{ selected_customer_label }}</span>
+                <span class="admin-chip"><strong>Druhy jídel:</strong> {{ selected_food_types_label }}</span>
+                {% if search_query %}
+                <span class="admin-chip"><strong>Hledání:</strong> {{ search_query }}</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="report-meta-grid">
+            <div class="report-meta-card">
+                <strong>Zobrazených řádků</strong>
+                <span>{{ totals.rows_count|default:report_data|length }}</span>
+            </div>
+            <div class="report-meta-card">
+                <strong>Celkem k platbě</strong>
+                <span>
+                    {% if report_type == 'subsidy_finance' or report_type == 'attendance_matrix' %}
+                    {{ totals.paid_total|floatformat:-2 }} Kč
+                    {% else %}
+                    {{ totals.final_price|floatformat:-2 }} Kč
+                    {% endif %}
+                </span>
+            </div>
+            <div class="report-meta-card">
+                <strong>Dotace</strong>
+                <span>
+                    {% if report_type == 'subsidy_finance' or report_type == 'attendance_matrix' %}
+                    {{ totals.subsidy_total|floatformat:-2 }} Kč
+                    {% else %}
+                    {{ totals.dotace|floatformat:-2 }} Kč
+                    {% endif %}
+                </span>
+            </div>
+            <div class="report-meta-card">
+                <strong>Objem dat</strong>
+                <span>
+                    {% if report_type == 'attendance_matrix' %}
+                    {{ totals.total_portions }} porcí / {{ totals.users_count }} strávníků
+                    {% elif report_type == 'subsidy_finance' %}
+                    {{ totals.total_portions }} porcí / {{ totals.subsidized_portions }} dotovaných
+                    {% elif report_type == 'food_types' %}
+                    {{ totals.total_portions }} porcí
+                    {% elif report_type == 'items' %}
+                    {{ totals.total_items }} položek
+                    {% else %}
+                    {{ totals.orders_count|default:report_data|length }} objednávek
+                    {% endif %}
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="admin-nav-pills">
         {% for report in reports %}
         <a href="?report={{ report.id }}" 
-           class="btn btn-report {% if active_report == report.id %}active{% endif %}">
+           class="admin-nav-pill {% if active_report == report.id %}is-active{% endif %}">
             <i class="{{ report.icon }}"></i> {{ report.title }}
         </a>
         {% endfor %}
     </div>
 
     {# Filtrovací formulář #}
-    <form method="get" class="report-filters">
+    <form method="get" class="admin-filter-form">
         <input type="hidden" name="report" value="{{ active_report }}">
         
-        <div class="filter-card">
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+        <div class="admin-filter-panel">
+            <div class="admin-filter-grid">
                 
-                <div>
-                    <label class="filter-label">Období:</label>
+                {% if active_report == 'carkovnice' %}
+                <input type="hidden" name="period" value="current_month">
+                <div class="admin-field">
+                    <label>Měsíc:</label>
+                    {{ form.month }}
+                </div>
+                <div class="admin-field">
+                    <label>Rok:</label>
+                    {{ form.year }}
+                </div>
+                {% else %}
+                <div class="admin-field">
+                    <label>Období:</label>
                     {{ form.period }}
                 </div>
-                
-                <div class="custom-period-fields">
-                    <label class="filter-label">Od data:</label>
+                <div class="admin-field custom-period-fields">
+                    <label>Od data:</label>
                     {{ form.date_from }}
                 </div>
                 
-                <div class="custom-period-fields">
-                    <label class="filter-label">Do data:</label>
+                <div class="admin-field custom-period-fields">
+                    <label>Do data:</label>
                     {{ form.date_to }}
                 </div>
+                {% endif %}
                 
-                <div>
-                    <label class="filter-label">Seskupení:</label>
+                <div class="admin-field">
+                    <label>Seskupení:</label>
+                    {% if active_report == 'carkovnice' %}
+                    <input type="text" class="admin-field-control" value="Měsíční přehled" disabled>
+                    {% else %}
                     {{ form.grouping }}
+                    {% endif %}
                 </div>
                 
-                <div>
-                    <label class="filter-label">Skupina:</label>
+                <div class="admin-field">
+                    <label>Skupina:</label>
                     {{ form.group }}
                 </div>
                 
-                <div>
-                    <label class="filter-label">Zákazník:</label>
+                <div class="admin-field">
+                    <label>Zákazník:</label>
                     {{ form.customer }}
                 </div>
                 
                 {# NOVÉ: Filtr pro druhy jídel - rozbalovací (Select) #}
-                {% if active_report == 'druhy-jidel' %}
-                <div>
-                    <label class="filter-label">Druhy jídel:</label>
+                {% if active_report == 'druhy-jidel' or active_report == 'carkovnice' or active_report == 'finance-dotace' %}
+                <div class="admin-field admin-field--span-2">
+                    <label>Druhy jídel:</label>
                     {{ form.food_types }}
                 </div>
                 {% endif %}
                 
-                <div>
-                    <label class="filter-label">Vyhledávání:</label>
+                <div class="admin-field">
+                    <label>Vyhledávání:</label>
                     {{ form.search }}
                 </div>
             </div>
 
-            <div class="mt-4 pt-3 border-top">
-                <button type="submit" class="btn btn-success" style="background-color: var(--my-green); border: none; padding: 10px 30px;">
-                    🔍 Aplikovat filtry
+            <div class="admin-filter-actions">
+                <button type="submit" class="admin-btn admin-btn--primary">
+                    <i class="fas fa-magnifying-glass"></i>
+                    Aplikovat filtry
                 </button>
             </div>
         </div>
         
         {# Exporty odděleny do vlastní sekce #}
-        <div class="export-section">
-            <span class="mr-3" style="font-weight: bold; color: var(--my-orange);">EXPORT DAT:</span>
-            <a href="?export=csv&{{ request.GET.urlencode }}" class="btn btn-outline-success btn-sm">📄 CSV Export</a>
-            <a href="?export=pdf&{{ request.GET.urlencode }}" class="btn btn-outline-danger btn-sm">📑 PDF Export</a>
-            
+        <div class="admin-export-bar">
+            <strong>Export dat:</strong>
+            <a href="?export=csv&{{ request.GET.urlencode }}" class="admin-btn admin-btn--light admin-btn--small">Stáhnout CSV</a>
+            <a href="?export=xls&{{ request.GET.urlencode }}" class="admin-btn admin-btn--light admin-btn--small">Stáhnout XLSX</a>
+            <a href="?export=pdf&{{ request.GET.urlencode }}" class="admin-btn admin-btn--danger admin-btn--small">Stáhnout PDF</a>
         </div>
     </form>
+
+    {% if report_type == 'attendance_matrix' %}
+    <div class="report-card">
+        <h3>Čárkovnice za {{ totals.month_name }} {{ totals.year }}</h3>
+        <p>Po dnech vidíš skutečně vydanou stravu podle druhu jídla. Každá zkratka v buňce znamená jeden vydaný kus daného druhu.</p>
+    </div>
+
+    <div class="matrix-totals">
+        <div class="matrix-total-card">
+            <strong>{{ totals.users_count }}</strong>
+            <span>strávníků v přehledu</span>
+        </div>
+        <div class="matrix-total-card">
+            <strong>{{ totals.total_portions }}</strong>
+            <span>celkem vydaných porcí</span>
+        </div>
+        <div class="matrix-total-card">
+            <strong>{{ totals.days_in_month }}</strong>
+            <span>dnů v měsíci</span>
+        </div>
+        <div class="matrix-total-card">
+            <strong>{{ totals.subsidized_portions }}</strong>
+            <span>dotovaných porcí</span>
+        </div>
+        <div class="matrix-total-card">
+            <strong>{{ totals.subsidy_total|floatformat:-2 }} Kč</strong>
+            <span>dotace celkem</span>
+        </div>
+        <div class="matrix-total-card">
+            <strong>{{ totals.paid_total|floatformat:-2 }} Kč</strong>
+            <span>cena po dotaci</span>
+        </div>
+        <div class="matrix-total-card">
+            <strong>
+                {% if totals.peak_day.portions %}
+                {{ totals.peak_day.day }}.
+                {% else %}
+                -
+                {% endif %}
+            </strong>
+            <span>nejsilnější den ({{ totals.peak_day.portions|default:0 }} porcí)</span>
+        </div>
+    </div>
+    {% endif %}
+    {% if report_type == 'subsidy_finance' %}
+    <div class="report-card">
+        <h3>Finanční report dotací</h3>
+        <p>Pro finanční oddělení přehledně ukazuje nedotovanou cenu, skutečně poskytnutou dotaci a konečnou cenu po dotaci.</p>
+    </div>
+
+    <div class="matrix-totals">
+        <div class="matrix-total-card">
+            <strong>{{ totals.total_portions }}</strong>
+            <span>celkem porcí v reportu</span>
+        </div>
+        <div class="matrix-total-card">
+            <strong>{{ totals.subsidized_portions }}</strong>
+            <span>dotovaných porcí</span>
+        </div>
+        <div class="matrix-total-card">
+            <strong>{{ totals.full_price_total|floatformat:-2 }} Kč</strong>
+            <span>nedotovaná cena</span>
+        </div>
+        <div class="matrix-total-card">
+            <strong>{{ totals.subsidy_total|floatformat:-2 }} Kč</strong>
+            <span>poskytnuté dotace</span>
+        </div>
+        <div class="matrix-total-card">
+            <strong>{{ totals.paid_total|floatformat:-2 }} Kč</strong>
+            <span>cena po dotaci</span>
+        </div>
+    </div>
+    {% endif %}
     
     {# Tabulka reportu #}
-    <div class="report-table">
+    <div class="report-table {% if report_type == 'attendance_matrix' %}matrix-table{% else %}report-table--standard{% endif %} {% if report_type == 'subsidy_finance' %}report-table--finance{% endif %}">
         <table class="table mb-0">
             <thead>
                 <tr>
-                    {% if report_type == 'food_types' %}
+                    {% if report_type == 'subsidy_finance' %}
+                        <th>Strávník</th>
+                        {% if grouping == 'day' %}
+                        <th>Výdej</th>
+                        <th>Jídlo</th>
+                        <th style="text-align: right;">Porce</th>
+                        {% else %}
+                        <th>Druhy jídel</th>
+                        <th style="text-align: right;">Porce</th>
+                        {% endif %}
+                        <th class="text-right">Nedotovaná cena</th>
+                        <th class="text-right">Dotace</th>
+                        <th class="text-right">Cena po dotaci</th>
+                    {% elif report_type == 'attendance_matrix' %}
+                        <th class="matrix-meta matrix-head-sticky matrix-head-left">Strávník</th>
+                        {% for day in totals.days %}
+                        <th class="matrix-day">{{ day }}</th>
+                        {% endfor %}
+                        <th class="matrix-summary matrix-head-sticky matrix-head-summary">Souhrn</th>
+                        <th class="matrix-total-col matrix-head-sticky matrix-head-total text-right">Celkem</th>
+                    {% elif report_type == 'food_types' %}
                         {% if grouping == 'day' %}
                         <th>Datum</th>
                         <th>Zákazník</th>
@@ -275,24 +324,66 @@ document.addEventListener('DOMContentLoaded', function() {
             <tbody>
                 {% for row in report_data %}
                 <tr>
-                    {% if report_type == 'food_types' %}
+                    {% if report_type == 'subsidy_finance' %}
+                        <td class="text-wrap">
+                            <strong>{{ row.user }}</strong>
+                            <span class="report-field-note">Osobní číslo: {{ row.osobni_cislo|default:"-" }}</span>
+                            <span class="report-field-note">ID médium: {{ row.identifikacni_medium|default:"-" }}</span>
+                        </td>
+                        {% if grouping == 'day' %}
+                        <td class="text-wrap">
+                            <strong>{{ row.date|date:"d.m.Y" }}</strong>
+                            <span class="report-field-note">{{ row.status }}</span>
+                        </td>
+                        <td class="text-wrap">
+                            <strong>{{ row.food_name }}</strong>
+                            <span class="report-field-note">{{ row.food_type }}</span>
+                        </td>
+                        <td class="text-right">
+                            <strong>{{ row.quantity }}</strong>
+                            <span class="report-field-note">{{ row.subsidized_portions }} dot.</span>
+                        </td>
+                        {% else %}
+                        <td class="text-wrap">{{ row.food_types }}</td>
+                        <td class="text-right">
+                            <strong>{{ row.total_portions }}</strong>
+                            <span class="report-field-note">{{ row.subsidized_portions }} dot.</span>
+                        </td>
+                        {% endif %}
+                        <td class="text-right">{{ row.full_price_total|floatformat:-2 }} Kč</td>
+                        <td class="text-right">{{ row.subsidy_total|floatformat:-2 }} Kč</td>
+                        <td class="text-right">{{ row.paid_total|floatformat:-2 }} Kč</td>
+                    {% elif report_type == 'attendance_matrix' %}
+                        <td class="matrix-meta">
+                            <span class="matrix-user">{{ row.user }}</span>
+                            <span class="matrix-sub">Osobní číslo: {{ row.osobni_cislo|default:"-" }}</span>
+                            <span class="matrix-sub">ID médium: {{ row.identifikacni_medium|default:"-" }}</span>
+                        </td>
+                        {% for day in totals.days %}
+                        {% with day_value=row.day_strings|dict_get:day %}
+                        <td class="matrix-day {% if day_value %}has-data{% else %}empty{% endif %}">{{ day_value|default:"-" }}</td>
+                        {% endwith %}
+                        {% endfor %}
+                        <td class="matrix-summary text-wrap">{{ row.summary_strings|join:", "|default:"-" }}</td>
+                        <td class="matrix-total-col text-right">{{ row.total_portions }} ks</td>
+                    {% elif report_type == 'food_types' %}
                         {% if grouping == 'day' %}
                         <td>{{ row.date|date:"d.m.Y" }}</td>
                         <td>{{ row.user }}</td>
                         <td>{{ row.food_type }}</td>
                         <td>{{ row.food_name }}</td>
-                        <td style="text-align: right;">{{ row.quantity }} ks</td>
-                        <td style="text-align: right;">{{ row.unclaimed_total }} Kč</td>
-                        <td style="text-align: right;">{{ row.dotace }} Kč</td>
-                        <td style="text-align: right;">{{ row.final_price }} Kč</td>
+                        <td class="text-right">{{ row.quantity }} ks</td>
+                        <td class="text-right">{{ row.unclaimed_total|floatformat:-2 }} Kč</td>
+                        <td class="text-right">{{ row.dotace|floatformat:-2 }} Kč</td>
+                        <td class="text-right">{{ row.final_price|floatformat:-2 }} Kč</td>
                         {% else %}
                         <td>{{ row.user }}</td>
                         <td>{{ row.food_type }}</td>
-                        <td>{{ row.food_name }}</td>
-                        <td style="text-align: right;">{{ row.quantity }} ks</td>
-                        <td style="text-align: right;">{{ row.unclaimed_total }} Kč</td>
-                        <td style="text-align: right;">{{ row.dotace }} Kč</td>
-                        <td style="text-align: right;">{{ row.final_price }} Kč</td>
+                        <td class="text-wrap">{{ row.food_name }}</td>
+                        <td class="text-right">{{ row.quantity }} ks</td>
+                        <td class="text-right">{{ row.unclaimed_total|floatformat:-2 }} Kč</td>
+                        <td class="text-right">{{ row.dotace|floatformat:-2 }} Kč</td>
+                        <td class="text-right">{{ row.final_price|floatformat:-2 }} Kč</td>
                         {% endif %}
                     {% else %}
                         <td>{{ row.user }}</td>
@@ -305,44 +396,140 @@ document.addEventListener('DOMContentLoaded', function() {
                         {% if report_type == 'items' %}
                             {% if grouping == 'day' %}
                             <td>{{ row.jidlo_nazev }}</td>
-                            <td style="text-align: right;">{{ row.quantity }} ks</td>
+                            <td class="text-right">{{ row.quantity }} ks</td>
                             {% else %}
-                            <td style="text-align: right;">{{ row.items_count }} ks</td>
-                            <td>{{ row.items_names }}</td>
+                            <td class="text-right">{{ row.items_count }} ks</td>
+                            <td class="text-wrap">{{ row.items_names }}</td>
                             {% endif %}
                         {% endif %}
-                        <td style="text-align: right;">{{ row.unclaimed_total }} Kč</td>
-                        <td style="text-align: right;">{{ row.dotace }} Kč</td>
-                        <td style="text-align: right;">{{ row.final_price }} Kč</td>
+                        <td class="text-right">{{ row.unclaimed_total|floatformat:-2 }} Kč</td>
+                        <td class="text-right">{{ row.dotace|floatformat:-2 }} Kč</td>
+                        <td class="text-right">{{ row.final_price|floatformat:-2 }} Kč</td>
                         {% if report_type == 'amounts' and grouping == 'total' %}
-                        <td style="text-align: right;">{{ row.count }} ks</td>
+                        <td class="text-right">{{ row.count }} ks</td>
                         {% endif %}
                     {% endif %}
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="20" class="text-center py-5">Žádná data pro zobrazení</td>
+                    <td colspan="{% if report_type == 'subsidy_finance' %}{% if grouping == 'day' %}7{% else %}6{% endif %}{% elif report_type == 'attendance_matrix' %}{{ totals.days|length|add:'3' }}{% elif report_type == 'food_types' %}{% if grouping == 'day' %}8{% else %}7{% endif %}{% elif report_type == 'items' %}{% if grouping == 'day' %}10{% else %}8{% endif %}{% else %}{% if grouping == 'day' %}8{% else %}7{% endif %}{% endif %}" class="empty-report">
+                        <strong>Žádná data pro zobrazení</strong>
+                        Zkus upravit období, skupinu nebo vyhledávání.
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
             <tfoot>
                 <tr>
-                    {% if report_type == 'food_types' %}
+                    {% if report_type == 'subsidy_finance' %}
                         <td colspan="{% if grouping == 'day' %}4{% else %}3{% endif %}">CELKEM:</td>
-                        <td style="text-align: right;">{{ totals.total_portions }} ks</td>
-                        <td style="text-align: right;">{{ totals.unclaimed_total }} Kč</td>
-                        <td style="text-align: right;">{{ totals.dotace }} Kč</td>
-                        <td style="text-align: right;">{{ totals.final_price }} Kč</td>
+                        <td class="text-right">{{ totals.full_price_total|floatformat:-2 }} Kč</td>
+                        <td class="text-right">{{ totals.subsidy_total|floatformat:-2 }} Kč</td>
+                        <td class="text-right">{{ totals.paid_total|floatformat:-2 }} Kč</td>
+                    {% elif report_type == 'attendance_matrix' %}
+                        <td class="matrix-meta matrix-footer-label"><strong>CELKEM PORCÍ</strong></td>
+                        {% for day in totals.days %}
+                        {% with day_total=totals.day_totals|dict_get:day %}
+                        <td class="matrix-footer-cell">
+                            <strong>{{ day_total.portions|default:0 }}</strong>
+                            <span>{{ day_total.users|default:0 }} str.</span>
+                        </td>
+                        {% endwith %}
+                        {% endfor %}
+                        <td class="matrix-summary">Denní součet porcí a počtu strávníků</td>
+                        <td class="matrix-total-col text-right">{{ totals.total_portions }} ks</td>
+                    {% elif report_type == 'food_types' %}
+                        <td colspan="{% if grouping == 'day' %}4{% else %}3{% endif %}">CELKEM:</td>
+                        <td class="text-right">{{ totals.total_portions }} ks</td>
+                        <td class="text-right">{{ totals.unclaimed_total|floatformat:-2 }} Kč</td>
+                        <td class="text-right">{{ totals.dotace|floatformat:-2 }} Kč</td>
+                        <td class="text-right">{{ totals.final_price|floatformat:-2 }} Kč</td>
                     {% else %}
                         <td colspan="{% if grouping == 'day' %}{% if report_type == 'items' %}7{% else %}5{% endif %}{% else %}{% if report_type == 'items' %}5{% else %}3{% endif %}{% endif %}">CELKEM:</td>
-                        <td style="text-align: right;">{{ totals.unclaimed_total }} Kč</td>
-                        <td style="text-align: right;">{{ totals.dotace }} Kč</td>
-                        <td style="text-align: right;">{{ totals.final_price }} Kč</td>
+                        <td class="text-right">{{ totals.unclaimed_total|floatformat:-2 }} Kč</td>
+                        <td class="text-right">{{ totals.dotace|floatformat:-2 }} Kč</td>
+                        <td class="text-right">{{ totals.final_price|floatformat:-2 }} Kč</td>
                         {% if grouping == 'total' %}<td></td>{% endif %}
                     {% endif %}
                 </tr>
+                {% if report_type == 'attendance_matrix' %}
+                <tr>
+                    <td class="matrix-meta matrix-footer-label"><strong>STRÁVNÍKŮ</strong></td>
+                    {% for day in totals.days %}
+                    {% with day_total=totals.day_totals|dict_get:day %}
+                    <td class="matrix-footer-cell">
+                        <strong>{{ day_total.users|default:0 }}</strong>
+                    </td>
+                    {% endwith %}
+                    {% endfor %}
+                    <td class="matrix-summary">{{ totals.users_count }} strávníků v přehledu</td>
+                    <td class="matrix-total-col text-right">{{ totals.subsidized_portions }} dot.</td>
+                </tr>
+                {% endif %}
             </tfoot>
         </table>
+    </div>
+    {% if report_type == 'attendance_matrix' %}
+    <div class="matrix-scroll-hint">Tabulka je vodorovně posuvná. Strávník, souhrn a celkem zůstávají při posunu připnuté.</div>
+    {% endif %}
+
+    {% if report_type == 'attendance_matrix' and totals.legend %}
+    <div class="legend-box">
+        <strong>Legenda čárkovnice pro {{ totals.month_name }} {{ totals.year }}</strong>
+        <div class="legend-items">
+            {% for item in totals.legend %}
+            <span class="legend-item">
+                <span class="legend-token">{{ item.label }}</span>
+                <span>{{ item.name }}</span>
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if report_type == 'attendance_matrix' and totals.financial_rows %}
+    <div class="legend-box" style="margin-top: 18px;">
+        <strong>Celkový finanční souhrn podle druhů jídel</strong>
+        <div class="report-table report-table--standard" style="margin-top: 14px; box-shadow: none; border: 1px solid #d9ead2;">
+            <table class="table mb-0">
+                <thead>
+                    <tr>
+                        <th>Druh jídla</th>
+                        <th>Zkratka</th>
+                        <th style="text-align: right;">Počet porcí</th>
+                        <th style="text-align: right;">Dotovaných porcí</th>
+                        <th style="text-align: right;">Nedotovaná cena</th>
+                        <th style="text-align: right;">Dotace</th>
+                        <th style="text-align: right;">Cena po dotaci</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for finance_row in totals.financial_rows %}
+                    <tr>
+                        <td>{{ finance_row.food_type }}</td>
+                        <td><span class="legend-token">{{ finance_row.label }}</span></td>
+                        <td style="text-align: right;">{{ finance_row.count }}</td>
+                        <td style="text-align: right;">{{ finance_row.subsidized_count }}</td>
+                        <td style="text-align: right;">{{ finance_row.full_price_total|floatformat:-2 }} Kč</td>
+                        <td style="text-align: right;">{{ finance_row.subsidy_total|floatformat:-2 }} Kč</td>
+                        <td style="text-align: right;">{{ finance_row.paid_total|floatformat:-2 }} Kč</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="2">CELKEM:</td>
+                        <td class="text-right">{{ totals.total_portions }}</td>
+                        <td class="text-right">{{ totals.subsidized_portions }}</td>
+                        <td class="text-right">{{ totals.full_price_total|floatformat:-2 }} Kč</td>
+                        <td class="text-right">{{ totals.subsidy_total|floatformat:-2 }} Kč</td>
+                        <td class="text-right">{{ totals.paid_total|floatformat:-2 }} Kč</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+    {% endif %}
     </div>
 </div>
 {% endblock %}

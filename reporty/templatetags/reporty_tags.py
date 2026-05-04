@@ -11,3 +11,10 @@ def cz_timeuntil(value):
         elif days in [2,3,4]: return f"{days} dny zbývá"
         else: return f"{days} dnů zbývá"
     return delta + " zbývá"
+
+
+@register.filter
+def dict_get(value, key):
+    if isinstance(value, dict):
+        return value.get(key, "")
+    return ""

@@ -1,0 +1,229 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<style>
+  .fin-page { display: grid; gap: 16px; }
+  .fin-head { display: flex; justify-content: space-between; gap: 16px; align-items: end; flex-wrap: wrap; }
+  .fin-head h1 { margin: 0; font-size: 2rem; font-weight: 900; }
+  .fin-sub { color: #66757f; margin-top: 4px; }
+  .fin-filter { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; background: #fff; border: 1px solid #dce4ea; border-radius: 8px; padding: 12px; }
+  .fin-filter label { display: grid; gap: 4px; font-weight: 800; color: #4f5d66; }
+  .fin-filter input, .fin-filter select { min-height: 38px; border: 1px solid #cad5dd; border-radius: 8px; padding: 6px 8px; }
+  .fin-btn { min-height: 38px; border: 0; border-radius: 8px; padding: 8px 14px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-weight: 900; text-decoration: none; background: #14933b; color: #fff !important; }
+  .fin-btn-accent { background: #f28f28; }
+  .fin-btn-light { background: #eef3f6; color: #1f2d36 !important; }
+  .fin-grid { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: 12px; }
+  .fin-card { background: #fff; border: 1px solid #dce4ea; border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgba(20,40,60,.04); }
+  .fin-card strong { display: block; color: #657782; font-size: .86rem; text-transform: uppercase; letter-spacing: .02em; }
+  .fin-value { margin-top: 6px; font-size: 1.55rem; font-weight: 950; color: #14212a; }
+  .fin-value.green { color: #14933b; }
+  .fin-value.orange { color: #d96f00; }
+  .fin-note { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 12px 14px; color: #7c3f00; font-weight: 700; }
+  .fin-panels { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+  .fin-panel { background: #fff; border: 1px solid #dce4ea; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(20,40,60,.04); }
+  .fin-panel h2 { margin: 0; padding: 12px 14px; border-bottom: 1px solid #edf1f4; font-size: 1rem; font-weight: 950; }
+  .fin-table { width: 100%; border-collapse: collapse; }
+  .fin-table th { background: #f6f8fa; color: #5f6f7a; text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8ee; }
+  .fin-table td { padding: 10px 12px; border-bottom: 1px solid #edf1f4; vertical-align: top; }
+  .fin-num { text-align: right; white-space: nowrap; font-weight: 900; }
+  .fin-badge { display: inline-flex; align-items: center; border-radius: 8px; padding: 3px 8px; font-size: .78rem; font-weight: 900; }
+  .fin-badge.cash { background: #dcfce7; color: #166534; }
+  .fin-badge.internal { background: #e5e7eb; color: #374151; }
+  @media (max-width: 1200px) {
+    .fin-grid { grid-template-columns: repeat(2, minmax(160px, 1fr)); }
+    .fin-panels { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="fin-page admin-shell admin-shell--wide">
+  <section class="admin-hero">
+    <div class="admin-kicker">Finance • provozní přehled</div>
+    <div class="fin-head">
+    <div>
+      <h1>{{ title }}</h1>
+      <div class="fin-sub">Jedno místo pro tržby z pokladny, objednávkového systému, kont a DPH.</div>
+    </div>
+    <form class="fin-filter" method="get">
+      <label>Od
+        <input type="date" name="od" value="{{ datum_od|date:'Y-m-d' }}">
+      </label>
+      <label>Do
+        <input type="date" name="do" value="{{ datum_do|date:'Y-m-d' }}">
+      </label>
+      <label>Přehled
+        <select name="report">
+          {% for value, label in report_types %}
+            <option value="{{ value }}" {% if value == report_type %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="fin-btn" type="submit">Spočítat</button>
+      <a class="fin-btn fin-btn-light" href="?{{ query_string }}&export=xls">XLS</a>
+      <a class="fin-btn fin-btn-accent" href="?{{ query_string }}&export=pdf">PDF</a>
+    </form>
+    </div>
+  </section>
+
+  <div class="fin-grid admin-grid admin-grid--cards">
+    <div class="fin-card admin-card">
+      <strong>Obrat celkem</strong>
+      <div class="fin-value green">{{ obrat_celkem|floatformat:-2 }} Kč</div>
+    </div>
+    <div class="fin-card admin-card">
+      <strong>Peněžní příjem</strong>
+      <div class="fin-value orange">{{ penezni_prijem|floatformat:-2 }} Kč</div>
+    </div>
+    <div class="fin-card admin-card">
+      <strong>Pokladna</strong>
+      <div class="fin-value">{{ pokladna_trzba|floatformat:-2 }} Kč</div>
+    </div>
+    <div class="fin-card admin-card">
+      <strong>Objednávky</strong>
+      <div class="fin-value">{{ objednavky_trzba|floatformat:-2 }} Kč</div>
+    </div>
+    <div class="fin-card admin-card">
+      <strong>Dotace a slevy v objednávkách</strong>
+      <div class="fin-value orange">{{ objednavky_sleva_dotace|floatformat:-2 }} Kč</div>
+    </div>
+    <div class="fin-card admin-card">
+      <strong>Připsané dotace na konto</strong>
+      <div class="fin-value">{{ dotace_pripsane|floatformat:-2 }} Kč</div>
+    </div>
+  </div>
+
+  <div class="fin-note">
+    Peněžní příjem nepočítá platbu z konta jako novou hotovost. Konto je interní čerpání; skutečný příjem vzniká při vkladu na konto, hotovostní platbě, platbě kartou nebo QR platbě.
+  </div>
+
+  <section class="fin-panel">
+    <h2>{{ report_title }}</h2>
+    <table class="fin-table">
+      <tr>
+        {% for header in report_headers %}
+          <th {% if not forloop.first %}class="fin-num"{% endif %}>{{ header }}</th>
+        {% endfor %}
+      </tr>
+      {% for row in report_rows %}
+        <tr>
+          {% for value in row %}
+            <td {% if not forloop.first %}class="fin-num"{% endif %}>
+              {% if value.as_tuple %}{{ value|floatformat:-2 }}{% else %}{{ value }}{% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+      {% empty %}
+        <tr><td colspan="{{ report_headers|length }}">Ve zvoleném období nejsou pro tento přehled žádná data.</td></tr>
+      {% endfor %}
+    </table>
+  </section>
+
+  <div class="fin-panels">
+    <section class="fin-panel">
+      <h2>Pokladna podle platební metody</h2>
+      <table class="fin-table">
+        <tr><th>Metoda</th><th>Typ</th><th class="fin-num">Dokladů</th><th class="fin-num">Částka</th></tr>
+        {% for row in pokladna_podle_plateb %}
+          <tr>
+            <td>{{ row.nazev }}</td>
+            <td>
+              {% if row.penezni_prijem %}
+                <span class="fin-badge cash">peněžní příjem</span>
+              {% else %}
+                <span class="fin-badge internal">interní čerpání</span>
+              {% endif %}
+            </td>
+            <td class="fin-num">{{ row.pocet }}</td>
+            <td class="fin-num">{{ row.castka|floatformat:-2 }} Kč</td>
+          </tr>
+        {% endfor %}
+      </table>
+    </section>
+
+    <section class="fin-panel">
+      <h2>Konta strávníků</h2>
+      <table class="fin-table">
+        <tr><th>Pohyb</th><th class="fin-num">Částka</th></tr>
+        <tr><td>Vklady na konta</td><td class="fin-num">{{ vklady_kladne|floatformat:-2 }} Kč</td></tr>
+        {% for row in vklady_podle_uhrady %}
+          <tr>
+            <td class="text-muted ps-3">z toho {{ row.nazev }}</td>
+            <td class="fin-num text-muted">{{ row.castka|floatformat:-2 }} Kč</td>
+          </tr>
+        {% endfor %}
+        <tr><td>Čerpání kont v pokladně</td><td class="fin-num">{{ cerpani_konta|floatformat:-2 }} Kč</td></tr>
+        <tr><td>Čerpání kont objednávkami</td><td class="fin-num">{{ konta_report.totals.cerpani_objednavky|floatformat:-2 }} Kč</td></tr>
+        <tr><td>Dotace na konta</td><td class="fin-num">{{ konta_report.totals.dotace|floatformat:-2 }} Kč</td></tr>
+        <tr><td>Nulování kont</td><td class="fin-num">{{ nulovani_konta|floatformat:-2 }} Kč</td></tr>
+        <tr><td>Počáteční zůstatky celkem</td><td class="fin-num">{{ konta_report.totals.pocatecni|floatformat:-2 }} Kč</td></tr>
+        <tr><td>Konečné zůstatky celkem</td><td class="fin-num">{{ konta_report.totals.konecny|floatformat:-2 }} Kč</td></tr>
+      </table>
+    </section>
+  </div>
+
+  <div class="fin-panels">
+    <section class="fin-panel">
+      <h2>Objednávkový systém podle skupin</h2>
+      <table class="fin-table">
+        <tr><th>Skupina</th><th class="fin-num">Objednávek</th><th class="fin-num">Porcí</th><th class="fin-num">Obrat</th></tr>
+        {% for row in objednavky_podle_skupin %}
+          <tr><td>{{ row.nazev }}</td><td class="fin-num">{{ row.objednavek }}</td><td class="fin-num">{{ row.porci }}</td><td class="fin-num">{{ row.obrat|floatformat:-2 }} Kč</td></tr>
+        {% empty %}
+          <tr><td colspan="4">Žádné objednávky v období.</td></tr>
+        {% endfor %}
+      </table>
+    </section>
+
+    <section class="fin-panel">
+      <h2>Objednávkový systém podle druhu jídla</h2>
+      <table class="fin-table">
+        <tr><th>Druh jídla</th><th class="fin-num">Objednávek</th><th class="fin-num">Porcí</th><th class="fin-num">Obrat</th></tr>
+        {% for row in objednavky_podle_druhu %}
+          <tr><td>{{ row.nazev }}</td><td class="fin-num">{{ row.objednavek }}</td><td class="fin-num">{{ row.porci }}</td><td class="fin-num">{{ row.obrat|floatformat:-2 }} Kč</td></tr>
+        {% empty %}
+          <tr><td colspan="4">Žádné objednávky v období.</td></tr>
+        {% endfor %}
+      </table>
+    </section>
+  </div>
+
+  <div class="fin-panels">
+    <section class="fin-panel">
+      <h2>DPH z pokladny</h2>
+      <table class="fin-table">
+        <tr><th>Sazba</th><th class="fin-num">Základ</th><th class="fin-num">DPH</th><th class="fin-num">Celkem</th></tr>
+        {% for row in dph_souhrn %}
+          <tr><td>{{ row.dph_sazba|floatformat:-2 }} %</td><td class="fin-num">{{ row.zaklad|floatformat:-2 }} Kč</td><td class="fin-num">{{ row.dph|floatformat:-2 }} Kč</td><td class="fin-num">{{ row.celkem|floatformat:-2 }} Kč</td></tr>
+        {% empty %}
+          <tr><td colspan="4">Žádné pokladní položky v období.</td></tr>
+        {% endfor %}
+      </table>
+    </section>
+
+    <section class="fin-panel">
+      <h2>Nejprodávanější PLU z pokladny</h2>
+      <table class="fin-table">
+        <tr><th>Položka</th><th class="fin-num">Množství</th><th class="fin-num">Obrat</th></tr>
+        {% for row in pokladna_podle_plu %}
+          <tr><td>{{ row.nazev }}</td><td class="fin-num">{{ row.mnozstvi|floatformat:-2 }}</td><td class="fin-num">{{ row.obrat|floatformat:-2 }} Kč</td></tr>
+        {% empty %}
+          <tr><td colspan="3">Žádné pokladní položky v období.</td></tr>
+        {% endfor %}
+      </table>
+    </section>
+  </div>
+
+  <section class="fin-panel">
+    <h2>Kontrolní souhrn</h2>
+    <table class="fin-table">
+      <tr><th>Ukazatel</th><th class="fin-num">Hodnota</th></tr>
+      <tr><td>Pokladních dokladů</td><td class="fin-num">{{ pocet_pokladnich_dokladu }}</td></tr>
+      <tr><td>Objednávek zahrnutých do tržeb</td><td class="fin-num">{{ pocet_objednavek }}</td></tr>
+      <tr><td>Porcí zahrnutých do tržeb</td><td class="fin-num">{{ pocet_porci }}</td></tr>
+      <tr><td>Ceníková hodnota objednávek před slevami a dotacemi</td><td class="fin-num">{{ objednavky_cenik|floatformat:-2 }} Kč</td></tr>
+      <tr><td>Slevy a dotace v objednávkách</td><td class="fin-num">{{ objednavky_sleva_dotace|floatformat:-2 }} Kč</td></tr>
+      <tr><td>Připsané dotace na konta</td><td class="fin-num">{{ dotace_pripsane|floatformat:-2 }} Kč</td></tr>
+      <tr><td>Stornované pokladní doklady v období</td><td class="fin-num">{{ storna_pokladna|floatformat:-2 }} Kč</td></tr>
+    </table>
+  </section>
+</div>
+{% endblock %}

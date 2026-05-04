@@ -1,0 +1,189 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'sklad/css/sklad_admin_views.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="admin-shell admin-shell--wide sklad-page">
+  <section class="admin-hero">
+    <div class="admin-hero-grid">
+      <div>
+        <div class="admin-kicker">Šaržová inventura</div>
+        <h1>{{ title }}</h1>
+        <p>1. Zkontroluj fyzický stav. 2. Ulož přepočet. 3. Uzavři inventuru až po kontrole rozdílů.</p>
+      </div>
+      <div class="sklad-actions" style="justify-content:flex-end;align-content:flex-start;">
+        <a class="admin-btn admin-btn--light" href="../change/">
+          <i class="fas fa-arrow-left"></i> Detail dokladu
+        </a>
+      </div>
+    </div>
+    <div class="sklad-kpi-grid">
+      <article class="sklad-kpi"><strong>Položky</strong><span>{{ souhrn.pocet_polozek }}</span></article>
+      <article class="sklad-kpi"><strong>Manko</strong><span>{{ souhrn.manko|floatformat:-2 }} Kč</span></article>
+      <article class="sklad-kpi"><strong>Přebytek</strong><span>{{ souhrn.prebytek|floatformat:-2 }} Kč</span></article>
+      <article class="sklad-kpi"><strong>Čistý rozdíl</strong><span>{{ souhrn.cisty_rozdil|floatformat:-2 }} Kč</span></article>
+    </div>
+  </section>
+
+  {% if inventura.uzavreny or inventura.stornovano %}
+    <div class="sklad-alert sklad-alert--warning">
+      Inventura je uzavřená nebo stornovaná. Šaržové položky jsou pouze pro čtení.
+    </div>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+
+    {% if not inventura.uzavreny and not inventura.stornovano %}
+      <div class="sklad-actions mb-3">
+        <button type="submit" name="action" value="load" class="admin-btn admin-btn--light">
+          Načíst aktuální šarže
+        </button>
+        <button type="submit" name="action" value="save" class="admin-btn admin-btn--accent">
+          Přepočítat inventuru
+        </button>
+        <button type="submit" name="action" value="close" class="admin-btn admin-btn--danger">
+          Uzavřít inventuru
+        </button>
+      </div>
+    {% endif %}
+
+    <section class="admin-panel mb-4">
+      <div class="admin-panel-head">
+        <strong>Šarže ve skladu</strong>
+      </div>
+      <div class="admin-panel-body p-0">
+        <div class="sklad-table-wrapper">
+          <table class="sklad-table">
+            <thead>
+              <tr>
+                <th>Surovina</th>
+                <th>Šarže</th>
+                <th>Datum spotřeby</th>
+                <th>Účetní stav</th>
+                <th>Fyzický stav</th>
+                <th>Rozdíl</th>
+                <th>Hodnota rozdílu</th>
+                <th>Poznámka</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in souhrn.radky %}
+                <tr class="{% if row.rozdil < 0 %}sklad-row-soft-danger{% elif row.rozdil > 0 %}sklad-row-soft-success{% endif %}">
+                  <td><strong>{{ row.surovina.nazev }}</strong></td>
+                  <td>
+                    {{ row.sarze|default:"–" }}
+                    {% if row.polozka.je_nova_sarze %}
+                      <span class="badge badge-info">nová</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ row.polozka.datum_spotreby|date:"d.m.Y"|default:"–" }}</td>
+                  <td>{{ row.stav_pred_display }}</td>
+                  <td>
+                    <input type="hidden" name="row_id" value="{{ row.polozka.id }}">
+                    {% if inventura.uzavreny or inventura.stornovano %}
+                      {{ row.fyzicky_stav_display }}
+                    {% else %}
+                      <input
+                        type="number"
+                        step="0.001"
+                        name="fyzicky_stav_{{ row.polozka.id }}"
+                        value="{{ row.fyzicky_stav|stringformat:'s' }}"
+                        class="form-control form-control-sm"
+                      >
+                    {% endif %}
+                  </td>
+                  <td>
+                    <strong>{{ row.rozdil_display }}</strong>
+                    {% if row.rozdil < 0 %}
+                      <span class="badge badge-danger">manko</span>
+                    {% elif row.rozdil > 0 %}
+                      <span class="badge badge-success">přebytek</span>
+                    {% else %}
+                      <span class="badge badge-secondary">sedí</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ row.hodnota|floatformat:-2 }} Kč</td>
+                  <td>
+                    {% if inventura.uzavreny or inventura.stornovano %}
+                      {{ row.polozka.poznamka }}
+                    {% else %}
+                      <input
+                        type="text"
+                        name="poznamka_{{ row.polozka.id }}"
+                        value="{{ row.polozka.poznamka }}"
+                        class="form-control form-control-sm"
+                      >
+                    {% endif %}
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="8" class="sklad-empty">
+                    Klikni na Načíst aktuální šarže.
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    {% if not inventura.uzavreny and not inventura.stornovano %}
+      <section class="admin-panel">
+        <div class="admin-panel-head">
+          <strong>Nově nalezené šarže</strong>
+        </div>
+        <div class="admin-panel-body p-0">
+          <div class="sklad-table-wrapper">
+            <table class="sklad-table">
+              <thead>
+                <tr>
+                  <th>Surovina</th>
+                  <th>Šarže</th>
+                  <th>Typ data</th>
+                  <th>Datum spotřeby</th>
+                  <th>Fyzický stav</th>
+                  <th>Cena za jednotku</th>
+                  <th>Poznámka</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for i in "12345" %}
+                  <tr>
+                    <td>
+                      <select name="new_surovina_{{ i }}" class="form-control form-control-sm">
+                        <option value="">–</option>
+                        {% for surovina in suroviny %}
+                          <option value="{{ surovina.id }}">{{ surovina.nazev }} ({{ surovina.jednotka }})</option>
+                        {% endfor %}
+                      </select>
+                    </td>
+                    <td><input type="text" name="new_sarze_{{ i }}" class="form-control form-control-sm"></td>
+                    <td>
+                      <select name="new_typ_data_{{ i }}" class="form-control form-control-sm">
+                        {% for value,label in typy_data_spotreby %}
+                          <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                      </select>
+                    </td>
+                    <td><input type="date" name="new_datum_{{ i }}" class="form-control form-control-sm"></td>
+                    <td><input type="number" step="0.001" name="new_fyzicky_{{ i }}" class="form-control form-control-sm"></td>
+                    <td><input type="number" step="0.0001" name="new_cena_{{ i }}" class="form-control form-control-sm"></td>
+                    <td><input type="text" name="new_poznamka_{{ i }}" class="form-control form-control-sm"></td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    {% endif %}
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,116 @@
+{% extends "pokladna/base_pokladna.html" %}
+
+{% block title %}Uzavřené doklady - {{ pokladna.nazev }}{% endblock %}
+
+{% block content %}
+<style>
+  .closed-page { display: grid; gap: 16px; }
+  .closed-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .closed-title { margin: 0; font-size: 1.55rem; font-weight: 900; color: #17202a; }
+  .closed-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .closed-btn { border: 0; border-radius: 8px; min-height: 42px; padding: 10px 14px; font-weight: 800; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+  .closed-btn-primary { background: #18a046; color: #fff; }
+  .closed-btn-light { background: #e9eef2; color: #17202a; }
+  .closed-btn-danger { background: #fff; color: #d51f2a; border: 1px solid #f1a9ae; }
+  .closed-panel { background: #fff; border: 1px solid #dbe1e8; border-radius: 8px; overflow: hidden; }
+  .closed-table { width: 100%; border-collapse: collapse; }
+  .closed-table th { background: #f6f8fa; color: #52606d; font-size: .85rem; text-align: left; padding: 11px 12px; border-bottom: 1px solid #e5e9ef; }
+  .closed-table td { padding: 12px; border-bottom: 1px solid #edf0f3; vertical-align: middle; }
+  .closed-table tr:last-child td { border-bottom: 0; }
+  .closed-name { font-weight: 900; }
+  .closed-meta { color: #52606d; font-size: .9rem; }
+  .closed-amount { font-weight: 900; text-align: right; white-space: nowrap; }
+  .closed-status { display: inline-flex; border-radius: 999px; padding: 4px 9px; font-weight: 800; font-size: .78rem; background: #e9eef2; color: #17202a; }
+  .closed-status-ok { background: #e9f8ee; color: #135f2d; }
+  .closed-status-wait { background: #fff5df; color: #754a00; }
+  .closed-status-cancel { background: #feecee; color: #9d1620; }
+  .closed-empty { padding: 18px; color: #52606d; }
+  @media (max-width: 850px) {
+    .closed-table, .closed-table tbody, .closed-table tr, .closed-table td { display: block; width: 100%; }
+    .closed-table thead { display: none; }
+    .closed-table tr { border-bottom: 1px solid #e5e9ef; }
+    .closed-amount { text-align: left; }
+  }
+</style>
+
+<div class="closed-page">
+  <div class="closed-header">
+    <div>
+      <h1 class="closed-title">Uzavřené doklady</h1>
+      <div class="closed-meta">{{ pokladna.nazev }} · posledních 200 dokladů</div>
+    </div>
+    <div class="closed-actions">
+      <a class="closed-btn closed-btn-light" href="{% url 'pokladna:pokladna_prehled' pokladna.id %}">Přehled</a>
+      <a class="closed-btn closed-btn-primary" href="{% url 'pokladna:pokladna_ucet' pokladna.id %}">Nový účet</a>
+    </div>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{% if message.tags == 'error' %}danger{% elif message.tags == 'success' %}success{% else %}info{% endif %} mb-0">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <section class="closed-panel">
+    {% if doklady %}
+      <table class="closed-table">
+        <thead>
+          <tr>
+            <th>Doklad</th>
+            <th>Zákazník</th>
+            <th>Platba</th>
+            <th>Stav</th>
+            <th class="text-end">Částka</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in doklady %}
+            <tr>
+              <td>
+                <div class="closed-name">{{ d.cislo_dokladu|default:d.id }}</div>
+                <div class="closed-meta">{{ d.uzavren_at|default:d.datum|date:"d.m.Y H:i" }}</div>
+              </td>
+              <td>
+                {% if d.zakaznik %}
+                  <div class="closed-name">{{ d.zakaznik.get_full_name|default:d.zakaznik.username }}</div>
+                {% else %}
+                  <div class="closed-name">Anonymní zákazník</div>
+                {% endif %}
+                <div class="closed-meta">{{ d.obsluha.get_full_name|default:d.obsluha.username }}</div>
+              </td>
+              <td>{{ d.get_zpusob_platby_display|default:"-" }}</td>
+              <td>
+                {% if d.je_uzavreny %}
+                  <span class="closed-status closed-status-ok">{{ d.get_stav_display }}</span>
+                {% elif d.ceka_na_qr %}
+                  <span class="closed-status closed-status-wait">{{ d.get_stav_display }}</span>
+                {% else %}
+                  <span class="closed-status closed-status-cancel">{{ d.get_stav_display }}</span>
+                {% endif %}
+              </td>
+              <td class="closed-amount">{{ d.celkem_s_dph|floatformat:-2 }} Kč</td>
+              <td class="text-end">
+                <a class="closed-btn closed-btn-light" href="{% url 'pokladna:pokladna_doklad_detail' pokladna.id d.id %}">Detail</a>
+                {% if d.ceka_na_qr %}
+                  <a class="closed-btn closed-btn-primary" href="{% url 'pokladna:pokladna_qr_platba' pokladna.id d.id %}">QR platba</a>
+                {% elif d.je_uzavreny and not d.uzaverka_id %}
+                  <form method="post" action="{% url 'pokladna:pokladna_stornovat_doklad' pokladna.id d.id %}" style="display:inline;">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="uzavrene">
+                    <button class="closed-btn closed-btn-danger" type="submit">Storno</button>
+                  </form>
+                {% else %}
+                  <span class="closed-meta"></span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="closed-empty">Zatím tu nejsou žádné uzavřené ani stornované doklady.</div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

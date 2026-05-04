@@ -1,20 +1,190 @@
-{% extends "admin/change_list.html" %}
-{% load i18n %}
+{% extends "admin/base_site.html" %}
+{% load static %}
 
-{% block object-tools %}
-  <div class="object-tools d-flex align-items-center gap-2" style="margin-right: 10px;">
-    <div>
-      <a href="{% url 'admin:jidelnicek_import_txt' %}"
-         class="button"
-         style="background-color:#0d6efd;
-                border-color:#0d6efd;
-                color:#fff;
-                padding:6px 12px;
-                border-radius:4px;
-                text-decoration:none;">
-        📄 Import TXT jídelníčku
-      </a>
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'jidelnicek/css/menu_list_admin.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="menu-list-page admin-shell admin-shell--wide">
+  <section class="menu-list-hero">
+    <div class="menu-list-hero-main">
+      <span class="menu-list-kicker">Jídelníčky</span>
+      <h1>Přehled jídelníčků</h1>
+      <p>
+        Kompaktní pracovní přehled pro rychlé hledání jídel, kontrolu obsahu dne a přímou úpravu konkrétního jídelníčku.
+      </p>
+      <div class="menu-list-chip-row">
+        <span class="menu-list-chip"><strong>Jídelníčků:</strong> {{ menu_total_count }}</span>
+        <span class="menu-list-chip"><strong>Položek:</strong> {{ menu_total_items }}</span>
+        {% if food_lookup %}
+          <span class="menu-list-chip accent"><strong>Shod jídel:</strong> {{ menu_matched_occurrences }}</span>
+        {% else %}
+          <span class="menu-list-chip"><strong>Hledání:</strong> podle názvu jídla</span>
+        {% endif %}
+      </div>
     </div>
-    {{ block.super }}
-  </div>
+    <div class="menu-list-hero-actions">
+      <a href="{% url 'admin:jidelnicek_jidelnicek_add' %}" class="admin-btn admin-btn--primary">
+        <i class="fas fa-plus"></i>
+        Nový jídelníček
+      </a>
+      <div class="menu-list-chip accent" style="display:flex; flex-direction:column; gap:4px; align-items:flex-start; min-width:300px;">
+        {% if last_menu_import %}
+          <strong style="font-size:13px;">
+            Poslední import:
+            {{ last_menu_import.get_source_display }}
+            • {{ last_menu_import.get_status_display }}
+          </strong>
+          <span style="font-size:12px;">
+            {{ last_menu_import.started_at|date:"d.m.Y H:i" }}
+            {% if last_menu_import.summary %}• {{ last_menu_import.summary }}{% endif %}
+          </span>
+        {% else %}
+          <strong style="font-size:13px;">Poslední import: zatím neběžel</strong>
+          <span style="font-size:12px;">Spusť autoimport z DATAx pro první naplnění dat.</span>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="admin-filter-panel">
+    <form method="get" class="admin-filter-form">
+      <div class="admin-filter-grid menu-list-filter-grid">
+        <div class="admin-field admin-field--span-2">
+          <label for="id_food_lookup">Najít jídlo v jídelníčku</label>
+          <input
+            type="text"
+            id="id_food_lookup"
+            name="q"
+            value="{{ search_query|default:food_lookup }}"
+            placeholder="Např. kuřecí řízek, guláš, jogurt…"
+          >
+        </div>
+        <div class="admin-field">
+          <label for="id_druh">Druh jídla</label>
+          <select id="id_druh" name="druh">
+            <option value="">Všechny druhy</option>
+            {% for kind in menu_kind_options %}
+              <option value="{{ kind.pk }}" {% if menu_selected_kind == kind.pk|stringformat:'s' %}selected{% endif %}>{{ kind.nazev }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="admin-field">
+          <label for="id_obsah">Obsah jídelníčku</label>
+          <select id="id_obsah" name="obsah">
+            <option value="">Vše</option>
+            <option value="with" {% if menu_content_state == "with" %}selected{% endif %}>Jen s položkami</option>
+            <option value="empty" {% if menu_content_state == "empty" %}selected{% endif %}>Jen prázdné</option>
+          </select>
+        </div>
+        <div class="admin-field">
+          <label for="id_od">Platnost od</label>
+          <input type="date" id="id_od" name="od" value="{{ menu_date_from }}">
+        </div>
+        <div class="admin-field">
+          <label for="id_do">Platnost do</label>
+          <input type="date" id="id_do" name="do" value="{{ menu_date_to }}">
+        </div>
+      </div>
+      <div class="admin-filter-actions">
+        <button type="submit" class="admin-btn admin-btn--primary">
+          <i class="fas fa-search"></i>
+          Hledat
+        </button>
+        {% if menu_filters_active %}
+          <a href="{% url 'admin:jidelnicek_jidelnicek_changelist' %}" class="admin-btn admin-btn--light">
+            <i class="fas fa-rotate-left"></i>
+            Zrušit filtry
+          </a>
+        {% endif %}
+      </div>
+    </form>
+  </section>
+
+  <section class="food-bulk-panel">
+    <form method="post" action="{% url 'admin:jidelnicek_jidelnicek_bulk_apply' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}" class="food-bulk-panel__form">
+      {% csrf_token %}
+      <div class="food-bulk-panel__title">
+        <strong>Hromadné operace nad aktuálním filtrem</strong>
+        <span>Operace se provede nad právě zobrazeným výběrem jídelníčků.</span>
+      </div>
+      <div class="food-bulk-panel__controls">
+        <select name="bulk_operation">
+          <option value="">Vyber operaci</option>
+          <option value="delete_empty">Smazat prázdné jídelníčky</option>
+        </select>
+        <button type="submit" class="admin-btn admin-btn--light" onclick="return confirm('Opravdu smazat prázdné jídelníčky z aktuálního výběru?');">
+          <i class="fas fa-bolt"></i>
+          Provést hromadně
+        </button>
+      </div>
+    </form>
+  </section>
+
+  {% if food_lookup %}
+    <section class="menu-list-context">
+      <div class="menu-list-context-card">
+        <strong>Hledání jídel:</strong> „{{ food_lookup }}“
+        <span>Nalezeno v {{ menu_total_count }} jídelníčcích a {{ menu_matched_occurrences }} položkách.</span>
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="menu-list-grid">
+    {% for menu in menu_cards %}
+      <article class="menu-list-card">
+        <div class="menu-list-card-head">
+          <div>
+            <h2>{{ menu.range_label }}</h2>
+            <div class="menu-list-card-meta">
+              <span class="menu-list-chip soft">{{ menu.items_count }} položek</span>
+              <span class="menu-list-chip soft">{{ menu.kind_count }} druhů jídel</span>
+              {% if menu.matched_count %}
+                <span class="menu-list-chip accent">{{ menu.matched_count }} nalezeno</span>
+              {% endif %}
+            </div>
+          </div>
+          <a href="{{ menu.edit_url }}" class="admin-btn admin-btn--small admin-btn--light">
+            <i class="fas fa-pen"></i>
+            Editovat
+          </a>
+        </div>
+
+        <div class="menu-list-items menu-list-items--row">
+          {% if food_lookup %}
+            <div class="menu-list-inline-note">
+              Zobrazené jsou jen nalezené položky. Celkem tento jídelníček obsahuje {{ menu.all_items_count }} položek.
+            </div>
+          {% endif %}
+          {% for item in menu.items %}
+            <div class="menu-list-item {% if item.is_match %}is-match{% endif %}">
+              <div class="menu-list-item-kind">
+                {% if item.kind_icon %}
+                  <i class="{{ item.kind_icon }}"></i>
+                {% endif %}
+                <span>{{ item.kind }}</span>
+              </div>
+              <strong class="menu-list-item-food">{{ item.food }}</strong>
+            </div>
+          {% empty %}
+            <div class="menu-list-empty">Tento jídelníček zatím nemá žádné položky.</div>
+          {% endfor %}
+        </div>
+      </article>
+    {% empty %}
+      <section class="menu-list-empty-state">
+        <strong>Žádné jídelníčky k zobrazení</strong>
+        <span>
+          {% if food_lookup %}
+            Zkus upravit hledaný název jídla nebo zrušit filtr.
+          {% else %}
+            Založ nový jídelníček nebo naimportuj data z DATAx.
+          {% endif %}
+        </span>
+      </section>
+    {% endfor %}
+  </section>
+</div>
 {% endblock %}

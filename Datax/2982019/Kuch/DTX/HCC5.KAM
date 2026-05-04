@@ -1,0 +1,76 @@
+Na obrazovce si prohl¡‘¡te recepty, kter‚ jste si tzv.  "odfiltrovali",  tj.
+ty recepty, kter‚ jste si ze  v¨ech  Va¨ich  recept–  vybrali  k  prohl¡‘en¡
+a p©¡padn˜m oprav m.
+Pro  vybran‚ recepty m–‘ete opravovat za©azen¡ do typu v˜robk– a seznam CCP,
+kritick˜ch kontroln¡ch bod–, kter‚ se u konkr‚tn¡ho receptu  maj¡  sledovat.
+M–‘ete si tak‚ prohl‚dnout vlastn¡ receptury, tj. rozpis surovin, ze kter˜ch
+se j¡dlo va©¡,  detailn¡ p©ehled sledovan˜ch znak–, kritick˜ch mez¡, zp–sob–
+a frekvenc¡ sledov n¡,  resp. se m–‘ete pod¡vat, kter‚  v¨echny  suroviny se
+pou‘¡vaj¡ ve vybran˜ch receptech.
+Chcete-li  prov dˆt  nˆjakou  ‡innost  pro v¨echny vybran‚ recepty, pou‘ijte
+funk‡n¡ kl vesu <F3> - "nastav hromadnˆ".  Pro  pr ci  s  konkr‚tn¡m  jedn¡m
+receptem se nejprve  postavte  kurzorem  na  odpov¡daj¡c¡ © dku, ve kter‚ je
+po‘adovan˜ recept, a stisknˆte funk‡n¡ kl vesu <F4> - "oprav aktu ln¡ vˆtu".
+
+Hromadn‚ nastaven¡ - kl vesa <F3>
+---------------------------------
+A) Nastav typ v˜robku a jeho CCP  -  touto  volbou  m–‘ete  v¨echny  vybran‚
+   recepty  za©adit  do  zvolen‚ho typu v˜robku a sou‡asnˆ u v¨ech vybran˜ch
+   recept–  nastavit  standardn¡  seznam  sledovan˜ch  CCP. Program do v¨ech
+   vybran˜ch  recept– zap¡¨e takov˜ seznam CCP, kt. m me uveden˜ u zvolen‚ho
+   typu  v˜robku.  Nap©.  jsme  vybrali  v¨echny  pomaz nky a ©ekli jsme, ‘e 
+   tˆchto  vybran˜ch  25  recept–  na  pomaz nky m  program ozna‡it jako typ
+   v˜robku  "S"  -  Studen‚ pokrmy.  V  tu chv¡li program do v¨ech vybran˜ch
+   recept–  zap¡¨e  takov˜  seznam CCP, kter˜  m me  uveden˜  u  tohoto typu
+   v˜robku.  Pokud  nap©.  u typu v˜robku "S" jsme definovali, ‘e se sleduj¡
+   kritick‚  body  1, 4 a 5, bude u v¨ech 25 vybran˜ch recept– nyn¡ zapsan‚,
+   ‘e se u nich sleduj¡ tyto t©i CCP - kritick‚ body ‡. 1, 4 a 5.
+B) Nastav jen typ v˜robku - touto volbou  m–‘ete v¨echny vybran‚ recepty jen
+   za©adit  do zvolen‚ho typu v˜robku, ale k recept–m se NEZAP‹›E standardn¡
+   seznam  sledovan˜ch  CCP - seznam  CCP u jednotliv˜ch recept– se nezmˆn¡.
+   U recept– se pouze nastav¡ typ v˜robku.
+C) P©idej zvolen˜ CCP - pro vybran‚ recepty m–‘eme hromadnˆ  p©idat  zvolen˜
+   kritick˜  bod. Vybereme si CCP, kter˜ se m  p©idat a zvolen˜ CCP se p©id  do  seznamu  sledovan˜ch CCP u v¨ech vybran˜ch recept– (u v¨ech vybran˜ch recept– se zvolen˜ CCP bude sledovat).
+D) Uber zvolen˜ CCP - zvolen˜  CCP  se  odstran¡  ze seznamu sledovan˜ch CCP
+   u v¨ech  vybran˜ch  recept–  -  pro vybran‚ recepty se zvolen˜ CCP nebude
+   sledovat.
+E) Seznam v¨ech surovin - pro vybran‚ recepty zobraz¡ p©ehled v¨ech surovin,
+   skladov˜ch karet, kter‚ se ve vybran‚ skupinˆ recept– pou‘¡vaj¡.
+
+Oprava vybran‚ho receptu - kl vesa <F4>
+---------------------------------------
+A) Oprav seznam sledovan˜ch CCP - pro aktu lnˆ vybran˜ recept m–‘eme "ru‡nˆ"
+   opravit  seznam  sledovan˜ch CCP. T¡mto zp–sobem m–‘eme "doladit" recept,
+   tj. pro konkr‚tn¡ j¡dlo ru‡nˆ opravit seznam CCP, kter‚ se maj¡  sledovat
+   a kter‚ jsme si nap©. p©edeme hromadnˆ p©ednastavili kl vesou <F3>.
+   P©i opravˆ seznamu evidovan˜ch CCP vyb¡r me k¢dy CCP z ‡¡seln¡ku CCP nebo
+   p©¡mo zapisujeme seznam ‡¡sel kritick˜ch  bod–.  Zapisujeme-li  v¡ce  ne‘
+   jeden  kritick˜ bod, mus¡me ‡¡sla v seznamu oddˆlit st©edn¡kem a mezerou.
+   Nap©.: 1; 4; 5;
+B) Nastav typ v˜robku a CCP  -  touto  volbou  za©ad¡me  vybran˜  recept  do
+   zvolen‚ho  typu  v˜robku a sou‡asnˆ u tohoto receptu nastav¡me standardn¡
+   seznam  sledovan˜ch  CCP.  Program  pro tento recept zap¡¨e takov˜ seznam
+   CCP, kter˜ m me uveden˜ u zvolen‚ho typu v˜robku.
+C) Prohl¡‘ej recept, jak se va©¡ - tato  volba  uk ‘e vlastn¡ recept, rozpis
+   surovin, ze kter˜ch se toto j¡dlo va©¡.
+D) Uka‘ sledovan‚ znaky - pro  vybran˜  recept  n m  program  uk ‘e podrobnˆ
+   v¨echny sledovan‚ znaky.
+
+Seznam  CCP,  kter‚  se  u  jednotliv˜ch  j¡del  sleduj¡, m–‘eme dopl¤ovat a
+opravovat postupnˆ (nap©. po ‡ stech opravujeme ta j¡dla, kter  budeme va©it
+v nejbli‘¨¡ dobˆ).  J¡dla  (recepty),  u kter˜ch m me seznam CCP ji‘ spr vnˆ
+a  definitivnˆ  vyplnˆn˜, si m–‘eme vytisknout a tyto v˜pisy p©ilo‘it k na¨¡
+cel‚ dokumentaci o syst‚mu HACCP.
+
+Pokud  m me  u  recept– spr vnˆ vyplnˆn˜ seznam sledovan˜ch CCP (a m me tak‚
+samoz©ejmˆ  spr vnˆ  definovan‚ jednotliv‚ CCP), m–‘eme syst‚m sledov n¡ CCP
+v programu KUCHY¥KA za‡¡t pou‘¡vat. Nyn¡ sta‡¡ zapsat do programu j¡deln¡‡ky
+a sdˆlit programu, ‘e chceme p©ipravit tzv. "Provozn¡ knihu HACCP" na ur‡it˜
+den.  V  tu  chv¡li program zjist¡ z j¡deln¡‡ku, kter  j¡dla va©¡me a vybere
+ze seznamu recept– v¨echny kritick‚ body, kter‚ by se ten den mˆly sledovat.
+Program  p©iprav¡  "Provozn¡ knihu HACCP"  nejprve v pamˆti a tento formul ©
+n m  nab¡dne k p©¡padn˜m £prav m. Nˆkter‚ © dky formul ©e m–‘eme vy¨krtnout,
+m–‘eme  p©epsat  nebo doplnit texty, kter‚ vyplnil program, a m–‘eme tak‚ do
+formul ©e  doplnit nov‚ © dky. Hotov˜ formul © si vytiskneme a bˆhem vlastn¡
+p©¡pravy  pokrm–  (p©i vlastn¡m va©en¡)  do  nˆj ru‡nˆ zapisujeme po‘adovan‚
+£daje (zda je v¨echno v po© dku, kdo a kdy kontroloval apod.).

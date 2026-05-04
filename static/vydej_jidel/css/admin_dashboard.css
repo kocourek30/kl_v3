@@ -1,0 +1,190 @@
+.canteen-admin {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.canteen-admin__hero {
+  margin-bottom: 0;
+}
+
+.canteen-admin__hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .6rem;
+  margin-top: 1rem;
+}
+
+.canteen-admin__quicklinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .8rem;
+}
+
+.canteen-window-list,
+.canteen-notice-list,
+.canteen-top-list,
+.canteen-activity-list {
+  display: grid;
+  gap: .8rem;
+}
+
+.canteen-window,
+.canteen-top-item,
+.canteen-activity,
+.canteen-settings-card {
+  border: 1px solid #d9e7d6;
+  border-radius: 1rem;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fcf7 100%);
+}
+
+.canteen-window {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: .95rem 1rem;
+}
+
+.canteen-window--active {
+  border-color: #b9e1b3;
+  box-shadow: 0 14px 28px rgba(84, 174, 67, .08);
+}
+
+.canteen-window--upcoming {
+  border-color: #f0dcb3;
+}
+
+.canteen-window__meta {
+  display: grid;
+  justify-items: end;
+  gap: .45rem;
+}
+
+.canteen-window__count,
+.canteen-top-item__count {
+  font-weight: 800;
+  color: #21422a;
+  white-space: nowrap;
+}
+
+.canteen-notice {
+  border-radius: 1rem;
+  padding: 1rem 1.05rem;
+  border: 1px solid #dce7dd;
+}
+
+.canteen-notice strong {
+  display: block;
+  margin-bottom: .3rem;
+}
+
+.canteen-notice p {
+  margin: 0;
+  color: #647266;
+}
+
+.canteen-notice--success {
+  background: #f6fbf3;
+}
+
+.canteen-notice--warning {
+  background: #fffaf0;
+  border-color: #f2ddb0;
+}
+
+.canteen-notice--danger {
+  background: #fff5f5;
+  border-color: #efc8c8;
+}
+
+.canteen-notice--neutral {
+  background: #fafcfb;
+}
+
+.canteen-top-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: .9rem 1rem;
+}
+
+.canteen-activity {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .8rem;
+  padding: .9rem 1rem;
+}
+
+.canteen-activity__dot {
+  width: .72rem;
+  height: .72rem;
+  border-radius: 999px;
+  background: #9fb0a4;
+}
+
+.canteen-activity--success .canteen-activity__dot {
+  background: #54ae43;
+}
+
+.canteen-activity--warning .canteen-activity__dot {
+  background: #e59b2f;
+}
+
+.canteen-activity--danger .canteen-activity__dot {
+  background: #d85a5a;
+}
+
+.canteen-activity__content {
+  min-width: 0;
+}
+
+.canteen-activity__meta {
+  white-space: nowrap;
+  font-size: .82rem;
+  color: #6b786d;
+}
+
+.canteen-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: .9rem;
+}
+
+.canteen-settings-card {
+  display: grid;
+  gap: .35rem;
+  padding: 1rem 1.05rem;
+  text-decoration: none;
+  color: inherit;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+
+.canteen-settings-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(54, 88, 47, .08);
+  border-color: #bcdcb6;
+  text-decoration: none;
+}
+
+.canteen-settings-card span {
+  color: #6b786d;
+}
+
+@media (max-width: 1100px) {
+  .canteen-window,
+  .canteen-top-item {
+    align-items: flex-start;
+  }
+
+  .canteen-window,
+  .canteen-activity {
+    grid-template-columns: 1fr;
+  }
+
+  .canteen-window__meta,
+  .canteen-activity__meta {
+    justify-items: start;
+  }
+}

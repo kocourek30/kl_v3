@@ -1,17 +1,22 @@
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
+import calendar
 import os
+import zipfile
 
 from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
-from django.db.models import Sum
+from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
+from django.core.exceptions import ValidationError
+from django.db.models import Q, Sum
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, redirect
 from django.template.response import TemplateResponse
-from django.urls import path
-from django.utils.html import format_html
+from django.urls import path, reverse
+from django.utils.dateparse import parse_date
+from django.utils.html import escape, format_html
 from django.utils.safestring import mark_safe
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
@@ -32,12 +37,15 @@ from reportlab.platypus import (
 
 from django.contrib.admin import ModelAdmin
 
+from kliknijidlo.pdf_utils import czech_pdf_styles, money_cs, safe_table
+
 from objednavky.models import OrderItem
 from users.models import StravovaciSkupina
 from .models import (
     SkladDashboard,
     Surovina,
     StavSkladu,
+    Dodavatel,
     PohybSkladu,
     RecepturaPolozka,
     KomponentaJidla,
@@ -47,12 +55,16 @@ from .models import (
     PolozkaPrijmu,
     Inventura,
     PolozkaInventury,
+    PolozkaInventurySarze,
     InventurniDoklad,
     Vydejka,
     PolozkaVydejky,
     NormaSpotrebnihoKose,
     ReportNakladySkladu,
     ToleranceSpotrebnihoKose,
+    SarzeSkladu,
+    OdpisExpirace,
+    SkladovaUzaverka,
 )
 
 from .services import (
@@ -60,18 +72,47 @@ from .services import (
     objednavky_rekap_data,
     get_order_items_for_vydejka,
     najdi_nedostatecne_stavy_pro_vydejku,
+    spocitej_spotrebu_jidla,
     uzavri_prijem,
     uzavri_vydejku,
     uzavri_inventuru,
+    stornuj_prijem,
+    stornuj_vydejku,
+    stornuj_inventuru,
+    uzavri_odpis_expirace,
+    aktualizuj_stavy_sarzi,
+    souhrn_odpisu_expirace,
     validace_surovin_pro_sk,
     spocitej_stravnikodny_obdobi,
     spocitej_spotrebu_sk_mesic,
     priprav_radky_spotrebi_kos_tabulka,
     spocitej_naklady_mesic,
+    mesicni_skladova_uzaverka,
+    denni_skladovy_checklist,
+    inventurni_nahled,
+    karta_suroviny_data,
+    managersky_report_skladu,
+    najdi_rozdily_stav_vs_sarze,
+    napln_sarzovou_inventuru,
+    nahled_vydejky,
+    navrh_nakupu,
+    pruvodce_skladovou_uzaverkou,
+    souhrn_sarzove_inventury,
+    synchronizuj_surovinove_polozky_inventury,
+    uzavri_skladovou_uzaverku,
+    otevri_skladovou_uzaverku,
+    validace_prijemky_pred_uzavrenim,
+    format_cena_za_jednotku,
+    format_mnozstvi_s_jednotkou,
     priprav_naklady_podle_skupin_sk,
     spocitej_podil_masnych_vyrobku,
     spocitej_podil_bio,
     spocitej_volny_cukr,
+    spocitej_legislativni_ukazatele_sk,
+    spocitej_souhrn_spotrebniho_kose,
+    zkontroluj_jidelnicek_sk,
+    zdravi_skladu,
+    doklady_k_oprave,
 )
 
 from .forms import SpotrebniKosForm
@@ -104,6 +145,179 @@ def _prepare_uzavreni_po_ulozeni(model, obj, change):
             obj.uzavrel = None
 
     return obj
+
+
+def _pdf_styles():
+    return czech_pdf_styles()
+
+
+def _inventura_pdf_data(inventura):
+    if inventura.sarze_polozky.exists():
+        rows = []
+        manko = Decimal("0")
+        prebytek = Decimal("0")
+        for pol in inventura.sarze_polozky.select_related("surovina", "sarze_skladu").order_by("surovina__nazev", "datum_spotreby", "id"):
+            cena = pol.cena_za_jednotku or pol.surovina.prumerna_cena_za_jednotku or Decimal("0")
+            rozdil = pol.rozdil or Decimal("0")
+            hodnota = abs(rozdil) * cena
+            if rozdil < 0:
+                manko += hodnota
+            elif rozdil > 0:
+                prebytek += hodnota
+            rows.append([
+                pol.surovina.nazev,
+                pol.sarze or "-",
+                pol.datum_spotreby.strftime("%d.%m.%Y") if pol.datum_spotreby else "-",
+                format_mnozstvi_s_jednotkou(pol.surovina, pol.stav_pred),
+                format_mnozstvi_s_jednotkou(pol.surovina, pol.fyzicky_stav),
+                format_mnozstvi_s_jednotkou(pol.surovina, rozdil),
+                money_cs(hodnota),
+                pol.poznamka or "",
+            ])
+        return {"mode": "sarze", "rows": rows, "manko": manko, "prebytek": prebytek, "cisty_rozdil": prebytek - manko}
+
+    rows = []
+    manko = Decimal("0")
+    prebytek = Decimal("0")
+    for pol in inventura.polozky.select_related("surovina").order_by("surovina__nazev", "id"):
+        cena = pol.surovina.prumerna_cena_za_jednotku or Decimal("0")
+        rozdil = pol.rozdil or Decimal("0")
+        hodnota = abs(rozdil) * cena
+        if rozdil < 0:
+            manko += hodnota
+        elif rozdil > 0:
+            prebytek += hodnota
+        rows.append([
+            pol.surovina.nazev,
+            "-",
+            "-",
+            format_mnozstvi_s_jednotkou(pol.surovina, pol.stav_pred),
+            format_mnozstvi_s_jednotkou(pol.surovina, pol.fyzicky_stav),
+            format_mnozstvi_s_jednotkou(pol.surovina, rozdil),
+            money_cs(hodnota),
+            "",
+        ])
+    return {"mode": "suroviny", "rows": rows, "manko": manko, "prebytek": prebytek, "cisty_rozdil": prebytek - manko}
+
+
+def inventura_pdf_view(request, inventura_id):
+    inventura = get_object_or_404(Inventura, pk=inventura_id)
+    styles, font_name = _pdf_styles()
+    data = _inventura_pdf_data(inventura)
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        topMargin=1.5 * cm,
+        bottomMargin=1.5 * cm,
+        leftMargin=1.1 * cm,
+        rightMargin=1.1 * cm,
+    )
+
+    stav = "uzavřená" if inventura.uzavreny else "otevřená"
+    if inventura.stornovano:
+        stav = "stornovaná"
+
+    story = [
+        Paragraph(f"Inventurní protokol #{inventura.id}", styles["Title"]),
+        Spacer(1, 0.25 * cm),
+        Paragraph(f"Datum inventury: {inventura.datum.strftime('%d.%m.%Y')}", styles["Normal"]),
+        Paragraph(f"Stav dokladu: {stav}", styles["Normal"]),
+        Paragraph(f"Vytvořil: {escape(str(inventura.vytvoril or '-'))}", styles["Normal"]),
+        Paragraph(f"Uzavřel: {escape(str(inventura.uzavrel or '-'))}", styles["Normal"]),
+        Paragraph(f"Poznámka: {escape(inventura.popis or '-')}", styles["Normal"]),
+        Spacer(1, 0.4 * cm),
+        Paragraph("Souhrn rozdílů", styles["Heading2"]),
+    ]
+
+    summary_table = safe_table(
+        [
+            ["Manko", money_cs(data["manko"])],
+            ["Přebytek", money_cs(data["prebytek"])],
+            ["Čistý rozdíl", money_cs(data["cisty_rozdil"])],
+            ["Režim", "Šaržová inventura" if data["mode"] == "sarze" else "Surovinová inventura"],
+        ],
+        [6 * cm, 5 * cm],
+        font_name=font_name,
+        header=False,
+        style_commands=[
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+            ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
+            ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ],
+    )
+    story += [summary_table, Spacer(1, 0.5 * cm), Paragraph("Položky inventury", styles["Heading2"])]
+
+    table_data = [["Surovina", "Šarže", "Spotřeba", "Účetní stav", "Fyzický stav", "Rozdíl", "Hodnota", "Poznámka"]]
+    table_data.extend(data["rows"] or [["Bez položek", "-", "-", "-", "-", "-", "-", "-"]])
+    table = safe_table(
+        table_data,
+        [3.4 * cm, 2.2 * cm, 2.0 * cm, 2.3 * cm, 2.3 * cm, 2.0 * cm, 2.1 * cm, 2.0 * cm],
+        font_name=font_name,
+        font_size=7,
+        repeat_rows=1,
+        style_commands=[
+            ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+            ("FONTSIZE", (0, 0), (-1, -1), 7),
+            ("GRID", (0, 0), (-1, -1), 0.35, colors.grey),
+            ("ALIGN", (3, 1), (6, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ],
+    )
+    story.append(table)
+
+    doc.build(story)
+    pdf = buffer.getvalue()
+    buffer.close()
+
+    response = HttpResponse(pdf, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="inventura_{inventura.id}.pdf"'
+    return response
+
+
+def _uzaverka_mesice_link(obj):
+    if not obj or not getattr(obj, "datum", None):
+        return "-"
+    url = reverse("admin:sklad_uzaverka_mesic", args=[obj.datum.year, obj.datum.month])
+    label = f"Uzávěrka {obj.datum.month:02d}/{obj.datum.year}"
+    return format_html(
+        '<a class="button" href="{}">{}</a>',
+        url,
+        label,
+    )
+
+
+def _storno_action_s_duvodem(modeladmin, request, queryset, *, title, action_name, callback, success_label):
+    selected = request.POST.getlist(ACTION_CHECKBOX_NAME)
+    if request.POST.get("apply"):
+        form = StornoDuvodForm(request.POST)
+        if form.is_valid():
+            duvod = form.cleaned_data["duvod"].strip()
+            stornovano = 0
+            for obj in queryset:
+                try:
+                    if callback(obj, request.user, duvod):
+                        stornovano += 1
+                except ValidationError as exc:
+                    messages.error(request, f"{obj}: {' '.join(exc.messages)}")
+            messages.success(request, f"{success_label}: {stornovano}.")
+            return None
+    else:
+        form = StornoDuvodForm()
+
+    context = dict(
+        modeladmin.admin_site.each_context(request),
+        title=title,
+        form=form,
+        queryset=queryset,
+        action_name=action_name,
+        selected=selected,
+        opts=modeladmin.model._meta,
+    )
+    return TemplateResponse(request, "admin/sklad/storno_s_duvodem.html", context)
 
 
 def _dopln_vydejku_z_objednavek_pokud_je_prazdna(vydejka):
@@ -159,6 +373,50 @@ class MesicniNakladyForm(forms.Form):
     )
 
 
+class NavrhNakupuForm(forms.Form):
+    date_from = forms.DateField(
+        label="Od data",
+        initial=date.today,
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    date_to = forms.DateField(
+        label="Do data",
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date"}),
+        help_text="Když necháš prázdné, počítá se 7 dní od data Od.",
+    )
+    dodavatel = forms.ModelChoiceField(
+        label="Dodavatel",
+        queryset=Dodavatel.objects.all(),
+        required=False,
+        help_text="Volitelné filtrování podle posledního dodavatele suroviny.",
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        date_from = cleaned.get("date_from")
+        date_to = cleaned.get("date_to")
+        if date_from and date_to and date_from > date_to:
+            raise forms.ValidationError("Datum Od nesmí být po datu Do.")
+        return cleaned
+
+
+class ImportPrijemXlsxForm(forms.Form):
+    soubor = forms.FileField(
+        label="Excel soubor",
+        help_text="Očekávané sloupce: surovina, mnozstvi, jednotkova_cena, pocet_baleni, mnozstvi_v_baleni, jednotka_baleni, cena_za_baleni_bez_dph, sazba_dph, sarze, datum_spotreby.",
+    )
+
+
+class StornoDuvodForm(forms.Form):
+    duvod = forms.CharField(
+        label="Důvod storna",
+        max_length=255,
+        widget=forms.Textarea(attrs={"rows": 3}),
+        help_text="Důvod se uloží k dokladu a zůstane součástí auditní stopy.",
+    )
+
+
 @admin.register(ReportNakladySkladu)
 class ReportNakladySkladuAdmin(admin.ModelAdmin):
     """
@@ -195,6 +453,8 @@ class ReportNakladySkladuAdmin(admin.ModelAdmin):
 
         souhrnne_naklady = None
         naklady_podle_sk = None
+        skladova_uzaverka = None
+        managersky_report = None
 
         if form.is_valid():
             rok = form.cleaned_data["rok"]
@@ -202,7 +462,9 @@ class ReportNakladySkladuAdmin(admin.ModelAdmin):
             skupina = form.cleaned_data["stravovaci_skupina"]
 
             souhrnne_naklady = spocitej_naklady_mesic(rok, mesic, skupina)
+            skladova_uzaverka = mesicni_skladova_uzaverka(rok, mesic)
             naklady_podle_sk = priprav_naklady_podle_skupin_sk(rok, mesic, skupina)
+            managersky_report = managersky_report_skladu(rok, mesic)
 
         context = dict(
             self.admin_site.each_context(request),
@@ -210,6 +472,8 @@ class ReportNakladySkladuAdmin(admin.ModelAdmin):
             form=form,
             souhrnne_naklady=souhrnne_naklady,
             naklady_podle_sk=naklady_podle_sk,
+            skladova_uzaverka=skladova_uzaverka,
+            managersky_report=managersky_report,
         )
         return TemplateResponse(
             request,
@@ -225,8 +489,8 @@ class ReportNakladySkladuAdmin(admin.ModelAdmin):
 
 @admin.register(NormaSpotrebnihoKose)
 class NormaSKAdmin(admin.ModelAdmin):
-    list_display = ("stravovaci_skupina", "skupina_sk", "norma_g_mesic")
-    list_filter = ("stravovaci_skupina", "skupina_sk")
+    list_display = ("vekova_kategorie", "typ_jidla", "skupina_sk", "norma_g_den", "stravovaci_skupina")
+    list_filter = ("vekova_kategorie", "typ_jidla", "skupina_sk", "stravovaci_skupina")
     search_fields = ("stravovaci_skupina__nazev",)
 
 
@@ -278,7 +542,9 @@ def spocitej_stravnikodny_mesic(rok: int, mesic: int, stravovaci_skupina=None):
 
 @admin.register(SkladDashboard)
 class SkladSpotrebniKosAdmin(ModelAdmin):
-    change_list_template = "admin/sklad/mesicni_spotrebni_kos.html"
+    change_list_template = "admin/sklad/dashboard.html"
+    expirace_varovani_dnu = 14
+    limit_minima_nasobek = Decimal("1.20")
 
     def get_queryset(self, request):
         return SkladDashboard.objects.none()
@@ -292,6 +558,91 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         return False
 
+    def _dashboard_expirace(self, target_date):
+        expirace_do = target_date + timedelta(days=self.expirace_varovani_dnu)
+        aktualizuj_stavy_sarzi(dnes=target_date)
+        sarze_qs = (
+            SarzeSkladu.objects
+            .filter(
+                datum_spotreby__isnull=False,
+                datum_spotreby__lte=expirace_do,
+                mnozstvi_zbyva__gt=0,
+                stav__in=[
+                    SarzeSkladu.STAV_POUZITELNA,
+                    SarzeSkladu.STAV_KARANTENA,
+                    SarzeSkladu.STAV_EXPIROVANA,
+                ],
+            )
+            .select_related("surovina", "polozka_prijmu", "polozka_prijmu__prijem", "polozka_prijmu__prijem__dodavatel")
+            .order_by("datum_spotreby", "surovina__nazev", "id")[:20]
+        )
+        return [
+            {
+                "surovina": sarze.surovina,
+                "sarze": sarze.sarze,
+                "stav": sarze.stav,
+                "datum_spotreby": sarze.datum_spotreby,
+                "mnozstvi_zbyva": sarze.mnozstvi_zbyva,
+                "mnozstvi_zbyva_display": format_mnozstvi_s_jednotkou(sarze.surovina, sarze.mnozstvi_zbyva),
+                "polozka_prijmu": sarze.polozka_prijmu,
+            }
+            for sarze in sarze_qs
+        ]
+
+    def _dashboard_minimum_alerty(self):
+        alerty = []
+        stavy = StavSkladu.objects.select_related("surovina").filter(min_mnozstvi__gt=0)
+        for stav in stavy:
+            mnozstvi = stav.mnozstvi or Decimal("0")
+            minimum = stav.min_mnozstvi or Decimal("0")
+            limit_blizko = minimum * self.limit_minima_nasobek
+            if mnozstvi > limit_blizko:
+                continue
+
+            alerty.append({
+                "surovina": stav.surovina,
+                "mnozstvi": mnozstvi,
+                "mnozstvi_display": format_mnozstvi_s_jednotkou(stav.surovina, mnozstvi),
+                "minimum": minimum,
+                "minimum_display": format_mnozstvi_s_jednotkou(stav.surovina, minimum),
+                "limit_blizko": limit_blizko,
+                "pod_min": mnozstvi <= minimum,
+                "procento_minima": (mnozstvi / minimum * Decimal("100")) if minimum else Decimal("0"),
+            })
+
+        return sorted(
+            alerty,
+            key=lambda row: (not row["pod_min"], row["procento_minima"], row["surovina"].nazev),
+        )[:20]
+
+    def _dashboard_import_quality(self):
+        partner_qs = Dodavatel.objects.filter(datax_zdroj__startswith="DATAx").order_by("typ_subjektu", "nazev")
+        review_qs = partner_qs.filter(
+            Q(typ_subjektu=Dodavatel.TYP_DODAVATEL, ico="")
+            | Q(typ_subjektu__in=[Dodavatel.TYP_STREDISKO, Dodavatel.TYP_PROVOZ], adresa="")
+            | Q(nazev__icontains="spotreby")
+            | Q(nazev__icontains="kuchyne")
+            | Q(nazev__icontains="lahud")
+            | Q(nazev__icontains="bile")
+        )[:8]
+        return {
+            "partner_total": partner_qs.count(),
+            "dodavatele": partner_qs.filter(typ_subjektu=Dodavatel.TYP_DODAVATEL).count(),
+            "strediska": partner_qs.filter(typ_subjektu=Dodavatel.TYP_STREDISKO).count(),
+            "provozy": partner_qs.filter(typ_subjektu=Dodavatel.TYP_PROVOZ).count(),
+            "technicke": partner_qs.filter(typ_subjektu=Dodavatel.TYP_TECHNICKY).count(),
+            "historicke_prijemky": PrijemSkladu.objects.filter(popis__startswith="DATAx import QHK01").count(),
+            "historicke_pohyby": PohybSkladu.objects.filter(
+                Q(poznamka__startswith="DATAx import QHK01")
+                | Q(poznamka__startswith="DATAx import QHK10")
+            ).count(),
+            "receptury": RecepturaPolozka.objects.count(),
+            "suroviny_bez_skupiny": Surovina.objects.filter(
+                Q(skupina_sk="") | Q(skupina_sk=Surovina.SK_NEZAPOCITAVA_SE)
+            ).count(),
+            "partneri_ke_kontrole": list(review_qs),
+        }
+
     def get_urls(self):
         urls = super().get_urls()
         custom = [
@@ -300,11 +651,282 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
                 self.admin_site.admin_view(self.spotrebni_kos_view),
                 name="sklad_mesicni_spotrebni_kos",
             ),
+            path(
+                "mesicni-spotrebni-kos/xls/",
+                self.admin_site.admin_view(self.spotrebni_kos_xls_view),
+                name="sklad_mesicni_spotrebni_kos_xls",
+            ),
+            path(
+                "mesicni-spotrebni-kos/pdf/",
+                self.admin_site.admin_view(self.spotrebni_kos_pdf_view),
+                name="sklad_mesicni_spotrebni_kos_pdf",
+            ),
+            path(
+                "navrh-nakupu/",
+                self.admin_site.admin_view(self.navrh_nakupu_view),
+                name="sklad_navrh_nakupu",
+            ),
+            path(
+                "navrh-nakupu/xlsx/",
+                self.admin_site.admin_view(self.navrh_nakupu_xlsx_view),
+                name="sklad_navrh_nakupu_xlsx",
+            ),
+            path(
+                "zdravi-skladu/",
+                self.admin_site.admin_view(self.zdravi_skladu_view),
+                name="sklad_zdravi_skladu",
+            ),
+            path(
+                "zdravi-skladu/pdf/",
+                self.admin_site.admin_view(self.zdravi_skladu_pdf_view),
+                name="sklad_zdravi_skladu_pdf",
+            ),
+            path(
+                "doklady-k-oprave/",
+                self.admin_site.admin_view(self.doklady_k_oprave_view),
+                name="sklad_doklady_k_oprave",
+            ),
         ]
         return custom + urls
 
+    def changelist_view(self, request, extra_context=None):
+        target_date = parse_date(request.GET.get("date") or "") or date.today()
+
+        expected = {}
+        order_items = (
+            OrderItem.objects
+            .select_related("menu_item__jidlo")
+            .filter(order__datum_vydeje=target_date)
+        )
+        for item in order_items:
+            spotreba = spocitej_spotrebu_jidla(item.menu_item.jidlo, Decimal(item.quantity))
+            for surovina_id, mnozstvi in spotreba.items():
+                expected[surovina_id] = expected.get(surovina_id, Decimal("0")) + mnozstvi
+
+        real = {}
+        pohyby = (
+            PohybSkladu.objects
+            .filter(vydejka__datum=target_date, typ=PohybSkladu.TYP_VYDEJ)
+            .select_related("surovina")
+        )
+        for pohyb in pohyby:
+            real[pohyb.surovina_id] = real.get(pohyb.surovina_id, Decimal("0")) + (pohyb.mnozstvi or Decimal("0"))
+
+        surovina_ids = set(expected.keys()) | set(real.keys())
+        suroviny = {
+            s.id: s
+            for s in Surovina.objects.filter(id__in=surovina_ids).select_related("stav")
+        }
+
+        rows = []
+        for surovina_id in sorted(surovina_ids, key=lambda sid: suroviny[sid].nazev if sid in suroviny else ""):
+            surovina = suroviny.get(surovina_id)
+            if not surovina:
+                continue
+            stav = getattr(surovina, "stav", None)
+            stav_mnozstvi = stav.mnozstvi if stav else None
+            min_mnozstvi = stav.min_mnozstvi if stav else None
+            rows.append({
+                "surovina": surovina,
+                "expected": expected.get(surovina_id, Decimal("0")),
+                "expected_display": format_mnozstvi_s_jednotkou(surovina, expected.get(surovina_id, Decimal("0"))),
+                "real": real.get(surovina_id, Decimal("0")),
+                "real_display": format_mnozstvi_s_jednotkou(surovina, real.get(surovina_id, Decimal("0"))),
+                "stav": stav_mnozstvi,
+                "stav_display": format_mnozstvi_s_jednotkou(surovina, stav_mnozstvi) if stav_mnozstvi is not None else None,
+                "min": min_mnozstvi,
+                "min_display": format_mnozstvi_s_jednotkou(surovina, min_mnozstvi) if min_mnozstvi is not None else None,
+                "pod_min": (
+                    stav_mnozstvi is not None
+                    and min_mnozstvi is not None
+                    and stav_mnozstvi <= min_mnozstvi
+                ),
+                "blizko_min": (
+                    stav_mnozstvi is not None
+                    and min_mnozstvi is not None
+                    and min_mnozstvi > 0
+                    and min_mnozstvi < stav_mnozstvi <= (min_mnozstvi * self.limit_minima_nasobek)
+                ),
+            })
+
+        extra_context = extra_context or {}
+        extra_context.update({
+            "target_date": target_date,
+            "rows": rows,
+            "expirace_do": target_date + timedelta(days=self.expirace_varovani_dnu),
+            "expirace_polozky": self._dashboard_expirace(target_date),
+            "minimum_alerty": self._dashboard_minimum_alerty(),
+            "rozdily_stav_sarze": najdi_rozdily_stav_vs_sarze()[:20],
+            "denni_checklist": denni_skladovy_checklist(target_date),
+            "navrh_nakupu_url": "navrh-nakupu/",
+            "zdravi_skladu": zdravi_skladu(target_date),
+            "zdravi_skladu_url": "zdravi-skladu/",
+            "zdravi_skladu_pdf_url": f"zdravi-skladu/pdf/?date={target_date.isoformat()}",
+            "doklady_k_oprave_url": "doklady-k-oprave/",
+            "import_quality": self._dashboard_import_quality(),
+            "dodavatele_url": reverse("admin:sklad_dodavatel_changelist"),
+            "prijemky_url": reverse("admin:sklad_prijemskladu_changelist"),
+            "pohyby_url": reverse("admin:sklad_pohybskladu_changelist"),
+            "suroviny_url": reverse("admin:sklad_surovina_changelist"),
+        })
+        return super().changelist_view(request, extra_context=extra_context)
+
+    def doklady_k_oprave_view(self, request):
+        date_to = parse_date(request.GET.get("date_to") or "") or date.today()
+        date_from = parse_date(request.GET.get("date_from") or "") or (date_to - timedelta(days=30))
+        data = doklady_k_oprave(date_from=date_from, date_to=date_to)
+        context = dict(
+            self.admin_site.each_context(request),
+            title="Doklady k opravě",
+            data=data,
+        )
+        return TemplateResponse(request, "admin/sklad/doklady_k_oprave.html", context)
+
+    def zdravi_skladu_view(self, request):
+        target_date = parse_date(request.GET.get("date") or "") or date.today()
+        data = zdravi_skladu(target_date)
+        context = dict(
+            self.admin_site.each_context(request),
+            title="Kontrolní report zdraví skladu",
+            data=data,
+            pdf_url=f"pdf/?date={target_date.isoformat()}",
+        )
+        return TemplateResponse(request, "admin/sklad/zdravi_skladu.html", context)
+
+    def zdravi_skladu_pdf_view(self, request):
+        target_date = parse_date(request.GET.get("date") or "") or date.today()
+        data = zdravi_skladu(target_date)
+        styles, font_name = _pdf_styles()
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=1.4 * cm,
+            leftMargin=1.4 * cm,
+            topMargin=1.4 * cm,
+            bottomMargin=1.4 * cm,
+        )
+        story = [
+            Paragraph("Kontrolní report zdraví skladu", styles["Title"]),
+            Spacer(1, 0.25 * cm),
+            Paragraph(f"Datum kontroly: {target_date.strftime('%d.%m.%Y')}", styles["Normal"]),
+            Paragraph(f"Hodnota skladu: {money_cs(data['hodnota_skladu'])}", styles["Normal"]),
+            Paragraph(f"Skóre skladu: {data['skore']} %", styles["Normal"]),
+            Spacer(1, 0.4 * cm),
+        ]
+        table_data = [["Kontrola", "Počet", "Stav", "Poznámka"]]
+        for row in data["rizika"]:
+            table_data.append([
+                row["nazev"],
+                row["pocet"],
+                "V pořádku" if row["ok"] else "Vyžaduje kontrolu",
+                row["popis"],
+            ])
+        table = safe_table(
+            table_data,
+            [5.3 * cm, 1.7 * cm, 3.2 * cm, 7 * cm],
+            font_name=font_name,
+            font_size=8,
+            style_commands=[
+                ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.grey),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ],
+        )
+        story.append(table)
+        doc.build(story)
+        pdf = buffer.getvalue()
+        buffer.close()
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="zdravi_skladu_{target_date.isoformat()}.pdf"'
+        return response
+
+    def navrh_nakupu_view(self, request):
+        form = NavrhNakupuForm(request.GET or None)
+        data = None
+        if form.is_valid():
+            date_from = form.cleaned_data["date_from"]
+            date_to = form.cleaned_data["date_to"]
+            dodavatel = form.cleaned_data["dodavatel"]
+            data = navrh_nakupu(date_from=date_from, date_to=date_to)
+            if dodavatel:
+                data["radky"] = [row for row in data["radky"] if row["dodavatel"] == dodavatel]
+                data["odhad_celkem"] = sum((row["odhad_ceny"] for row in data["radky"]), Decimal("0"))
+        elif not request.GET:
+            form = NavrhNakupuForm(initial={"date_from": date.today()})
+            data = navrh_nakupu(date_from=date.today())
+
+        context = dict(
+            self.admin_site.each_context(request),
+            title="Návrh nákupu",
+            form=form,
+            data=data,
+            xlsx_url="xlsx/?" + request.GET.urlencode() if request.GET else "xlsx/",
+        )
+        return TemplateResponse(request, "admin/sklad/navrh_nakupu.html", context)
+
+    def navrh_nakupu_xlsx_view(self, request):
+        form = NavrhNakupuForm(request.GET or None)
+        if form.is_valid():
+            date_from = form.cleaned_data["date_from"]
+            date_to = form.cleaned_data["date_to"]
+            dodavatel = form.cleaned_data["dodavatel"]
+        else:
+            date_from = date.today()
+            date_to = None
+            dodavatel = None
+        data = navrh_nakupu(date_from=date_from, date_to=date_to)
+        if dodavatel:
+            data["radky"] = [row for row in data["radky"] if row["dodavatel"] == dodavatel]
+            data["odhad_celkem"] = sum((row["odhad_ceny"] for row in data["radky"]), Decimal("0"))
+
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Návrh nákupu"
+        ws.append(["Návrh nákupu", f"{data['date_from'].strftime('%d.%m.%Y')} - {data['date_to'].strftime('%d.%m.%Y')}"])
+        ws.append([])
+        ws.append(["Surovina", "Aktuální stav", "Minimum", "Plán", "Doporučené množství", "Dodavatel", "Cena", "Odhad Kč"])
+        for row in data["radky"]:
+            ws.append([
+                row["surovina"].nazev,
+                row["aktualni_display"],
+                row["minimum_display"],
+                row["plan_display"],
+                row["chybi_display"],
+                str(row["dodavatel"] or ""),
+                row["cena_display"],
+                float(row["odhad_ceny"] or 0),
+            ])
+        ws.append([])
+        ws.append(["Odhad celkem Kč", float(data["odhad_celkem"] or 0)])
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        response = HttpResponse(
+            output.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="navrh_nakupu.xlsx"'
+        return response
+
     @method_decorator(never_cache)
     def spotrebni_kos_view(self, request):
+        data = self._spotrebni_kos_data(request)
+        context = dict(
+            self.admin_site.each_context(request),
+            **data,
+        )
+        return TemplateResponse(
+            request,
+            "admin/sklad/mesicni_spotrebni_kos.html",
+            context,
+        )
+
+    def _spotrebni_kos_data(self, request):
         form = SpotrebniKosForm(request.GET or None)
 
         rows = []
@@ -312,6 +934,10 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
         maso_stat = None
         bio_stat = None
         volny_cukr_g = None
+        legislativni_ukazatele = None
+        kontroly_jidelnicku = None
+        souhrn = None
+        export_query = request.GET.urlencode()
         data_warnings = validace_surovin_pro_sk()
 
         if form.is_valid():
@@ -359,23 +985,134 @@ class SkladSpotrebniKosAdmin(ModelAdmin):
                 volny_cukr_g = spocitej_volny_cukr(
                     date_from, date_to, stravovaci_skupina
                 )
+                legislativni_ukazatele = spocitej_legislativni_ukazatele_sk(
+                    date_from, date_to, stravovaci_skupina
+                )
+                kontroly_jidelnicku = zkontroluj_jidelnicek_sk(
+                    date_from, date_to, stravovaci_skupina
+                )
+                souhrn = spocitej_souhrn_spotrebniho_kose(
+                    date_from, date_to, stravovaci_skupina
+                )
 
-        context = dict(
-            self.admin_site.each_context(request),
-            title="Spotřební koš – nové metodické ukazatele",
-            form=form,
-            rows=rows,
-            circle_row=circle_row,
-            maso_stat=maso_stat,
-            bio_stat=bio_stat,
-            volny_cukr_g=volny_cukr_g,
-            data_warnings=data_warnings,
+        return {
+            "title": "Spotřební koš – nové metodické ukazatele",
+            "form": form,
+            "rows": rows,
+            "circle_row": circle_row,
+            "maso_stat": maso_stat,
+            "bio_stat": bio_stat,
+            "volny_cukr_g": volny_cukr_g,
+            "legislativni_ukazatele": legislativni_ukazatele,
+            "kontroly_jidelnicku": kontroly_jidelnicku,
+            "souhrn": souhrn,
+            "export_query": export_query,
+            "data_warnings": data_warnings,
+        }
+
+    def spotrebni_kos_xls_view(self, request):
+        data = self._spotrebni_kos_data(request)
+        souhrn = data.get("souhrn") or {}
+        rows = data.get("rows") or []
+
+        html = [
+            "<html><head><meta charset='utf-8'></head><body>",
+            "<h1>Spotřební koš</h1>",
+            "<table border='1'>",
+            "<tr><th>Ukazatel</th><th>Hodnota</th></tr>",
+            f"<tr><td>Počet jídel</td><td>{souhrn.get('pocet_jidel', 0)}</td></tr>",
+            f"<tr><td>Počet strávníků</td><td>{souhrn.get('pocet_stravniku', 0)}</td></tr>",
+            f"<tr><td>Počet výdejek</td><td>{souhrn.get('pocet_vydejek', 0)}</td></tr>",
+            "</table><br>",
+            "<table border='1'>",
+            "<tr><th>Skupina potravin</th><th>Norma [g]</th><th>Skutečnost [g]</th><th>Rozdíl [g]</th><th>Skutečnost [%]</th><th>Limit</th><th>Stav</th></tr>",
+        ]
+        for row in rows:
+            max_pct = row.get("max_pct")
+            limit = f"{row.get('min_pct', 0):.0f} %"
+            limit += f" - {max_pct:.0f} %" if max_pct is not None else "+"
+            html.append(
+                "<tr>"
+                f"<td>{row['skupina_nazev']}</td>"
+                f"<td>{row['norma_g']:.2f}</td>"
+                f"<td>{row['skutecnost_g']:.2f}</td>"
+                f"<td>{row['rozdil_g']:.2f}</td>"
+                f"<td>{row['skutecnost_pct']:.2f}</td>"
+                f"<td>{limit}</td>"
+                f"<td>{row['stav']}</td>"
+                "</tr>"
+            )
+        html.append("</table></body></html>")
+
+        response = HttpResponse("\n".join(html), content_type="application/vnd.ms-excel; charset=utf-8")
+        response["Content-Disposition"] = 'attachment; filename="spotrebni_kos.xls"'
+        return response
+
+    def spotrebni_kos_pdf_view(self, request):
+        data = self._spotrebni_kos_data(request)
+        souhrn = data.get("souhrn") or {}
+        rows = data.get("rows") or []
+
+        styles, font_name = _pdf_styles()
+
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            topMargin=1.5 * cm,
+            bottomMargin=1.5 * cm,
+            leftMargin=1.2 * cm,
+            rightMargin=1.2 * cm,
         )
-        return TemplateResponse(
-            request,
-            "admin/sklad/mesicni_spotrebni_kos.html",
-            context,
+        elements = [
+            Paragraph("Spotřební koš", styles["Title"]),
+            Spacer(1, 0.4 * cm),
+            Paragraph(f"Počet jídel: {souhrn.get('pocet_jidel', 0)}", styles["Normal"]),
+            Paragraph(f"Počet strávníků: {souhrn.get('pocet_stravniku', 0)}", styles["Normal"]),
+            Paragraph(f"Počet výdejek: {souhrn.get('pocet_vydejek', 0)}", styles["Normal"]),
+            Spacer(1, 0.5 * cm),
+        ]
+
+        table_data = [["Skupina", "Norma [g]", "Skutečnost [g]", "Rozdíl [g]", "%", "Limit", "Stav"]]
+        for row in rows:
+            max_pct = row.get("max_pct")
+            limit = f"{row.get('min_pct', 0):.0f} %"
+            limit += f" - {max_pct:.0f} %" if max_pct is not None else "+"
+            table_data.append([
+                row["skupina_nazev"],
+                f"{row['norma_g']:.0f}",
+                f"{row['skutecnost_g']:.0f}",
+                f"{row['rozdil_g']:.0f}",
+                f"{row['skutecnost_pct']:.2f}",
+                limit,
+                row["stav"],
+            ])
+
+        table = safe_table(
+            table_data,
+            [4.0 * cm, 2.2 * cm, 2.4 * cm, 2.0 * cm, 1.6 * cm, 2.2 * cm, 2.3 * cm],
+            font_name=font_name,
+            font_size=8,
+            style_commands=[
+                ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+                ("ALIGN", (0, 0), (0, -1), "LEFT"),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 7),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ],
         )
+        elements.append(table)
+
+        doc.build(elements)
+        pdf = buffer.getvalue()
+        buffer.close()
+
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = 'attachment; filename="spotrebni_kos.pdf"'
+        return response
 
 
 # -------------------------------------------------------------------
@@ -388,15 +1125,155 @@ class SurovinaAdmin(admin.ModelAdmin):
     list_display = (
         "nazev",
         "jednotka",
+        "karta_suroviny_link",
         "skupina_sk",
+        "koeficient_ciste_hmotnosti_sk",
+        "koeficient_zapoctu_sk",
         "je_masny_vyrobek",
         "je_bio",
-        "koeficient_sk",
+        "je_sezonni",
+        "je_sterilovana_nebo_kompot",
         "hmotnost_ks_g_display",
         "prumerna_cena_za_jednotku",
     )
     list_filter = ("jednotka", "skupina_sk", "je_masny_vyrobek", "je_bio")
     search_fields = ("nazev",)
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path("<int:surovina_id>/karta/", self.admin_site.admin_view(self.karta_suroviny_view), name="sklad_surovina_karta"),
+            path("<int:surovina_id>/karta/xlsx/", self.admin_site.admin_view(self.karta_suroviny_xlsx_view), name="sklad_surovina_karta_xlsx"),
+            path("<int:surovina_id>/karta/pdf/", self.admin_site.admin_view(self.karta_suroviny_pdf_view), name="sklad_surovina_karta_pdf"),
+        ]
+        return custom_urls + urls
+
+    def karta_suroviny_link(self, obj):
+        return format_html('<a class="button" href="{}">Karta</a>', f"{obj.pk}/karta/")
+
+    karta_suroviny_link.short_description = "Karta"
+
+    def karta_suroviny_view(self, request, surovina_id):
+        surovina = get_object_or_404(Surovina, pk=surovina_id)
+        date_to = parse_date(request.GET.get("date_to") or "") or date.today()
+        date_from = parse_date(request.GET.get("date_from") or "") or (date_to - timedelta(days=90))
+        data = karta_suroviny_data(surovina, date_from=date_from, date_to=date_to)
+        context = dict(
+            self.admin_site.each_context(request),
+            title=f"Karta suroviny: {surovina.nazev}",
+            data=data,
+        )
+        return TemplateResponse(request, "admin/sklad/karta_suroviny.html", context)
+
+    def _karta_suroviny_data_z_requestu(self, request, surovina_id):
+        surovina = get_object_or_404(Surovina, pk=surovina_id)
+        date_to = parse_date(request.GET.get("date_to") or "") or date.today()
+        date_from = parse_date(request.GET.get("date_from") or "") or (date_to - timedelta(days=90))
+        return karta_suroviny_data(surovina, date_from=date_from, date_to=date_to)
+
+    def karta_suroviny_xlsx_view(self, request, surovina_id):
+        data = self._karta_suroviny_data_z_requestu(request, surovina_id)
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Karta suroviny"
+        ws.append([f"Karta suroviny: {data['surovina'].nazev}"])
+        ws.append([f"Období: {data['date_from'].strftime('%d.%m.%Y')} - {data['date_to'].strftime('%d.%m.%Y')}"])
+        ws.append([])
+        ws.append(["Aktuální stav", data["stav_display"]])
+        ws.append(["Minimum", data["minimum_display"]])
+        ws.append(["Hodnota stavu Kč", float(data["hodnota_stavu"] or 0)])
+        ws.append(["Spotřeba období", data["spotreba_obdobi_display"]])
+        ws.append(["Náklady spotřeby Kč", float(data["naklady_spotreby"] or 0)])
+        ws.append([])
+        ws.append(["Datum", "Typ", "Množství", "Cena za jednotku", "Hodnota Kč", "Doklad", "Poznámka"])
+        for pohyb in data["pohyby"]:
+            doklad = "-"
+            if pohyb.prijem_id:
+                doklad = f"Příjemka #{pohyb.prijem_id}"
+            elif pohyb.vydejka_id:
+                doklad = f"Výdejka #{pohyb.vydejka_id}"
+            elif pohyb.inventura_id:
+                doklad = f"Inventura #{pohyb.inventura_id}"
+            elif pohyb.odpis_expirace_id:
+                doklad = f"Odpis expirace #{pohyb.odpis_expirace_id}"
+            ws.append([
+                pohyb.datum.strftime("%d.%m.%Y %H:%M"),
+                pohyb.get_typ_display(),
+                float(pohyb.mnozstvi or 0),
+                float(pohyb.cena_za_jednotku or 0),
+                float((pohyb.mnozstvi or Decimal("0")) * (pohyb.cena_za_jednotku or Decimal("0"))),
+                doklad,
+                pohyb.poznamka,
+            ])
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        response = HttpResponse(
+            output.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="karta_suroviny_{data["surovina"].id}.xlsx"'
+        return response
+
+    def karta_suroviny_pdf_view(self, request, surovina_id):
+        data = self._karta_suroviny_data_z_requestu(request, surovina_id)
+        styles, font_name = _pdf_styles()
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=1.2 * cm, leftMargin=1.2 * cm, topMargin=1.4 * cm, bottomMargin=1.4 * cm)
+        story = [
+            Paragraph(f"Karta suroviny: {escape(data['surovina'].nazev)}", styles["Title"]),
+            Spacer(1, 0.25 * cm),
+            Paragraph(f"Období: {data['date_from'].strftime('%d.%m.%Y')} - {data['date_to'].strftime('%d.%m.%Y')}", styles["Normal"]),
+            Paragraph(f"Aktuální stav: {data['stav_display']}", styles["Normal"]),
+            Paragraph(f"Hodnota stavu: {money_cs(data['hodnota_stavu'])}", styles["Normal"]),
+            Paragraph(f"Spotřeba období: {data['spotreba_obdobi_display']} / {money_cs(data['naklady_spotreby'])}", styles["Normal"]),
+            Spacer(1, 0.35 * cm),
+            Paragraph("Pohyby", styles["Heading2"]),
+        ]
+        table_data = [["Datum", "Typ", "Množství", "Cena", "Hodnota", "Doklad"]]
+        for pohyb in data["pohyby"]:
+            doklad = "-"
+            if pohyb.prijem_id:
+                doklad = f"Příjemka #{pohyb.prijem_id}"
+            elif pohyb.vydejka_id:
+                doklad = f"Výdejka #{pohyb.vydejka_id}"
+            elif pohyb.inventura_id:
+                doklad = f"Inventura #{pohyb.inventura_id}"
+            elif pohyb.odpis_expirace_id:
+                doklad = f"Odpis #{pohyb.odpis_expirace_id}"
+            table_data.append([
+                pohyb.datum.strftime("%d.%m.%Y"),
+                pohyb.get_typ_display(),
+                format_mnozstvi_s_jednotkou(data["surovina"], pohyb.mnozstvi),
+                format_cena_za_jednotku(data["surovina"], pohyb.cena_za_jednotku or Decimal("0")),
+                money_cs((pohyb.mnozstvi or Decimal("0")) * (pohyb.cena_za_jednotku or Decimal("0"))),
+                doklad,
+            ])
+        if len(table_data) == 1:
+            table_data.append(["Bez pohybů", "-", "-", "-", "-", "-"])
+        table = safe_table(
+            table_data,
+            [2.4 * cm, 3.2 * cm, 3 * cm, 3.4 * cm, 2.5 * cm, 3.3 * cm],
+            font_name=font_name,
+            font_size=7,
+            style_commands=[
+                ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                ("FONTSIZE", (0, 0), (-1, -1), 7),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.grey),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ],
+        )
+        story.append(table)
+        doc.build(story)
+        pdf = buffer.getvalue()
+        buffer.close()
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="karta_suroviny_{data["surovina"].id}.pdf"'
+        return response
     fieldsets = (
         (
             "Základní údaje",
@@ -409,9 +1286,16 @@ class SurovinaAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "skupina_sk",
+                    "koeficient_ciste_hmotnosti_sk",
+                    "koeficient_zapoctu_sk",
                     "koeficient_sk",
                     "je_masny_vyrobek",
                     "je_bio",
+                    "je_sezonni",
+                    "je_sterilovana_nebo_kompot",
+                    "je_rostlinny_tuk",
+                    "je_zivocisny_tuk",
+                    "je_zakazano_pro_skolni_stravovani",
                     "podil_celozrnne_slozky",
                     "volny_cukr_na_100g",
                 ),
@@ -441,8 +1325,24 @@ class SurovinaAdmin(admin.ModelAdmin):
 
 @admin.register(StavSkladu)
 class StavSkladuAdmin(admin.ModelAdmin):
-    list_display = ("surovina", "mnozstvi", "min_mnozstvi")
-    readonly_fields = ("surovina", "mnozstvi")
+    list_display = ("surovina", "mnozstvi_display", "min_mnozstvi_display", "skladova_jednotka_display")
+    fields = ("surovina", "mnozstvi_display", "min_mnozstvi", "min_mnozstvi_display", "skladova_jednotka_display")
+    readonly_fields = ("surovina", "mnozstvi_display", "min_mnozstvi_display", "skladova_jednotka_display")
+
+    def mnozstvi_display(self, obj):
+        return format_mnozstvi_s_jednotkou(obj.surovina, obj.mnozstvi)
+
+    mnozstvi_display.short_description = "Množství"
+
+    def min_mnozstvi_display(self, obj):
+        return format_mnozstvi_s_jednotkou(obj.surovina, obj.min_mnozstvi)
+
+    min_mnozstvi_display.short_description = "Minimální množství"
+
+    def skladova_jednotka_display(self, obj):
+        return obj.surovina.jednotka
+
+    skladova_jednotka_display.short_description = "Skladová jednotka"
 
     def has_add_permission(self, request):
         return False
@@ -451,12 +1351,82 @@ class StavSkladuAdmin(admin.ModelAdmin):
         return False
 
 
+@admin.register(Dodavatel)
+class DodavatelAdmin(admin.ModelAdmin):
+    list_display = ("nazev", "typ_subjektu_badge", "datax_zdroj", "ico", "email", "telefon", "aktivni")
+    list_filter = ("typ_subjektu", "datax_zdroj", "aktivni")
+    search_fields = ("nazev", "ico", "dic", "email", "telefon", "datax_kod", "datax_kod2", "datax_analytika")
+    readonly_fields = ("datax_zdroj", "datax_kod", "datax_kod2", "datax_analytika")
+    fieldsets = (
+        (
+            "Základ",
+            {
+                "fields": (
+                    ("nazev", "typ_subjektu", "aktivni"),
+                    ("ico", "dic"),
+                ),
+            },
+        ),
+        (
+            "Kontakt",
+            {
+                "fields": (
+                    "adresa",
+                    ("kontaktni_osoba", "telefon", "email"),
+                ),
+            },
+        ),
+        (
+            "DATAx vazba",
+            {
+                "classes": ("collapse",),
+                "fields": (
+                    ("datax_zdroj", "datax_kod"),
+                    ("datax_kod2", "datax_analytika"),
+                    "poznamka",
+                ),
+            },
+        ),
+    )
+
+    def typ_subjektu_badge(self, obj):
+        palette = {
+            Dodavatel.TYP_DODAVATEL: "success",
+            Dodavatel.TYP_STREDISKO: "info",
+            Dodavatel.TYP_PROVOZ: "warning",
+            Dodavatel.TYP_TECHNICKY: "secondary",
+        }
+        return format_html(
+            '<span class="badge badge-{}">{}</span>',
+            palette.get(obj.typ_subjektu, "light"),
+            obj.get_typ_subjektu_display(),
+        )
+
+    typ_subjektu_badge.short_description = "Typ"
+
+
 @admin.register(PohybSkladu)
 class PohybSkladuAdmin(admin.ModelAdmin):
-    list_display = ("datum", "surovina", "typ", "mnozstvi", "doklad_link", "poznamka")
+    list_display = ("datum", "surovina", "typ", "mnozstvi_display", "sarze_skladu", "cena_za_jednotku_display", "hodnota_display", "doklad_link", "poznamka")
     list_filter = ("typ", "datum", "surovina")
     search_fields = ("surovina__nazev", "vydejka__id", "prijem__id", "poznamka")
     date_hierarchy = "datum"
+
+    def mnozstvi_display(self, obj):
+        return format_mnozstvi_s_jednotkou(obj.surovina, obj.mnozstvi)
+
+    mnozstvi_display.short_description = "Množství"
+
+    def cena_za_jednotku_display(self, obj):
+        return format_cena_za_jednotku(obj.surovina, obj.cena_za_jednotku)
+
+    cena_za_jednotku_display.short_description = "Cena za jednotku"
+
+    def hodnota_display(self, obj):
+        hodnota = (obj.mnozstvi or Decimal("0")) * (obj.cena_za_jednotku or Decimal("0"))
+        return money_cs(hodnota)
+
+    hodnota_display.short_description = "Hodnota"
 
     def doklad_link(self, obj):
         if obj.vydejka_id:
@@ -468,6 +1438,9 @@ class PohybSkladuAdmin(admin.ModelAdmin):
         if getattr(obj, "inventura_id", None):
             url = f"/admin/sklad/inventura/{obj.inventura_id}/change/"
             return format_html('<a href="{}">Inventura #{}</a>', url, obj.inventura_id)
+        if getattr(obj, "odpis_expirace_id", None):
+            url = f"/admin/sklad/odpisexpirace/{obj.odpis_expirace_id}/change/"
+            return format_html('<a href="{}">Odpis expirace #{}</a>', url, obj.odpis_expirace_id)
         return "-"
 
     doklad_link.short_description = "Doklad"
@@ -476,6 +1449,53 @@ class PohybSkladuAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(SarzeSkladu)
+class SarzeSkladuAdmin(admin.ModelAdmin):
+    list_display = (
+        "surovina",
+        "sarze",
+        "typ_data_spotreby",
+        "datum_spotreby",
+        "mnozstvi_zbyva_display",
+        "cena_za_jednotku_display",
+        "stav",
+    )
+    list_filter = ("stav", "typ_data_spotreby", "datum_spotreby", "surovina")
+    search_fields = ("surovina__nazev", "sarze", "poznamka")
+    readonly_fields = (
+        "surovina",
+        "polozka_prijmu",
+        "sarze",
+        "typ_data_spotreby",
+        "datum_spotreby",
+        "mnozstvi_prijato",
+        "mnozstvi_zbyva",
+        "cena_za_jednotku",
+        "stav",
+        "poznamka",
+    )
+    date_hierarchy = "datum_spotreby"
+
+    def mnozstvi_zbyva_display(self, obj):
+        return format_mnozstvi_s_jednotkou(obj.surovina, obj.mnozstvi_zbyva)
+
+    mnozstvi_zbyva_display.short_description = "Zbývá"
+
+    def cena_za_jednotku_display(self, obj):
+        return format_cena_za_jednotku(obj.surovina, obj.cena_za_jednotku)
+
+    cena_za_jednotku_display.short_description = "Cena za jednotku"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_staff
+
+    def has_delete_permission(self, request, obj=None):
         return False
 
 
@@ -497,10 +1517,65 @@ class JidloKomponentaInline(admin.TabularInline):
     ordering = ("poradi", "id")
 
 
-class PolozkaPrijmuInline(admin.TabularInline):
+class PolozkaPrijmuInline(admin.StackedInline):
     model = PolozkaPrijmu
     extra = 1
     autocomplete_fields = ("surovina",)
+    verbose_name = "Položka příjmu"
+    verbose_name_plural = "Položky příjmu"
+    fieldsets = (
+        (
+            "Surovina a balení",
+            {
+                "fields": (
+                    "surovina",
+                    ("pocet_baleni", "mnozstvi_v_baleni", "jednotka_baleni"),
+                ),
+                "description": (
+                    "Zadej, co dodavatel přivezl. Např. 2 balení po 5 kg."
+                ),
+            },
+        ),
+        (
+            "Cena",
+            {
+                "fields": (
+                    ("cena_za_baleni_bez_dph", "sazba_dph"),
+                ),
+                "description": (
+                    "Cena za jedno balení bez DPH. Jednotková skladová cena se dopočítá automaticky."
+                ),
+            },
+        ),
+        (
+            "Šarže a trvanlivost",
+            {
+                "fields": (
+                    ("sarze", "typ_data_spotreby", "datum_spotreby"),
+                ),
+            },
+        ),
+        (
+            "Dopočtené hodnoty",
+            {
+                "classes": ("collapse",),
+                "fields": (
+                    ("mnozstvi", "jednotkova_cena"),
+                    ("cena_za_baleni_s_dph", "cena_celkem_bez_dph", "cena_celkem_s_dph"),
+                ),
+                "description": (
+                    "Tyto hodnoty se dopočítají po uložení položky."
+                ),
+            },
+        ),
+    )
+    readonly_fields = (
+        "cena_za_baleni_s_dph",
+        "mnozstvi",
+        "jednotkova_cena",
+        "cena_celkem_bez_dph",
+        "cena_celkem_s_dph",
+    )
 
     def get_extra(self, request, obj=None, **kwargs):
         if obj and obj.uzavreny:
@@ -513,7 +1588,7 @@ class PolozkaPrijmuInline(admin.TabularInline):
         return super().has_add_permission(request, obj)
 
     def has_change_permission(self, request, obj=None):
-        if obj and obj.uzavreny:
+        if obj and (obj.uzavreny or obj.stornovano):
             return False
         return super().has_change_permission(request, obj)
 
@@ -535,7 +1610,7 @@ class PolozkaInventuryInline(admin.TabularInline):
         return super().has_add_permission(request, obj)
 
     def has_change_permission(self, request, obj=None):
-        if obj and obj.uzavreny:
+        if obj and (obj.uzavreny or obj.stornovano):
             return False
         return super().has_change_permission(request, obj)
 
@@ -549,10 +1624,32 @@ class PohybSkladuInlineBase(admin.TabularInline):
     model = PohybSkladu
     extra = 0
     can_delete = False
-    fields = ("datum", "surovina", "typ", "mnozstvi", "cena_za_jednotku", "poznamka")
+    fields = ("datum", "surovina", "typ", "mnozstvi_display", "sarze_skladu", "cena_za_jednotku_display", "hodnota_display", "poznamka")
     readonly_fields = fields
     verbose_name = "Skladový pohyb"
     verbose_name_plural = "Skladové pohyby"
+
+    def mnozstvi_display(self, obj):
+        if not obj:
+            return "-"
+        return format_mnozstvi_s_jednotkou(obj.surovina, obj.mnozstvi)
+
+    mnozstvi_display.short_description = "Množství"
+
+    def cena_za_jednotku_display(self, obj):
+        if not obj:
+            return "-"
+        return format_cena_za_jednotku(obj.surovina, obj.cena_za_jednotku)
+
+    cena_za_jednotku_display.short_description = "Cena za jednotku"
+
+    def hodnota_display(self, obj):
+        if not obj:
+            return "-"
+        hodnota = (obj.mnozstvi or Decimal("0")) * (obj.cena_za_jednotku or Decimal("0"))
+        return money_cs(hodnota)
+
+    hodnota_display.short_description = "Hodnota"
 
     def has_add_permission(self, request, obj=None):
         return False
@@ -579,6 +1676,10 @@ class PohybInventuryInline(PohybSkladuInlineBase):
     fk_name = "inventura"
 
 
+class PohybOdpisuExpiraceInline(PohybSkladuInlineBase):
+    fk_name = "odpis_expirace"
+
+
 class PolozkaInventuryReadOnlyInline(admin.TabularInline):
     model = PolozkaInventury
     extra = 0
@@ -603,29 +1704,224 @@ class KomponentaJidlaAdmin(admin.ModelAdmin):
 
 @admin.register(PrijemSkladu)
 class PrijemSkladuAdmin(admin.ModelAdmin):
-    list_display = ("id", "datum", "vytvoril", "uzavreny", "uzavren_at", "uzavrel")
-    list_filter = ("uzavreny", "datum")
+    list_display = ("id", "datum", "vytvoril", "uzavreny", "stornovano", "uzavren_at", "uzavrel")
+    list_filter = ("uzavreny", "stornovano", "datum")
     inlines = [PolozkaPrijmuInline, PohybPrijmuInline]
-    readonly_fields = ("stav_dokladu", "vytvoril", "uzavren_at", "uzavrel")
+    autocomplete_fields = ("dodavatel",)
+    readonly_fields = (
+        "stav_dokladu",
+        "soucet_polozek_bez_dph_display",
+        "soucet_polozek_s_dph_display",
+        "rozdil_faktury_display",
+        "validacni_varovani_display",
+        "import_xlsx_link",
+        "vytvoril",
+        "uzavren_at",
+        "uzavrel",
+        "stornovano",
+        "stornovano_at",
+    )
+    actions = ["stornovat_prijemky"]
     fieldsets = (
         (
             "Základní údaje",
             {
-                "fields": ("datum", "popis"),
+                "fields": ("datum", "dodavatel", "popis"),
+            },
+        ),
+        (
+            "Dodavatelský doklad",
+            {
+                "fields": (
+                    "cislo_faktury",
+                    "cislo_dodaciho_listu",
+                    "datum_dodani",
+                    "datum_vystaveni",
+                    "datum_splatnosti",
+                    "castka_faktury_celkem",
+                    "priloha",
+                ),
+            },
+        ),
+        (
+            "Součty",
+            {
+                "fields": (
+                    "soucet_polozek_bez_dph_display",
+                    "soucet_polozek_s_dph_display",
+                    "rozdil_faktury_display",
+                    "validacni_varovani_display",
+                    "import_xlsx_link",
+                ),
             },
         ),
         (
             "Stav a audit",
             {
-                "fields": ("stav_dokladu", "uzavreny", "vytvoril", "uzavren_at", "uzavrel"),
+                "fields": ("stav_dokladu", "uzavreny", "stornovano", "vytvoril", "uzavren_at", "uzavrel", "stornovano_at"),
             },
         ),
     )
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path("<int:prijem_id>/import-xlsx/", self.admin_site.admin_view(self.import_xlsx_view), name="sklad_prijem_import_xlsx"),
+            path("vzor-importu.xlsx", self.admin_site.admin_view(self.vzor_importu_xlsx_view), name="sklad_prijem_vzor_importu_xlsx"),
+        ]
+        return custom_urls + urls
 
     def stav_dokladu(self, obj):
         return _stav_dokladu_text(obj)
 
     stav_dokladu.short_description = "Stav dokladu"
+
+    def soucet_polozek_bez_dph_display(self, obj):
+        if not obj:
+            return "-"
+        return money_cs(obj.soucet_polozek_bez_dph)
+
+    soucet_polozek_bez_dph_display.short_description = "Součet položek bez DPH"
+
+    def soucet_polozek_s_dph_display(self, obj):
+        if not obj:
+            return "-"
+        return money_cs(obj.soucet_polozek_s_dph)
+
+    soucet_polozek_s_dph_display.short_description = "Součet položek s DPH"
+
+    def rozdil_faktury_display(self, obj):
+        if not obj or obj.rozdil_faktury is None:
+            return "-"
+        return money_cs(obj.rozdil_faktury)
+
+    rozdil_faktury_display.short_description = "Rozdíl proti faktuře"
+
+    def validacni_varovani_display(self, obj):
+        if not obj or not obj.pk:
+            return "Kontrola se zobrazí po uložení příjemky."
+        varovani = validace_prijemky_pred_uzavrenim(obj)
+        if not varovani:
+            return format_html('<span class="text-success">Bez varování.</span>')
+        return mark_safe("<ul>" + "".join(f"<li>{v}</li>" for v in varovani) + "</ul>")
+
+    validacni_varovani_display.short_description = "Kontroly před uzavřením"
+
+    def import_xlsx_link(self, obj):
+        if not obj or not obj.pk:
+            return "Import bude dostupný po uložení příjemky."
+        if obj.uzavreny or obj.stornovano:
+            return "Uzavřenou nebo stornovanou příjemku už nelze importem měnit."
+        return format_html(
+            '<a class="button" href="{}">Importovat položky z XLSX</a> '
+            '<a class="button" href="{}">Stáhnout vzor</a>',
+            reverse("admin:sklad_prijem_import_xlsx", args=[obj.pk]),
+            reverse("admin:sklad_prijem_vzor_importu_xlsx"),
+        )
+
+    import_xlsx_link.short_description = "Import položek"
+
+    def vzor_importu_xlsx_view(self, request):
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Položky příjemky"
+        ws.append([
+            "surovina",
+            "mnozstvi",
+            "jednotkova_cena",
+            "pocet_baleni",
+            "mnozstvi_v_baleni",
+            "jednotka_baleni",
+            "cena_za_baleni_bez_dph",
+            "sazba_dph",
+            "sarze",
+            "datum_spotreby",
+            "typ_data_spotreby",
+        ])
+        ws.append(["Rýže dlouhozrnná", "10", "28.50", "2", "5", "kg", "142.50", "12", "RYZE-001", "2026-12-31", "MINIMALNI_TRVANLIVOST"])
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        response = HttpResponse(
+            output.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="vzor_importu_prijemky.xlsx"'
+        return response
+
+    def import_xlsx_view(self, request, prijem_id):
+        prijem = get_object_or_404(PrijemSkladu, pk=prijem_id)
+        if prijem.uzavreny or prijem.stornovano:
+            messages.error(request, "Uzavřenou nebo stornovanou příjemku už nelze importem měnit.")
+            return redirect(reverse("admin:sklad_prijemskladu_change", args=[prijem.pk]))
+
+        form = ImportPrijemXlsxForm(request.POST or None, request.FILES or None)
+        if request.method == "POST" and form.is_valid():
+            from openpyxl import load_workbook
+
+            wb = load_workbook(form.cleaned_data["soubor"], data_only=True)
+            ws = wb.active
+            headers = [str(cell.value or "").strip().lower() for cell in ws[1]]
+            header_map = {name: index for index, name in enumerate(headers)}
+            required = {"surovina", "mnozstvi", "jednotkova_cena"}
+            if not required.issubset(header_map):
+                messages.error(request, "Soubor nemá povinné sloupce: surovina, mnozstvi, jednotkova_cena.")
+            else:
+                vytvoreno = 0
+                chyby = []
+                for row_index, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                    nazev = str(row[header_map["surovina"]] or "").strip()
+                    if not nazev:
+                        continue
+                    surovina = Surovina.objects.filter(nazev__iexact=nazev).first()
+                    if not surovina:
+                        chyby.append(f"Řádek {row_index}: surovina '{nazev}' neexistuje.")
+                        continue
+
+                    def hodnota(sloupec, vychozi=None):
+                        index = header_map.get(sloupec)
+                        if index is None:
+                            return vychozi
+                        value = row[index]
+                        return vychozi if value in (None, "") else value
+
+                    datum_spotreby = hodnota("datum_spotreby")
+                    if isinstance(datum_spotreby, datetime):
+                        datum_spotreby = datum_spotreby.date()
+                    elif isinstance(datum_spotreby, str):
+                        datum_spotreby = parse_date(datum_spotreby)
+
+                    PolozkaPrijmu.objects.create(
+                        prijem=prijem,
+                        surovina=surovina,
+                        mnozstvi=Decimal(str(hodnota("mnozstvi", "0"))),
+                        jednotkova_cena=Decimal(str(hodnota("jednotkova_cena", "0"))),
+                        pocet_baleni=Decimal(str(hodnota("pocet_baleni", "1"))),
+                        mnozstvi_v_baleni=Decimal(str(hodnota("mnozstvi_v_baleni"))) if hodnota("mnozstvi_v_baleni") not in (None, "") else None,
+                        jednotka_baleni=str(hodnota("jednotka_baleni", "") or ""),
+                        cena_za_baleni_bez_dph=Decimal(str(hodnota("cena_za_baleni_bez_dph"))) if hodnota("cena_za_baleni_bez_dph") not in (None, "") else None,
+                        sazba_dph=Decimal(str(hodnota("sazba_dph", "0"))),
+                        sarze=str(hodnota("sarze", "") or ""),
+                        datum_spotreby=datum_spotreby,
+                        typ_data_spotreby=str(hodnota("typ_data_spotreby", "POUZITELNOST") or "POUZITELNOST"),
+                    )
+                    vytvoreno += 1
+                if vytvoreno:
+                    messages.success(request, f"Naimportováno položek: {vytvoreno}.")
+                for chyba in chyby[:10]:
+                    messages.warning(request, chyba)
+                return redirect(reverse("admin:sklad_prijemskladu_change", args=[prijem.pk]))
+
+        context = dict(
+            self.admin_site.each_context(request),
+            title=f"Import položek příjemky #{prijem.id}",
+            prijem=prijem,
+            form=form,
+            vzor_url=reverse("admin:sklad_prijem_vzor_importu_xlsx"),
+        )
+        return TemplateResponse(request, "admin/sklad/import_prijem_xlsx.html", context)
 
     def save_model(self, request, obj, form, change):
         if not obj.pk and not obj.vytvoril:
@@ -641,12 +1937,17 @@ class PrijemSkladuAdmin(admin.ModelAdmin):
         obj = form.instance
 
         if getattr(obj, "_uzavrit_po_ulozeni", False):
-            uzavri_prijem(obj, user=request.user)
+            for varovani in validace_prijemky_pred_uzavrenim(obj):
+                messages.warning(request, varovani)
+            try:
+                uzavri_prijem(obj, user=request.user)
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
 
     def get_readonly_fields(self, request, obj=None):
         ro = list(super().get_readonly_fields(request, obj))
         if obj and obj.uzavreny:
-            ro += ["datum", "popis", "uzavreny"]
+            ro += ["datum", "popis", "uzavreny", "stornovano"]
         return ro
 
     def has_delete_permission(self, request, obj=None):
@@ -655,17 +1956,41 @@ class PrijemSkladuAdmin(admin.ModelAdmin):
         return super().has_delete_permission(request, obj)
 
     def has_change_permission(self, request, obj=None):
-        if obj and obj.uzavreny:
+        if obj and (obj.uzavreny or obj.stornovano):
             return False
         return super().has_change_permission(request, obj)
+
+    @admin.action(description="Stornovat příjemky a vytvořit opačné pohyby")
+    def stornovat_prijemky(self, request, queryset):
+        return _storno_action_s_duvodem(
+            self,
+            request,
+            queryset,
+            title="Storno příjemek",
+            action_name="stornovat_prijemky",
+            callback=lambda prijem, user, duvod: stornuj_prijem(prijem, user=user, duvod=duvod),
+            success_label="Stornováno příjemek",
+        )
 
 
 @admin.register(Inventura)
 class InventuraAdmin(admin.ModelAdmin):
-    list_display = ("id", "datum", "vytvoril", "uzavreny", "uzavren_at", "uzavrel")
-    list_filter = ("uzavreny", "datum")
-    readonly_fields = ("stav_dokladu", "vytvoril", "uzavren_at", "uzavrel")
+    change_list_template = "admin/sklad/inventura/change_list.html"
+    list_display = ("id", "datum", "vytvoril", "uzavreny", "stornovano", "uzaverka_mesice_link", "inventurni_pdf_link", "uzavren_at", "uzavrel")
+    list_filter = ("uzavreny", "stornovano", "datum")
+    readonly_fields = (
+        "stav_dokladu",
+        "sarzova_inventura_link",
+        "inventurni_pdf_link",
+        "inventurni_nahled_display",
+        "vytvoril",
+        "uzavren_at",
+        "uzavrel",
+        "stornovano",
+        "stornovano_at",
+    )
     inlines = [PolozkaInventuryInline, PohybInventuryInline]
+    actions = ["stornovat_inventury"]
     fieldsets = (
         (
             "Základní údaje",
@@ -676,7 +2001,7 @@ class InventuraAdmin(admin.ModelAdmin):
         (
             "Stav a audit",
             {
-                "fields": ("stav_dokladu", "uzavreny", "vytvoril", "uzavren_at", "uzavrel"),
+                "fields": ("stav_dokladu", "sarzova_inventura_link", "inventurni_pdf_link", "inventurni_nahled_display", "uzavreny", "stornovano", "vytvoril", "uzavren_at", "uzavrel", "stornovano_at"),
             },
         ),
     )
@@ -685,6 +2010,149 @@ class InventuraAdmin(admin.ModelAdmin):
         return _stav_dokladu_text(obj)
 
     stav_dokladu.short_description = "Stav dokladu"
+
+    def add_view(self, request, form_url="", extra_context=None):
+        if request.method != "GET":
+            return super().add_view(request, form_url=form_url, extra_context=extra_context)
+        if not self.has_add_permission(request):
+            return super().add_view(request, form_url=form_url, extra_context=extra_context)
+
+        datum = parse_date(request.GET.get("datum") or "") or date.today()
+        inventura = Inventura.objects.create(
+            datum=datum,
+            popis="Šaržová inventura",
+            vytvoril=request.user if request.user.is_authenticated else None,
+        )
+        self._napln_polozky_ze_stavu(inventura)
+        pocet_sarzi = napln_sarzovou_inventuru(inventura)
+        synchronizuj_surovinove_polozky_inventury(inventura)
+        messages.success(
+            request,
+            f"Nová inventura #{inventura.id} byla založena a načetla {pocet_sarzi} aktivních šarží.",
+        )
+        return redirect(reverse("admin:sklad_inventura_sarzova", args=[inventura.pk]))
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path("<int:inventura_id>/sarzova/", self.admin_site.admin_view(self.sarzova_inventura_view), name="sklad_inventura_sarzova"),
+            path("<int:inventura_id>/pdf/", self.admin_site.admin_view(inventura_pdf_view), name="sklad_inventura_pdf"),
+        ]
+        return custom_urls + urls
+
+    def sarzova_inventura_link(self, obj):
+        if not obj or not obj.pk:
+            return "Šaržová inventura bude dostupná po uložení dokladu."
+        url = reverse("admin:sklad_inventura_sarzova", args=[obj.pk])
+        return format_html('<a class="button" href="{}">Otevřít šaržovou inventuru</a>', url)
+
+    sarzova_inventura_link.short_description = "Šaržové GUI"
+
+    def inventurni_pdf_link(self, obj):
+        if not obj or not obj.pk:
+            return "PDF bude dostupné po uložení dokladu."
+        url = reverse("admin:sklad_inventura_pdf", args=[obj.pk])
+        return format_html('<a class="button" href="{}">Stáhnout PDF inventury</a>', url)
+
+    inventurni_pdf_link.short_description = "PDF report"
+
+    def uzaverka_mesice_link(self, obj):
+        return _uzaverka_mesice_link(obj)
+
+    uzaverka_mesice_link.short_description = "Uzávěrka měsíce"
+
+    def sarzova_inventura_view(self, request, inventura_id):
+        inventura = get_object_or_404(Inventura, pk=inventura_id)
+        if request.method == "POST" and not inventura.uzavreny and not inventura.stornovano:
+            action = request.POST.get("action")
+            try:
+                if action == "load":
+                    count = napln_sarzovou_inventuru(inventura)
+                    messages.success(request, f"Načteno šarží do inventury: {count}.")
+                elif action == "save":
+                    self._uloz_sarzovou_inventuru_z_postu(request, inventura)
+                    messages.success(request, "Šaržová inventura byla uložena a přepočítána.")
+                elif action == "close":
+                    self._uloz_sarzovou_inventuru_z_postu(request, inventura)
+                    uzavri_inventuru(inventura, user=request.user)
+                    messages.success(request, "Inventura byla uzavřena podle šaržových položek.")
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+
+        souhrn = souhrn_sarzove_inventury(inventura) if inventura.sarze_polozky.exists() else {
+            "radky": [],
+            "pocet_polozek": 0,
+            "manko": Decimal("0"),
+            "prebytek": Decimal("0"),
+            "cisty_rozdil": Decimal("0"),
+        }
+        context = dict(
+            self.admin_site.each_context(request),
+            title=f"Šaržová inventura #{inventura.id}",
+            inventura=inventura,
+            souhrn=souhrn,
+            suroviny=Surovina.objects.order_by("nazev"),
+            typy_data_spotreby=PolozkaPrijmu._meta.get_field("typ_data_spotreby").choices,
+        )
+        return TemplateResponse(request, "admin/sklad/inventura_sarzova.html", context)
+
+    def _uloz_sarzovou_inventuru_z_postu(self, request, inventura):
+        for row_id in request.POST.getlist("row_id"):
+            pol = PolozkaInventurySarze.objects.get(pk=row_id, inventura=inventura)
+            raw = request.POST.get(f"fyzicky_stav_{row_id}", "0") or "0"
+            pol.fyzicky_stav = Decimal(raw.replace(",", "."))
+            pol.poznamka = request.POST.get(f"poznamka_{row_id}", "")
+            pol.save()
+
+        for idx in range(1, 6):
+            surovina_id = request.POST.get(f"new_surovina_{idx}")
+            fyzicky_raw = request.POST.get(f"new_fyzicky_{idx}", "") or "0"
+            fyzicky = Decimal(fyzicky_raw.replace(",", "."))
+            if not surovina_id or fyzicky <= 0:
+                continue
+            surovina = Surovina.objects.get(pk=surovina_id)
+            PolozkaInventurySarze.objects.create(
+                inventura=inventura,
+                surovina=surovina,
+                sarze=request.POST.get(f"new_sarze_{idx}", ""),
+                typ_data_spotreby=request.POST.get(f"new_typ_data_{idx}", "NEUVADI_SE") or "NEUVADI_SE",
+                datum_spotreby=parse_date(request.POST.get(f"new_datum_{idx}", "") or ""),
+                stav_pred=Decimal("0"),
+                fyzicky_stav=fyzicky,
+                cena_za_jednotku=Decimal((request.POST.get(f"new_cena_{idx}", "") or str(surovina.prumerna_cena_za_jednotku or 0)).replace(",", ".")),
+                je_nova_sarze=True,
+                poznamka=request.POST.get(f"new_poznamka_{idx}", ""),
+            )
+        synchronizuj_surovinove_polozky_inventury(inventura)
+
+    def inventurni_nahled_display(self, obj):
+        if not obj or not obj.pk:
+            return "Náhled se zobrazí po uložení inventury."
+        rows = inventurni_nahled(obj)
+        if not rows:
+            return "Inventura zatím nemá položky."
+        html_rows = []
+        for row in rows[:50]:
+            sarze_text = ", ".join(
+                f"{s.sarze or '#'+str(s.id)}: {format_mnozstvi_s_jednotkou(s.surovina, s.mnozstvi_zbyva)}"
+                for s in row["sarze"][:5]
+            ) or "bez šarží"
+            html_rows.append(
+                "<tr>"
+                f"<td>{row['surovina'].nazev}</td>"
+                f"<td>{row['stav_pred_display']}</td>"
+                f"<td>{row['fyzicky_stav_display']}</td>"
+                f"<td>{row['rozdil_display']}</td>"
+                f"<td>{sarze_text}</td>"
+                "</tr>"
+            )
+        return mark_safe(
+            '<div class="table-responsive"><table class="table table-sm table-striped mb-0">'
+            "<thead><tr><th>Surovina</th><th>Stav před</th><th>Fyzický stav</th><th>Rozdíl</th><th>Aktivní šarže</th></tr></thead>"
+            f"<tbody>{''.join(html_rows)}</tbody></table></div>"
+        )
+
+    inventurni_nahled_display.short_description = "Šaržový náhled inventury"
 
     def has_delete_permission(self, request, obj=None):
         return False
@@ -706,7 +2174,10 @@ class InventuraAdmin(admin.ModelAdmin):
         obj = form.instance
 
         if getattr(obj, "_uzavrit_po_ulozeni", False):
-            uzavri_inventuru(obj, user=request.user)
+            try:
+                uzavri_inventuru(obj, user=request.user)
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
 
     def _napln_polozky_ze_stavu(self, inventura):
         suroviny = Surovina.objects.select_related("stav").all()
@@ -728,22 +2199,539 @@ class InventuraAdmin(admin.ModelAdmin):
     def get_readonly_fields(self, request, obj=None):
         ro = list(super().get_readonly_fields(request, obj))
         if obj and obj.uzavreny:
-            ro += ["datum", "popis", "uzavreny"]
+            ro += [
+                "datum",
+                "dodavatel",
+                "popis",
+                "cislo_faktury",
+                "cislo_dodaciho_listu",
+                "datum_dodani",
+                "datum_vystaveni",
+                "datum_splatnosti",
+                "castka_faktury_celkem",
+                "priloha",
+                "uzavreny",
+                "stornovano",
+            ]
         return ro
 
     def has_change_permission(self, request, obj=None):
+        if obj and (obj.uzavreny or obj.stornovano):
+            return False
+        return super().has_change_permission(request, obj)
+
+    @admin.action(description="Stornovat inventury a vytvořit opačné pohyby")
+    def stornovat_inventury(self, request, queryset):
+        return _storno_action_s_duvodem(
+            self,
+            request,
+            queryset,
+            title="Storno inventur",
+            action_name="stornovat_inventury",
+            callback=lambda inventura, user, duvod: stornuj_inventuru(inventura, user=user, duvod=duvod),
+            success_label="Stornováno inventur",
+        )
+
+
+@admin.register(OdpisExpirace)
+class OdpisExpiraceAdmin(admin.ModelAdmin):
+    list_display = ("id", "datum", "vytvoril", "uzavreny", "stornovano", "hodnota_celkem_display", "uzavren_at", "uzavrel")
+    list_filter = ("uzavreny", "stornovano", "datum")
+    readonly_fields = (
+        "vytvoril",
+        "uzavren_at",
+        "uzavrel",
+        "stornovano",
+        "stornovano_at",
+        "pocet_polozek_display",
+        "mnozstvi_celkem_display",
+        "hodnota_celkem_display",
+    )
+    inlines = [PohybOdpisuExpiraceInline]
+    fieldsets = (
+        ("Základní údaje", {"fields": ("datum", "popis")}),
+        ("Vyhodnocení odpisu", {"fields": ("pocet_polozek_display", "mnozstvi_celkem_display", "hodnota_celkem_display")}),
+        ("Stav a audit", {"fields": ("uzavreny", "stornovano", "vytvoril", "uzavren_at", "uzavrel", "stornovano_at")}),
+    )
+
+    def _souhrn(self, obj):
+        if not obj or not obj.pk:
+            return {"pocet_pohybu": 0, "mnozstvi_celkem": Decimal("0"), "hodnota_celkem": Decimal("0")}
+        return souhrn_odpisu_expirace(obj)
+
+    def pocet_polozek_display(self, obj):
+        return self._souhrn(obj)["pocet_pohybu"]
+
+    pocet_polozek_display.short_description = "Počet odepsaných položek"
+
+    def mnozstvi_celkem_display(self, obj):
+        return self._souhrn(obj)["mnozstvi_celkem"]
+
+    mnozstvi_celkem_display.short_description = "Množství celkem"
+
+    def hodnota_celkem_display(self, obj):
+        return money_cs(self._souhrn(obj)["hodnota_celkem"])
+
+    hodnota_celkem_display.short_description = "Hodnota odpisu"
+
+    def save_model(self, request, obj, form, change):
+        if not obj.pk and not obj.vytvoril:
+            obj.vytvoril = request.user
+        super().save_model(request, obj, form, change)
+
+    def save_form(self, request, form, change):
+        obj = super().save_form(request, form, change)
+        return _prepare_uzavreni_po_ulozeni(OdpisExpirace, obj, change)
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        obj = form.instance
+        if getattr(obj, "_uzavrit_po_ulozeni", False):
+            try:
+                uzavri_odpis_expirace(obj, user=request.user)
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+
+    def get_readonly_fields(self, request, obj=None):
+        ro = list(super().get_readonly_fields(request, obj))
         if obj and obj.uzavreny:
+            ro += ["datum", "popis", "uzavreny", "stornovano"]
+        return ro
+
+    def has_delete_permission(self, request, obj=None):
+        if obj and obj.uzavreny:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def has_change_permission(self, request, obj=None):
+        if obj and (obj.uzavreny or obj.stornovano):
             return False
         return super().has_change_permission(request, obj)
 
 
+@admin.register(SkladovaUzaverka)
+class SkladovaUzaverkaAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "rok",
+        "mesic",
+        "uzavreny",
+        "stornovano",
+        "pripraveno_display",
+        "pruvodce_list_display",
+        "konecny_stav_display",
+        "rozdil_kontroly_display",
+        "exporty_list_display",
+        "uzavren_at",
+        "uzavrel",
+    )
+    list_filter = ("rok", "mesic", "uzavreny", "stornovano")
+    readonly_fields = (
+        "stav_dokladu",
+        "pocatecni_stav",
+        "prijmy",
+        "storna_prijmu",
+        "vydeje",
+        "storna_vydeju",
+        "odpisy_expirace",
+        "inventura_plus",
+        "inventura_minus",
+        "vypocet_konecneho_stavu",
+        "konecny_stav",
+        "rozdil_kontroly",
+        "pruvodce_uzaverkou_display",
+        "exporty_display",
+        "vytvoril",
+        "uzavren_at",
+        "uzavrel",
+        "stornovano",
+        "stornovano_at",
+    )
+    actions = ["uzavrit_uzaverky", "stornovat_uzaverky"]
+    fieldsets = (
+        ("Období", {"fields": ("rok", "mesic", "datum", "popis")}),
+        (
+            "Hodnoty uzávěrky",
+            {
+                "fields": (
+                    "pocatecni_stav",
+                    "prijmy",
+                    "storna_prijmu",
+                    "vydeje",
+                    "storna_vydeju",
+                    "odpisy_expirace",
+                    "inventura_plus",
+                    "inventura_minus",
+                    "vypocet_konecneho_stavu",
+                    "konecny_stav",
+                    "rozdil_kontroly",
+                )
+            },
+        ),
+        ("Průvodce uzávěrkou", {"fields": ("pruvodce_uzaverkou_display",)}),
+        ("Exporty", {"fields": ("exporty_display",)}),
+        ("Stav a audit", {"fields": ("stav_dokladu", "uzavreny", "stornovano", "vytvoril", "uzavren_at", "uzavrel", "stornovano_at")}),
+    )
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path("mesic/<int:rok>/<int:mesic>/", self.admin_site.admin_view(self.otevrit_mesicni_uzaverku), name="sklad_uzaverka_mesic"),
+            path("<int:uzaverka_id>/pruvodce/", self.admin_site.admin_view(self.pruvodce_view), name="sklad_uzaverka_pruvodce"),
+            path("<int:uzaverka_id>/xlsx/", self.admin_site.admin_view(self.export_xlsx), name="sklad_uzaverka_xlsx"),
+            path("<int:uzaverka_id>/pdf/", self.admin_site.admin_view(self.export_pdf), name="sklad_uzaverka_pdf"),
+            path("<int:uzaverka_id>/archiv/", self.admin_site.admin_view(self.export_archiv), name="sklad_uzaverka_archiv"),
+        ]
+        return custom_urls + urls
+
+    def otevrit_mesicni_uzaverku(self, request, rok, mesic):
+        uzaverka, created = SkladovaUzaverka.objects.get_or_create(
+            rok=rok,
+            mesic=mesic,
+            defaults={
+                "datum": date(rok, mesic, calendar.monthrange(rok, mesic)[1]),
+                "vytvoril": request.user if request.user.is_authenticated else None,
+                "popis": "Skladová uzávěrka připravená z inventurního dokladu.",
+            },
+        )
+        if created:
+            messages.success(request, f"Uzávěrka {mesic:02d}/{rok} byla založena.")
+        else:
+            messages.info(request, f"Uzávěrka {mesic:02d}/{rok} už existuje, otevírám ji.")
+        return redirect(reverse("admin:sklad_skladovauzaverka_change", args=[uzaverka.pk]))
+
+    def stav_dokladu(self, obj):
+        return _stav_dokladu_text(obj)
+
+    stav_dokladu.short_description = "Stav dokladu"
+
+    def konecny_stav_display(self, obj):
+        return money_cs(obj.konecny_stav)
+
+    konecny_stav_display.short_description = "Konečná hodnota"
+
+    def rozdil_kontroly_display(self, obj):
+        return money_cs(obj.rozdil_kontroly)
+
+    rozdil_kontroly_display.short_description = "Kontrolní rozdíl"
+
+    def pripraveno_display(self, obj):
+        if not obj or not obj.rok or not obj.mesic:
+            return "-"
+        data = pruvodce_skladovou_uzaverkou(obj.rok, obj.mesic)
+        if data["pripraveno"]:
+            return format_html('<span class="badge badge-success">Připraveno</span>')
+        return format_html('<span class="badge badge-warning">Zkontrolovat</span>')
+
+    pripraveno_display.short_description = "Připravenost"
+
+    def exporty_list_display(self, obj):
+        if not obj or not obj.pk:
+            return "-"
+        return format_html(
+            '<a class="button" href="{}">PDF</a> <a class="button" href="{}">XLSX</a>',
+            reverse("admin:sklad_uzaverka_pdf", args=[obj.pk]),
+            reverse("admin:sklad_uzaverka_xlsx", args=[obj.pk]),
+        )
+
+    exporty_list_display.short_description = "Export"
+
+    def pruvodce_list_display(self, obj):
+        if not obj or not obj.pk:
+            return "-"
+        return format_html(
+            '<a class="button" href="{}">Průvodce</a>',
+            reverse("admin:sklad_uzaverka_pruvodce", args=[obj.pk]),
+        )
+
+    pruvodce_list_display.short_description = "Průvodce"
+
+    def exporty_display(self, obj):
+        if not obj or not obj.pk:
+            return "Export bude dostupný po uložení uzávěrky."
+        return format_html(
+            '<a class="button" href="{}">Stáhnout XLSX</a> '
+            '<a class="button" href="{}">Stáhnout PDF</a> '
+            '<a class="button" href="{}">Archiv ZIP</a> '
+            '<a class="button" href="{}">Otevřít průvodce</a>',
+            f"{obj.pk}/xlsx/",
+            f"{obj.pk}/pdf/",
+            reverse("admin:sklad_uzaverka_archiv", args=[obj.pk]),
+            reverse("admin:sklad_uzaverka_pruvodce", args=[obj.pk]),
+        )
+
+    exporty_display.short_description = "Exporty"
+
+    def pruvodce_uzaverkou_display(self, obj):
+        if not obj or not obj.rok or not obj.mesic:
+            return "Průvodce se zobrazí po zadání roku a měsíce."
+        data = pruvodce_skladovou_uzaverkou(obj.rok, obj.mesic)
+        rows = []
+        for kontrola in data["kontroly"]:
+            badge = (
+                '<span class="badge badge-success">V pořádku</span>'
+                if kontrola["ok"] else
+                '<span class="badge badge-danger">Vyžaduje kontrolu</span>'
+            )
+            rows.append(
+                "<tr>"
+                f"<td>{kontrola['nazev']}</td>"
+                f"<td>{kontrola['pocet']}</td>"
+                f"<td>{badge}</td>"
+                "</tr>"
+            )
+        hlavicka = (
+            '<div class="alert alert-success">Období je připravené k uzavření.</div>'
+            if data["pripraveno"] else
+            '<div class="alert alert-warning">Před uzavřením projdi označené kontroly.</div>'
+        )
+        return mark_safe(
+            hlavicka
+            + '<table class="table table-sm table-striped"><thead><tr><th>Kontrola</th><th>Počet</th><th>Stav</th></tr></thead>'
+            + f"<tbody>{''.join(rows)}</tbody></table>"
+            + f"<p><strong>Kontrolní rozdíl:</strong> {money_cs(data['uzaverka']['rozdil_kontroly'])}</p>"
+        )
+
+    pruvodce_uzaverkou_display.short_description = "Průvodce uzávěrkou"
+
+    def pruvodce_view(self, request, uzaverka_id):
+        uzaverka = get_object_or_404(SkladovaUzaverka, pk=uzaverka_id)
+        if request.method == "POST" and request.POST.get("action") == "close":
+            try:
+                if uzavri_skladovou_uzaverku(uzaverka, user=request.user):
+                    messages.success(request, "Skladová uzávěrka byla uzavřena.")
+                else:
+                    messages.info(request, "Skladová uzávěrka už byla uzavřená.")
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+            return redirect(reverse("admin:sklad_uzaverka_pruvodce", args=[uzaverka.pk]))
+
+        data = pruvodce_skladovou_uzaverkou(uzaverka.rok, uzaverka.mesic)
+        kroky = [
+            {
+                "cislo": 1,
+                "nazev": "Uzavřít všechny příjemky",
+                "popis": "Příjemky v měsíci musí mít propsané skladové pohyby a ceny.",
+                "kontrola": data["kontroly"][0],
+                "url": reverse("admin:sklad_prijemskladu_changelist") + f"?datum__gte={data['date_from'].isoformat()}&datum__lte={data['date_to'].isoformat()}",
+            },
+            {
+                "cislo": 2,
+                "nazev": "Uzavřít všechny výdejky",
+                "popis": "Výdejky musí odepsat suroviny ze skladu a ocenit spotřebu.",
+                "kontrola": data["kontroly"][1],
+                "url": reverse("admin:sklad_vydejka_changelist") + f"?datum__gte={data['date_from'].isoformat()}&datum__lte={data['date_to'].isoformat()}",
+            },
+            {
+                "cislo": 3,
+                "nazev": "Zpracovat inventury",
+                "popis": "Inventurní rozdíly musí být uzavřené a promítnuté do skladu.",
+                "kontrola": data["kontroly"][2],
+                "url": reverse("admin:sklad_inventura_changelist") + f"?datum__gte={data['date_from'].isoformat()}&datum__lte={data['date_to'].isoformat()}",
+            },
+            {
+                "cislo": 4,
+                "nazev": "Odepsat prošlé šarže",
+                "popis": "Prošlé potraviny nesmí zůstat jako použitelný sklad.",
+                "kontrola": data["kontroly"][4],
+                "url": reverse("admin:sklad_odpisexpirace_changelist"),
+            },
+            {
+                "cislo": 5,
+                "nazev": "Zkontrolovat stav skladu proti šaržím",
+                "popis": "Součet aktivních šarží má odpovídat stavu skladu.",
+                "kontrola": data["kontroly"][5],
+                "url": reverse("admin:sklad_skladdashboard_changelist"),
+            },
+            {
+                "cislo": 6,
+                "nazev": "Uzavřít skladový měsíc",
+                "popis": "Po splnění kontrol uzavři měsíc a stáhni protokol.",
+                "kontrola": data["kontroly"][6],
+                "url": reverse("admin:sklad_skladovauzaverka_change", args=[uzaverka.pk]),
+            },
+        ]
+        context = dict(
+            self.admin_site.each_context(request),
+            title=f"Průvodce skladovou uzávěrkou {uzaverka.mesic:02d}/{uzaverka.rok}",
+            uzaverka=uzaverka,
+            data=data,
+            kroky=kroky,
+            pdf_url=reverse("admin:sklad_uzaverka_pdf", args=[uzaverka.pk]),
+            xlsx_url=reverse("admin:sklad_uzaverka_xlsx", args=[uzaverka.pk]),
+            archiv_url=reverse("admin:sklad_uzaverka_archiv", args=[uzaverka.pk]),
+            change_url=reverse("admin:sklad_skladovauzaverka_change", args=[uzaverka.pk]),
+        )
+        return TemplateResponse(request, "admin/sklad/pruvodce_uzaverkou.html", context)
+
+    def save_model(self, request, obj, form, change):
+        if not obj.pk and not obj.vytvoril:
+            obj.vytvoril = request.user
+        if obj.rok and obj.mesic and not obj.datum:
+            obj.datum = date(obj.rok, obj.mesic, calendar.monthrange(obj.rok, obj.mesic)[1])
+        super().save_model(request, obj, form, change)
+
+    def save_form(self, request, form, change):
+        obj = super().save_form(request, form, change)
+        return _prepare_uzavreni_po_ulozeni(SkladovaUzaverka, obj, change)
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        obj = form.instance
+        if getattr(obj, "_uzavrit_po_ulozeni", False):
+            try:
+                uzavri_skladovou_uzaverku(obj, user=request.user)
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+
+    def uzavrit_uzaverky(self, request, queryset):
+        pocet = 0
+        for uzaverka in queryset:
+            try:
+                if uzavri_skladovou_uzaverku(uzaverka, user=request.user):
+                    pocet += 1
+            except ValidationError as exc:
+                messages.error(request, f"{uzaverka}: {' '.join(exc.messages)}")
+        self.message_user(request, f"Uzavřeno uzávěrek: {pocet}.", messages.SUCCESS)
+
+    uzavrit_uzaverky.short_description = "Uzavřít vybrané skladové uzávěrky"
+
+    def stornovat_uzaverky(self, request, queryset):
+        return _storno_action_s_duvodem(
+            self,
+            request,
+            queryset,
+            title="Storno skladových uzávěrek",
+            action_name="stornovat_uzaverky",
+            callback=lambda uzaverka, user, duvod: otevri_skladovou_uzaverku(uzaverka, user=user, duvod=duvod),
+            success_label="Stornováno uzávěrek",
+        )
+
+    stornovat_uzaverky.short_description = "Stornovat vybrané uzávěrky a otevřít období"
+
+    def _export_rows(self, uzaverka):
+        return [
+            ("Počáteční hodnota skladu", uzaverka.pocatecni_stav),
+            ("Příjmy", uzaverka.prijmy),
+            ("Storna příjmů", uzaverka.storna_prijmu),
+            ("Výdeje", uzaverka.vydeje),
+            ("Storna výdejek", uzaverka.storna_vydeju),
+            ("Odpisy expirací", uzaverka.odpisy_expirace),
+            ("Inventurní přebytky", uzaverka.inventura_plus),
+            ("Inventurní manka", uzaverka.inventura_minus),
+            ("Vypočtená konečná hodnota", uzaverka.vypocet_konecneho_stavu),
+            ("Skutečná konečná hodnota", uzaverka.konecny_stav),
+            ("Kontrolní rozdíl", uzaverka.rozdil_kontroly),
+        ]
+
+    def export_xlsx(self, request, uzaverka_id):
+        uzaverka = get_object_or_404(SkladovaUzaverka, pk=uzaverka_id)
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Skladová uzávěrka"
+        ws.append([f"Skladová uzávěrka {uzaverka.mesic:02d}/{uzaverka.rok}"])
+        ws.append([])
+        ws.append(["Ukazatel", "Hodnota Kč"])
+        for nazev, hodnota in self._export_rows(uzaverka):
+            ws.append([nazev, float(hodnota or 0)])
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        response = HttpResponse(
+            output.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="skladova_uzaverka_{uzaverka.rok}_{uzaverka.mesic:02d}.xlsx"'
+        return response
+
+    def export_pdf(self, request, uzaverka_id):
+        uzaverka = get_object_or_404(SkladovaUzaverka, pk=uzaverka_id)
+        pruvodce = pruvodce_skladovou_uzaverkou(uzaverka.rok, uzaverka.mesic)
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=1.5 * cm, leftMargin=1.5 * cm, topMargin=1.5 * cm, bottomMargin=1.5 * cm)
+        styles, font_name = _pdf_styles()
+        story = [
+            Paragraph(f"Skladová uzávěrka {uzaverka.mesic:02d}/{uzaverka.rok}", styles["Title"]),
+            Spacer(1, 0.4 * cm),
+        ]
+        data = [["Ukazatel", "Hodnota Kč"]]
+        data += [[nazev, money_cs(hodnota)] for nazev, hodnota in self._export_rows(uzaverka)]
+        table = safe_table(
+            data,
+            [11 * cm, 5 * cm],
+            font_name=font_name,
+            style_commands=[
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("ALIGN", (1, 1), (1, -1), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ],
+        )
+        story += [table, Spacer(1, 0.5 * cm), Paragraph("Kontrolní checklist", styles["Heading2"])]
+        checklist = [["Kontrola", "Počet", "Stav"]]
+        for kontrola in pruvodce["kontroly"]:
+            checklist.append([
+                kontrola["nazev"],
+                kontrola["pocet"],
+                "V pořádku" if kontrola["ok"] else "Vyžaduje kontrolu",
+            ])
+        checklist_table = safe_table(
+            checklist,
+            [9 * cm, 2 * cm, 5 * cm],
+            font_name=font_name,
+            style_commands=[
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("ALIGN", (1, 1), (1, -1), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ],
+        )
+        story.append(checklist_table)
+        doc.build(story)
+        buffer.seek(0)
+        response = HttpResponse(buffer.read(), content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="skladova_uzaverka_{uzaverka.rok}_{uzaverka.mesic:02d}.pdf"'
+        return response
+
+    def export_archiv(self, request, uzaverka_id):
+        uzaverka = get_object_or_404(SkladovaUzaverka, pk=uzaverka_id)
+        pruvodce = pruvodce_skladovou_uzaverkou(uzaverka.rok, uzaverka.mesic)
+        opravne = doklady_k_oprave(pruvodce["date_from"], pruvodce["date_to"])
+
+        output = BytesIO()
+        with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            souhrn = [
+                f"Skladová uzávěrka {uzaverka.mesic:02d}/{uzaverka.rok}",
+                "",
+                *[f"{nazev};{money_cs(hodnota)}" for nazev, hodnota in self._export_rows(uzaverka)],
+            ]
+            archive.writestr("01_souhrn_uzaverky.csv", "\n".join(souhrn).encode("utf-8-sig"))
+
+            kontroly = ["Kontrola;Počet;Stav"]
+            for kontrola in pruvodce["kontroly"]:
+                kontroly.append(f"{kontrola['nazev']};{kontrola['pocet']};{'OK' if kontrola['ok'] else 'KONTROLA'}")
+            archive.writestr("02_kontrolni_checklist.csv", "\n".join(kontroly).encode("utf-8-sig"))
+
+            doklady = ["Sekce;Počet"]
+            for sekce in opravne["sekce"]:
+                doklady.append(f"{sekce['nazev']};{sekce['pocet']}")
+            archive.writestr("03_doklady_k_oprave.csv", "\n".join(doklady).encode("utf-8-sig"))
+        output.seek(0)
+        response = HttpResponse(output.read(), content_type="application/zip")
+        response["Content-Disposition"] = f'attachment; filename="archiv_skladove_uzaverky_{uzaverka.rok}_{uzaverka.mesic:02d}.zip"'
+        return response
+
+
 @admin.register(InventurniDoklad)
 class InventurniDokladAdmin(admin.ModelAdmin):
-    list_display = ("id", "datum", "vytvoril", "pocet_polozek")
+    list_display = ("id", "datum", "vytvoril", "pocet_polozek", "uzaverka_mesice_link", "inventurni_pdf_link")
     list_filter = ("datum",)
     search_fields = ("id", "vytvoril__username")
     inlines = [PolozkaInventuryReadOnlyInline]
-    readonly_fields = ("datum", "popis", "vytvoril", "uzavreny", "uzavren_at", "uzavrel")
+    readonly_fields = ("datum", "popis", "vytvoril", "uzavreny", "uzavren_at", "uzavrel", "inventurni_pdf_link")
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
@@ -763,6 +2751,19 @@ class InventurniDokladAdmin(admin.ModelAdmin):
 
     pocet_polozek.short_description = "Počet položek"
 
+    def inventurni_pdf_link(self, obj):
+        if not obj or not obj.pk:
+            return "-"
+        url = reverse("admin:sklad_inventura_pdf", args=[obj.pk])
+        return format_html('<a class="button" href="{}">Stáhnout PDF</a>', url)
+
+    inventurni_pdf_link.short_description = "PDF report"
+
+    def uzaverka_mesice_link(self, obj):
+        return _uzaverka_mesice_link(obj)
+
+    uzaverka_mesice_link.short_description = "Uzávěrka měsíce"
+
 
 @admin.register(Vydejka)
 class VydejkaAdmin(admin.ModelAdmin):
@@ -772,12 +2773,21 @@ class VydejkaAdmin(admin.ModelAdmin):
         "stravovaci_skupina",
         "typ_stravy",
         "uzavreny",
+        "stornovano",
         "uzavren_at",
         "uzavrel",
     )
-    list_filter = ("typ_stravy", "stravovaci_skupina", "datum", "uzavreny")
+    list_filter = ("typ_stravy", "stravovaci_skupina", "datum", "uzavreny", "stornovano")
     search_fields = ("id", "stravovaci_skupina__nazev", "popis")
-    readonly_fields = ("stav_dokladu", "vytvoril", "uzavren_at", "uzavrel")
+    readonly_fields = (
+        "stav_dokladu",
+        "nahled_cerpani_sarzi_display",
+        "vytvoril",
+        "uzavren_at",
+        "uzavrel",
+        "stornovano",
+        "stornovano_at",
+    )
     inlines = [PohybVydejkyInline]
 
     fieldsets = (
@@ -790,14 +2800,14 @@ class VydejkaAdmin(admin.ModelAdmin):
         (
             "Objednané receptury a suroviny",
             {
-                "fields": (),
+                "fields": ("nahled_cerpani_sarzi_display",),
                 "description": "",
             },
         ),
         (
             "Stav a audit",
             {
-                "fields": ("stav_dokladu", "uzavreny", "vytvoril", "uzavren_at", "uzavrel"),
+                "fields": ("stav_dokladu", "uzavreny", "stornovano", "vytvoril", "uzavren_at", "uzavrel", "stornovano_at"),
             },
         ),
     )
@@ -805,6 +2815,7 @@ class VydejkaAdmin(admin.ModelAdmin):
     actions = [
         "akce_vygenerovat_z_objednavek",
         "uzavrit_vydejky",
+        "stornovat_vydejky",
     ]
 
     def get_urls(self):
@@ -823,6 +2834,41 @@ class VydejkaAdmin(admin.ModelAdmin):
 
     stav_dokladu.short_description = "Stav dokladu"
 
+    def nahled_cerpani_sarzi_display(self, obj):
+        if not obj or not obj.pk:
+            return "Náhled se zobrazí po prvním uložení výdejky."
+        data = nahled_vydejky(obj)
+        if not data["radky"]:
+            return "Výdejka zatím nemá položky."
+
+        rows = []
+        for row in data["radky"]:
+            sarze = row.get("sarze")
+            if row.get("chybi"):
+                sarze_text = '<span class="badge badge-danger">Chybí použitelná šarže</span>'
+                datum = "-"
+            else:
+                sarze_text = sarze.sarze or f"#{sarze.id}"
+                datum = sarze.datum_spotreby.strftime("%d.%m.%Y") if sarze.datum_spotreby else "bez data"
+            rows.append(
+                "<tr>"
+                f"<td>{row['surovina'].nazev}</td>"
+                f"<td>{sarze_text}</td>"
+                f"<td>{datum}</td>"
+                f"<td>{format_mnozstvi_s_jednotkou(row['surovina'], row['mnozstvi'])}</td>"
+                f"<td>{money_cs(row['hodnota'])}</td>"
+                "</tr>"
+            )
+        return mark_safe(
+            '<div class="table-responsive"><table class="table table-sm table-striped mb-0">'
+            "<thead><tr><th>Surovina</th><th>Šarže</th><th>Datum spotřeby</th><th>Množství</th><th>Hodnota</th></tr></thead>"
+            f"<tbody>{''.join(rows)}</tbody>"
+            f"<tfoot><tr><th colspan='4'>Odhadovaná hodnota výdeje</th><th>{money_cs(data['hodnota_celkem'])}</th></tr></tfoot>"
+            "</table></div>"
+        )
+
+    nahled_cerpani_sarzi_display.short_description = "Náhled čerpání šarží"
+
     def save_model(self, request, obj, form, change):
         if not obj.pk and not obj.vytvoril:
             obj.vytvoril = request.user
@@ -839,7 +2885,10 @@ class VydejkaAdmin(admin.ModelAdmin):
         if getattr(obj, "_uzavrit_po_ulozeni", False):
             _dopln_vydejku_z_objednavek_pokud_je_prazdna(obj)
             _upozorni_na_nedostatecne_stavy(request, obj)
-            uzavri_vydejku(obj, user=request.user)
+            try:
+                uzavri_vydejku(obj, user=request.user)
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
 
     @admin.action(description="Uzavřít výdejky a promítnout do skladu")
     def uzavrit_vydejky(self, request, queryset):
@@ -848,8 +2897,11 @@ class VydejkaAdmin(admin.ModelAdmin):
             if not vydejka.uzavreny:
                 _dopln_vydejku_z_objednavek_pokud_je_prazdna(vydejka)
                 _upozorni_na_nedostatecne_stavy(request, vydejka)
-            if uzavri_vydejku(vydejka, user=request.user):
-                uzavreno += 1
+            try:
+                if uzavri_vydejku(vydejka, user=request.user):
+                    uzavreno += 1
+            except ValidationError as exc:
+                messages.error(request, f"Výdejka #{vydejka.id}: {' '.join(exc.messages)}")
 
         self.message_user(
             request,
@@ -874,19 +2926,31 @@ class VydejkaAdmin(admin.ModelAdmin):
             f"Výdejky byly vygenerovány/přepočítány z objednávek ({pocet} ks).",
         )
 
+    @admin.action(description="Stornovat výdejky a vrátit suroviny na sklad")
+    def stornovat_vydejky(self, request, queryset):
+        return _storno_action_s_duvodem(
+            self,
+            request,
+            queryset,
+            title="Storno výdejek",
+            action_name="stornovat_vydejky",
+            callback=lambda vydejka, user, duvod: stornuj_vydejku(vydejka, user=user, duvod=duvod),
+            success_label="Stornováno výdejek",
+        )
+
     def get_readonly_fields(self, request, obj=None):
         ro = list(super().get_readonly_fields(request, obj))
         if obj and obj.uzavreny:
-            ro += ["datum", "stravovaci_skupina", "typ_stravy", "popis", "uzavreny"]
+            ro += ["datum", "stravovaci_skupina", "typ_stravy", "popis", "uzavreny", "stornovano"]
         return ro
 
     def has_delete_permission(self, request, obj=None):
-        if obj and obj.uzavreny:
+        if obj and (obj.uzavreny or obj.stornovano):
             return False
         return super().has_delete_permission(request, obj)
 
     def has_change_permission(self, request, obj=None):
-        if obj and obj.uzavreny:
+        if obj and (obj.uzavreny or obj.stornovano):
             return False
         return super().has_change_permission(request, obj)
 
@@ -1001,13 +3065,7 @@ def vydejka_pdf_view(request, vydejka_id):
 
     vydejka = get_object_or_404(Vydejka, pk=vydejka_id)
 
-    font_path = os.path.join(settings.BASE_DIR, "static", "fonts", "DejaVuSans.ttf")
-    pdfmetrics.registerFont(TTFont("DejaVuSans", font_path))
-
-    styles = getSampleStyleSheet()
-    styles["Normal"].fontName = "DejaVuSans"
-    styles["Title"].fontName = "DejaVuSans"
-    styles["Heading2"].fontName = "DejaVuSans"
+    styles, font_name = _pdf_styles()
 
     order_items = get_order_items_for_vydejka(vydejka)
 
@@ -1105,20 +3163,20 @@ def vydejka_pdf_view(request, vydejka_id):
                         f"{row['celkem']:.3f} {surovina.jednotka}",
                     ])
 
-                table = Table(data, colWidths=[7 * cm, 4 * cm, 5 * cm])
-                table.setStyle(
-                    TableStyle(
-                        [
-                            ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-                            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                            ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
-                            ("FONTNAME", (0, 0), (-1, 0), "DejaVuSans"),
-                            ("FONTNAME", (0, 1), (-1, -1), "DejaVuSans"),
-                            ("FONTSIZE", (0, 0), (-1, -1), 9),
-                            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-                            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                        ]
-                    )
+                table = safe_table(
+                    data,
+                    [7 * cm, 4 * cm, 5 * cm],
+                    font_name=font_name,
+                    font_size=8,
+                    style_commands=[
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                        ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+                        ("FONTSIZE", (0, 0), (-1, -1), 8),
+                        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ],
                 )
                 elements.append(table)
             else:

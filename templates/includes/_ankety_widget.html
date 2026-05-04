@@ -1,0 +1,170 @@
+<div class="survey-widget">
+  <div class="survey-widget-head">
+    <div>
+      <div class="survey-widget-title">
+        <i class="fas fa-star me-2"></i>Hodnocení jídel
+      </div>
+      <div class="survey-widget-subtitle">Dnešní odebraná jídla</div>
+    </div>
+    {% if ankety_hodnotit %}
+      <span class="survey-widget-count">{{ ankety_hodnotit|length }}</span>
+    {% endif %}
+  </div>
+
+  {% if not ankety_otazky_count %}
+    <div class="survey-widget-empty">Hodnocení zatím není nastavené.</div>
+  {% elif ankety_hodnotit %}
+    <div class="survey-widget-list">
+      {% for item in ankety_hodnotit %}
+        <a class="survey-widget-item" href="{% url 'ankety:hodnotit_jidlo' item.id %}">
+          <span>
+            <strong>{{ item.menu_item.jidlo.nazev }}</strong>
+            <small>{{ item.menu_item.druh_jidla.nazev }} · {{ item.quantity }}×</small>
+          </span>
+          <i class="fas fa-chevron-right"></i>
+        </a>
+      {% endfor %}
+    </div>
+    <a class="survey-widget-all" href="{% url 'ankety:moje_ankety' %}">Zobrazit všechna hodnocení</a>
+  {% elif ankety_hotovo %}
+    <div class="survey-widget-done">
+      <i class="fas fa-circle-check me-2"></i>Dnešní jídla už máš ohodnocená. Děkujeme.
+    </div>
+  {% else %}
+    <div class="survey-widget-empty">Po odebrání jídla se tady objeví možnost hodnocení.</div>
+  {% endif %}
+</div>
+
+<style>
+  .survey-widget {
+    background: #fff;
+    border: 1px solid #dbe1e8;
+    border-top: 4px solid #f28f28;
+    border-radius: 8px;
+    box-shadow: 0 10px 24px rgba(23,32,42,.06);
+    overflow: hidden;
+    margin-bottom: 1rem;
+  }
+
+  .survey-widget-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+    background: #fff8f0;
+    border-bottom: 1px solid #f6c896;
+  }
+
+  .survey-widget-title {
+    font-weight: 900;
+    color: #17202a;
+  }
+
+  .survey-widget-title i {
+    color: #f28f28;
+  }
+
+  .survey-widget-subtitle {
+    color: #65737d;
+    font-size: .86rem;
+    font-weight: 700;
+    margin-top: 2px;
+  }
+
+  .survey-widget-count {
+    min-width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: inline-grid;
+    place-items: center;
+    background: #18a046;
+    color: #fff;
+    font-weight: 900;
+  }
+
+  .survey-widget-list {
+    display: grid;
+  }
+
+  .survey-widget-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    text-decoration: none;
+    color: #17202a;
+    border-bottom: 1px solid #edf0f3;
+  }
+
+  .survey-widget-item:hover {
+    color: #17202a;
+    background: #f8fafc;
+  }
+
+  .survey-widget-item strong,
+  .survey-widget-item small {
+    display: block;
+  }
+
+  .survey-widget-item small {
+    color: #65737d;
+    font-weight: 700;
+    margin-top: 2px;
+  }
+
+  .survey-widget-item > i {
+    color: #f28f28;
+  }
+
+  .survey-widget-all {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 42px;
+    margin: 12px 14px 14px;
+    border-radius: 8px;
+    background: #18a046;
+    color: #fff;
+    font-weight: 900;
+    text-decoration: none;
+  }
+
+  .survey-widget-all:hover {
+    background: #12823a;
+    color: #fff;
+  }
+
+  .survey-widget-empty,
+  .survey-widget-done {
+    padding: 14px;
+    color: #65737d;
+    font-weight: 800;
+  }
+
+  .survey-widget-done {
+    color: #166534;
+    background: #f0fdf4;
+  }
+
+  @media (max-width: 767.98px) {
+    .survey-widget {
+      border-radius: 16px;
+    }
+
+    .survey-widget-head {
+      padding: 12px 14px;
+    }
+
+    .survey-widget-item,
+    .survey-widget-empty,
+    .survey-widget-done {
+      padding: 12px;
+    }
+
+    .survey-widget-all {
+      margin: 10px 12px 12px;
+    }
+  }
+</style>

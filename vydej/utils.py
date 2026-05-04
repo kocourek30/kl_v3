@@ -10,6 +10,8 @@ from io import BytesIO
 from datetime import datetime
 import os
 
+from kliknijidlo.pdf_utils import safe_table
+
 
 # Registrace českého fontu
 def register_fonts():
@@ -113,17 +115,20 @@ def generuj_pdf_uctenka(uctenka):
         vydal_jmeno = uctenka.vydal.get_full_name() or uctenka.vydal.username
         info_data.append(['Vydal:', vydal_jmeno])
     
-    info_table = Table(info_data, colWidths=[4*cm, 12*cm])
-    info_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (0, -1), bold_font),
-        ('FONTNAME', (1, 0), (1, -1), base_font),
-        ('FONTSIZE', (0, 0), (-1, -1), 11),
-        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-        ('ALIGN', (1, 0), (1, -1), 'LEFT'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-    ]))
+    info_table = safe_table(
+        info_data,
+        [4*cm, 12*cm],
+        font_name=base_font,
+        header=False,
+        font_size=10,
+        style_commands=[
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ],
+    )
     
     story.append(info_table)
     story.append(Spacer(1, 0.8*cm))
@@ -150,19 +155,21 @@ def generuj_pdf_uctenka(uctenka):
     data.append(['', '', '', '', 'CELKEM:', f"{uctenka.celkova_cena} Kč"])
     data.append(['', '', '', '', 'Celková dotace:', f"{uctenka.celkova_dotace} Kč"])
     
-    table = Table(data, colWidths=[5*cm, 2.5*cm, 1.2*cm, 2*cm, 2.5*cm, 2.5*cm])
-    table.setStyle(TableStyle([
+    table = safe_table(
+        data,
+        [5*cm, 2.5*cm, 1.2*cm, 2*cm, 2.5*cm, 2.5*cm],
+        font_name=base_font,
+        font_size=8,
+        style_commands=[
         # Hlavička
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#32B8C6')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('FONTNAME', (0, 0), (-1, 0), bold_font),
-        ('FONTSIZE', (0, 0), (-1, 0), 11),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
         ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, 0), 'MIDDLE'),
+        ('VALIGN', (0, 0), (-1, 0), 'TOP'),
         
         # Obsah
-        ('FONTNAME', (0, 1), (-1, -4), base_font),
-        ('FONTSIZE', (0, 1), (-1, -4), 10),
+        ('FONTSIZE', (0, 1), (-1, -4), 8),
         ('ALIGN', (0, 1), (1, -4), 'LEFT'),
         ('ALIGN', (2, 1), (-1, -4), 'CENTER'),
         ('ALIGN', (-1, 1), (-1, -4), 'RIGHT'),
@@ -171,8 +178,7 @@ def generuj_pdf_uctenka(uctenka):
         ('LINEABOVE', (0, -3), (-1, -3), 1, colors.HexColor('#CCCCCC')),
         
         # Součty
-        ('FONTNAME', (0, -2), (-1, -1), bold_font),
-        ('FONTSIZE', (0, -2), (-1, -1), 11),
+        ('FONTSIZE', (0, -2), (-1, -1), 9),
         ('ALIGN', (-2, -2), (-2, -1), 'RIGHT'),
         ('ALIGN', (-1, -2), (-1, -1), 'RIGHT'),
         ('BACKGROUND', (0, -2), (-1, -1), colors.HexColor('#F5F5F5')),
@@ -186,7 +192,9 @@ def generuj_pdf_uctenka(uctenka):
         ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
         ('LEFTPADDING', (0, 0), (-1, -1), 6),
         ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-    ]))
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ],
+    )
     
     story.append(table)
     story.append(Spacer(1, 0.8*cm))
@@ -281,19 +289,23 @@ def generuj_pdf_kuchyne(datum_vydeje, stats, total_objednavek, total_porci, uzav
         ['Stav uzávěrky:', uzavirka_info['uzavreno_text']]
     ]
     
-    summary_table = Table(summary_data, colWidths=[6*cm, 10*cm])
-    summary_table.setStyle(TableStyle([
+    summary_table = safe_table(
+        summary_data,
+        [6*cm, 10*cm],
+        font_name=base_font,
+        header=False,
+        font_size=11,
+        style_commands=[
         ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#E8F5F7')),
-        ('FONTNAME', (0, 0), (0, -1), bold_font),
-        ('FONTNAME', (1, 0), (1, -1), base_font),
-        ('FONTSIZE', (0, 0), (-1, -1), 12),
+        ('FONTSIZE', (0, 0), (-1, -1), 11),
         ('ALIGN', (0, 0), (0, -1), 'LEFT'),
         ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('TOPPADDING', (0, 0), (-1, -1), 8),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
         ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#32B8C6')),
-    ]))
+        ],
+    )
     
     story.append(summary_table)
     story.append(Spacer(1, 1*cm))
@@ -307,22 +319,25 @@ def generuj_pdf_kuchyne(datum_vydeje, stats, total_objednavek, total_porci, uzav
         for jidlo_nazev, data in jidla.items():
             table_data.append([jidlo_nazev, str(data['celkem'])])
         
-        jidlo_table = Table(table_data, colWidths=[12*cm, 4*cm])
-        jidlo_table.setStyle(TableStyle([
+        jidlo_table = safe_table(
+            table_data,
+            [12*cm, 4*cm],
+            font_name=base_font,
+            font_size=10,
+            style_commands=[
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#32B8C6')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('FONTNAME', (0, 0), (-1, 0), bold_font),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('FONTNAME', (0, 1), (-1, -1), base_font),
-            ('FONTSIZE', (0, 1), (-1, -1), 11),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
             ('ALIGN', (0, 0), (0, -1), 'LEFT'),
             ('ALIGN', (1, 0), (1, -1), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#CCCCCC')),
             ('TOPPADDING', (0, 0), (-1, -1), 10),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F9F9F9')]),
-        ]))
+            ],
+        )
         
         story.append(jidlo_table)
         story.append(Spacer(1, 0.8*cm))

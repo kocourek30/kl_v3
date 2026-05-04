@@ -1,0 +1,14 @@
+@echo off
+
+REM AUTOEXEC.BAT nen¡ pou§it k inicializaci prostýed¡ MS-DOS.
+REM AUTOEXEC.NT je pou§it k inicializaci prostýed¡ MS-DOS pokud
+REM nen¡ urŸen jinì spouçtØc¡ soubor v souboru PIF aplikace.
+
+REM Instalace rozç¡ýen¡ CD-ROM
+lh %SystemRoot%\system32\mscdexnt.exe
+
+REM Install s¡œov‚ho pýesmØrovaŸe (pýed programem dosx.exe)
+lh %SystemRoot%\system32\redir
+
+REM Install DPMI support
+lh %SystemRoot%\system32\dosx

@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Výdej jídel - Kuchyně</title>
+    <title>Výdej jídelny</title>
     
     <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -25,7 +25,7 @@
     
 </head>
 <body>
-    <form style="display:none;">
+    <form class="csrf-hidden-form">
     {% csrf_token %}
 </form>
     <!-- MAIN CONTENT -->
@@ -36,7 +36,7 @@
             <div class="custom-tabs">
                 <button class="tab-button active" data-tab="rfid">
                     <i class="fas fa-wifi"></i>
-                    RFID Čtečka
+                    RFID čtečka
                 </button>
                 <button class="tab-button" data-tab="customers">
                     <i class="fas fa-users"></i>
@@ -53,7 +53,7 @@
             <!-- Tab Content -->
             <div class="tab-content-wrapper">
                 <!-- TAB 1: RFID Scanner -->
-                <div class="tab-pane active" id="rfid" style="position: relative;">
+                <div class="tab-pane active tab-pane-rfid" id="rfid">
     <!-- 🔥 STATE 1: WAITING (výchozí stav) -->
     <div id="rfidWaitingState" class="rfid-waiting-container">
         <div class="rfid-card-icon">
@@ -68,7 +68,7 @@
     </div>
 
     <!-- 🔥 STATE 2: SUCCESS (objednávka načtena) -->
-    <div id="rfidSuccessState" style="display: none;">
+    <div id="rfidSuccessState" class="state-hidden" hidden aria-hidden="true">
         <div class="rfid-success-container">
             <div class="rfid-order-card">
                 <div class="rfid-user-header">
@@ -84,14 +84,14 @@
                             </div>
                             <div class="rfid-order-meta-item">
                                 <i class="far fa-clock"></i>
-                                <span>Jídla byla vydána: <strong id="rfidScanTime">-</strong></span>
+                                <span>Vydáno v: <strong id="rfidScanTime">-</strong></span>
                             </div>
                         </div>
                     </div>
                     <!-- ✅ KLIKATELNÁ FAJFKA S TEXTEM -->
                     <button class="rfid-issue-icon-btn" id="rfidIssueIconBtn" title="Vydat jídlo">
                         <i class="fas fa-check-circle"></i>
-                        <span class="rfid-issue-text">Vydat jídla</span>
+                        <span class="rfid-issue-text">Vydat vše</span>
                     </button>
                 </div>
 
@@ -118,7 +118,7 @@
     </div>
 
     <!-- 🔥 STATE 3: ERROR (centrovaný) -->
-    <div id="rfidErrorState" style="display: none;">
+    <div id="rfidErrorState" class="state-hidden" hidden aria-hidden="true">
         <div class="rfid-error-container-centered d-flex">
             <div class="rfid-error-icon-large">
                 <i class="fas fa-exclamation-triangle"></i>
@@ -134,7 +134,7 @@
     </div>
 
     <!-- 🔥 LOADING OVERLAY -->
-    <div id="rfidLoadingOverlay" class="rfid-loading-overlay" style="display: none;">
+    <div id="rfidLoadingOverlay" class="rfid-loading-overlay state-hidden" hidden aria-hidden="true">
         <div class="rfid-loading-spinner">
             <i class="fas fa-spinner fa-spin"></i>
         </div>
@@ -145,7 +145,7 @@
 
                 <!-- TAB 2: Seznam zákazníků -->
                 <div class="tab-pane" id="customers">
-                    <div class="search-filter mb-3" style="padding: 1rem; background: #f8f9fa; border-radius: 8px;">
+                    <div class="search-filter mb-3 search-filter-panel">
                         <div class="input-group">
                             <span class="input-group-text bg-white">
                                 <i class="fas fa-search"></i>
@@ -178,7 +178,7 @@
                                     <i class="fas fa-user"></i>
                                     {{ prepared.order.user.get_full_name }}
                                     {% if prepared.order.status == 'castecne-vydano' %}
-                                        <span class="badge bg-info text-dark ms-2" style="font-size: 0.7rem;">
+                                        <span class="badge bg-info text-dark ms-2 badge-compact">
                                             <i class="fas fa-info-circle"></i> Částečně vydáno
                                         </span>
                                     {% endif %}
@@ -190,9 +190,9 @@
                                 </button>
                             </div>
                             
-                            <div style="font-size: 0.85rem; color: #666; margin-bottom: 0.5rem; padding-left: 0.25rem;">
+                            <div class="order-date-line">
                                 <i class="far fa-calendar-alt"></i>
-                                Objednáno na: <strong style="color: #2196F3;">{{ prepared.order.datum_vydeje|date:"d.m.Y" }}</strong>
+                                Objednáno na: <strong class="order-date-line--pending">{{ prepared.order.datum_vydeje|date:"d.m.Y" }}</strong>
                             </div>
                             
                             <div class="customer-items-list">
@@ -208,7 +208,7 @@
                             </div>
                             
                             {% if prepared.has_other_items %}
-                            <div style="margin-top: 0.5rem; padding: 0.4rem; background: #e3f2fd; border-radius: 4px; font-size: 0.75rem; color: #1565c0;">
+                            <div class="order-followup-note">
                                 <i class="fas fa-info-circle"></i> 
                                 Další položky k výdeji později
                             </div>
@@ -217,9 +217,9 @@
                         {% endfor %}
                     </div>
                     
-                    <div class="empty-state" id="noResultsMessage" style="display: none;">
+                    <div class="empty-state state-hidden" id="noResultsMessage">
                         <i class="fas fa-search"></i>
-                        <p>Žádný uživatel nenalezen</p>
+                        <p>Nebyl nalezen žádný uživatel</p>
                     </div>
                     {% else %}
                     <div class="empty-state">
@@ -237,25 +237,25 @@
                         <div class="customer-card">
                             <div class="customer-name d-flex justify-content-between align-items-center mb-2">
                                 <div>
-                                    <i class="fas fa-check-circle" style="color: #4CAF50;"></i>
+                                    <i class="fas fa-check-circle completed-order-icon"></i>
                                     {{ prepared.order.user.get_full_name }}
                                     {% if prepared.order.status == 'castecne-vydano' %}
-                                        <span class="badge bg-warning text-dark ms-2" style="font-size: 0.7rem;">
+                                        <span class="badge bg-warning text-dark ms-2 badge-compact">
                                             <i class="fas fa-clock"></i> Částečně
                                         </span>
                                     {% endif %}
                                 </div>
-                                <strong style="color: #4CAF50; font-size: 1rem;">
+                                <strong class="completed-order-time">
                                     {{ prepared.order.datum_vydani|date:"H:i:s" }}
                                 </strong>
                             </div>
                             
-                            <div style="font-size: 0.85rem; color: #666; margin-bottom: 0.5rem; padding-left: 0.25rem;">
+                            <div class="order-date-line">
                                 <i class="far fa-calendar-alt"></i>
-                                Objednáno na: <strong style="color: #4CAF50;">{{ prepared.order.datum_vydeje|date:"d.m.Y" }}</strong>
-                                <span style="margin-left: 0.5rem;">
+                                Objednáno na: <strong class="order-date-line--completed">{{ prepared.order.datum_vydeje|date:"d.m.Y" }}</strong>
+                                <span class="order-issued-sep">
                                     <i class="far fa-clock"></i>
-                                    Vydáno: <strong style="color: #4CAF50;">{{ prepared.order.datum_vydani|date:"d.m.Y H:i:s" }}</strong>
+                                    Vydáno: <strong class="order-date-line--completed">{{ prepared.order.datum_vydani|date:"d.m.Y H:i:s" }}</strong>
                                 </span>
                             </div>
                             
@@ -267,7 +267,7 @@
                                         <span class="item-name">{{ item.menu_item.jidlo.nazev }}</span>
                                         <span class="item-type">({{ item.menu_item.druh_jidla.nazev }})</span>
                                         {% if item.datum_vydani %}
-                                        <span class="item-issued-time" style="font-size: 0.75rem; color: #888; margin-left: 0.5rem;">
+                                        <span class="item-issued-time">
                                             {{ item.datum_vydani|date:"H:i" }}
                                         </span>
                                         {% endif %}
@@ -277,16 +277,16 @@
                             </div>
                             
                             {% if prepared.pending_items %}
-                            <div style="margin-top: 0.75rem; padding: 0.5rem; background: #fff3cd; border-radius: 6px; border-left: 3px solid #ffc107;">
-                                <div style="font-size: 0.8rem; font-weight: 600; color: #856404; margin-bottom: 0.3rem;">
+                            <div class="order-pending-note">
+                                <div class="order-pending-note-title">
                                     <i class="fas fa-clock"></i> Čeká na výdej:
                                 </div>
-                                <ul style="list-style: none; padding: 0; margin: 0; font-size: 0.8rem; color: #856404;">
+                                <ul class="order-pending-note-list">
                                     {% for item in prepared.pending_items %}
-                                    <li style="padding: 0.2rem 0;">
-                                        <span style="font-weight: 600;">{{ item.quantity }}×</span>
+                                    <li class="order-pending-note-item">
+                                        <span class="order-pending-note-qty">{{ item.quantity }}×</span>
                                         {{ item.menu_item.jidlo.nazev }}
-                                        <span style="font-style: italic;">({{ item.menu_item.druh_jidla.nazev }})</span>
+                                        <span class="order-pending-note-type">({{ item.menu_item.druh_jidla.nazev }})</span>
                                     </li>
                                     {% endfor %}
                                 </ul>
@@ -308,7 +308,7 @@
             <div class="summary-footer">
                 <h4>
                     <i class="fas fa-clipboard-list"></i>
-                    Celkem k výdeji dnes
+                    Celkem k dnešnímu výdeji
                 </h4>
                 {% if pending_items %}
                 <div class="summary-grid">
@@ -323,7 +323,7 @@
                     {% endfor %}
                 </div>
                 {% else %}
-                <p style="color: rgba(255, 255, 255, 0.9); text-align: center; margin: 0; font-size: 0.95rem;">
+                <p class="summary-empty-text">
                     <i class="fas fa-check-circle"></i> Žádné položky k výdeji
                 </p>
                 {% endif %}
@@ -335,7 +335,7 @@
             <!-- INFO BOX -->
             <div class="info-box">
     <div class="info-title">
-        <i class="fas fa-info-circle"></i> Stav
+            <i class="fas fa-info-circle"></i> Stav výdeje
     </div>
     <div class="info-content">
         <div class="info-date">{{ today|date:"d.m.Y" }}</div>
@@ -344,15 +344,15 @@
             <i class="fas fa-user-circle"></i> {{ user.get_full_name }}
         </div>
         <!-- 🔥 VYPNOUT TLAČÍTKO -->
-        <button id="shutdownBtn" class="btn btn-sm btn-warning mt-2 w-100" title="Vypnout výdej">
-            <i class="fas fa-power-off me-1"></i> Vypnout výdej
+        <button id="shutdownBtn" class="btn btn-sm btn-warning mt-2 w-100" title="Ukončit výdej">
+            <i class="fas fa-power-off me-1"></i> Ukončit výdej
         </button>
     </div>
 </div>
 
             <!-- NAPOSLEDY VYDANÉ -->
             <div class="recent-orders">
-                <h3><i class="fas fa-history"></i> Naposledy vydáno</h3>
+                <h3><i class="fas fa-history"></i> Poslední vydané objednávky</h3>
                 <div class="recent-list">
                     {% if completed_orders %}
                         {% for prepared in completed_orders|slice:":10" %}
@@ -362,20 +362,20 @@
                                     <i class="fas fa-check-circle"></i>
                                     {{ prepared.order.user.get_full_name }}
                                     {% if prepared.order.status == 'castecne-vydano' %}
-                                        <span class="badge bg-warning text-dark ms-1" style="font-size: 0.65rem;">
+                                        <span class="badge bg-warning text-dark ms-1 badge-compact-xs">
                                             částečně
                                         </span>
                                     {% endif %}
                                 </div>
                                 <div class="recent-order-time">
                                     <i class="far fa-clock"></i>
-                                    <strong style="color: #4CAF50;">{{ prepared.order.datum_vydani|date:"H:i:s" }}</strong>
+                                    <strong class="order-date-line--completed">{{ prepared.order.datum_vydani|date:"H:i:s" }}</strong>
                                 </div>
                             </div>
                             
-                            <div style="font-size: 0.8rem; color: #888; margin: 0.3rem 0 0.5rem 1.5rem;">
+                            <div class="recent-order-date-line">
                                 <i class="far fa-calendar-alt"></i>
-                                Objednáno na: <strong style="color: #4CAF50;">{{ prepared.order.datum_vydeje|date:"d.m.Y" }}</strong>
+                                Objednáno na: <strong class="order-date-line--completed">{{ prepared.order.datum_vydeje|date:"d.m.Y" }}</strong>
                             </div>
                             
                             <ul class="recent-order-list">
@@ -384,7 +384,7 @@
                                     <span class="item-qty">{{ item.quantity }}×</span>
                                     {{ item.menu_item.jidlo.nazev }}
                                     {% if item.datum_vydani %}
-                                    <span style="font-size: 0.75rem; color: #aaa; margin-left: 0.3rem;">
+                                    <span class="recent-issued-time">
                                         {{ item.datum_vydani|date:"H:i" }}
                                     </span>
                                     {% endif %}
@@ -393,7 +393,7 @@
                             </ul>
                             
                             {% if prepared.pending_items %}
-                            <div style="margin: 0.5rem 0 0 1.5rem; padding: 0.4rem; background: #fff3cd; border-radius: 4px; font-size: 0.75rem; color: #856404;">
+                            <div class="recent-pending-note">
                                 <i class="fas fa-clock"></i> Čeká: 
                                 {% for item in prepared.pending_items %}
                                     {{ item.quantity }}× {{ item.menu_item.jidlo.nazev }}{% if not forloop.last %}, {% endif %}
@@ -403,9 +403,9 @@
                         </div>
                         {% endfor %}
                     {% else %}
-                        <div class="empty-state" style="padding: 2rem 0.5rem;">
-                            <i class="fas fa-inbox" style="font-size: 2.5rem;"></i>
-                            <p style="font-size: 0.9rem;">Zatím nic vydáno</p>
+                        <div class="empty-state empty-state-compact">
+                            <i class="fas fa-inbox empty-state-icon-lg"></i>
+                            <p class="empty-state-text-sm">Zatím nebylo nic vydáno</p>
                         </div>
                     {% endif %}
                 </div>

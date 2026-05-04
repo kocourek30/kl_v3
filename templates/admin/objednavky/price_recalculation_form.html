@@ -1,67 +1,97 @@
 {% extends "admin/base_site.html" %}
 
 {% block content %}
-<div class="container-fluid">
-    <h1>🔄 Přepočet cen objednávek</h1>
-    
-    <div class="module" style="margin: 20px 0; padding: 15px; background: #fef8e7; border-left: 4px solid #f39c12;">
-        <p><strong>⚠️ Co tento nástroj dělá:</strong></p>
-        <ul>
-            <li>Přepočítá ceny všech položek objednávek podle <strong>aktuálních</strong> cen jídel a dotací</li>
-            <li>Upraví zůstatky uživatelů podle cenových rozdílů</li>
-            <li>Zaznamená všechny změny do audit logu</li>
-            <li>Týká se VŠECH stavů objednávek (včetně vydaných)</li>
-        </ul>
+<div class="report-page">
+  <div class="report-shell prepocty-shell">
+    <section class="report-hero prepocty-hero">
+      <div>
+        <span class="report-eyebrow"><i class="fas fa-calculator"></i> Přepočty cen</span>
+        <h1>Přepočet cen objednávek</h1>
+        <p>
+          Bezpečný vstup do přepočtu cen nad objednávkami. Nejdřív zobrazíš náhled změn,
+          zkontroluješ dopad na zákazníky a teprve potom případně spustíš skutečný přepočet.
+        </p>
+        <div class="admin-chip-row" style="margin-top: 12px;">
+          <span class="admin-chip"><strong>Výchozí období:</strong> {{ today|date:"d.m.Y" }} až {{ week_later|date:"d.m.Y" }}</span>
+          <span class="admin-chip"><strong>Režim:</strong> Nejprve náhled, potom potvrzení</span>
+        </div>
+      </div>
+      <div class="report-meta-grid">
+        <div class="report-meta-card">
+          <strong>Krok 1</strong>
+          <span>Zvol období</span>
+          <small>Určuje, které objednávky se mají přepočítat.</small>
+        </div>
+        <div class="report-meta-card">
+          <strong>Krok 2</strong>
+          <span>Zobraz náhled</span>
+          <small>Nejdřív jen spočítá změny bez zápisu do databáze.</small>
+        </div>
+        <div class="report-meta-card">
+          <strong>Krok 3</strong>
+          <span>Potvrď změny</span>
+          <small>Skutečný přepočet proběhne až po ručním potvrzení.</small>
+        </div>
+        <div class="report-meta-card">
+          <strong>Audit</strong>
+          <span>Automatický záznam</span>
+          <small>Každý běh se zapisuje do logu přepočtů a detailů změn.</small>
+        </div>
+      </div>
+    </section>
+
+    <div class="admin-export-bar">
+      <strong>Co tento nástroj udělá:</strong>
+      <span class="admin-chip">Přepočítá ceny podle aktuálních cen jídel a dotací</span>
+      <span class="admin-chip">Upraví rozdíly na položkách objednávek</span>
+      <span class="admin-chip">Zapíše auditní log a detailní změny</span>
+      <span class="admin-chip">Může zasáhnout i do už vydaných objednávek</span>
     </div>
-    
-    <form method="post" style="background: white; padding: 20px; border: 1px solid #ddd;">
-        {% csrf_token %}
-        
-        <div class="form-row">
-            <div style="margin-bottom: 15px;">
-                <label for="date_from" style="display: block; margin-bottom: 5px; font-weight: bold;">
-                    Datum OD:
-                </label>
-                <input 
-                    type="date" 
-                    id="date_from" 
-                    name="date_from" 
-                    value="{{ today|date:'Y-m-d' }}"
-                    required
-                    style="width: 100%; padding: 8px; font-size: 14px;"
-                >
-            </div>
-            
-            <div style="margin-bottom: 15px;">
-                <label for="date_to" style="display: block; margin-bottom: 5px; font-weight: bold;">
-                    Datum DO:
-                </label>
-                <input 
-                    type="date" 
-                    id="date_to" 
-                    name="date_to" 
-                    value="{{ week_later|date:'Y-m-d' }}"
-                    required
-                    style="width: 100%; padding: 8px; font-size: 14px;"
-                >
-            </div>
-        </div>
-        
-        <div style="margin-top: 20px;">
-            <button 
-                type="submit" 
-                name="action" 
-                value="preview"
-                class="button default"
-                style="padding: 10px 20px; font-size: 14px;"
+
+    <form method="post" class="admin-filter-form">
+      {% csrf_token %}
+      <div class="admin-filter-panel">
+        <div class="admin-filter-grid">
+          <div class="admin-field">
+            <label for="date_from">Datum od:</label>
+            <input
+              type="date"
+              id="date_from"
+              name="date_from"
+              value="{{ today|date:'Y-m-d' }}"
+              required
+              class="admin-field-control"
             >
-                👁️ Náhled změn
-            </button>
-            
-            <a href="{% url 'admin:objednavky_order_changelist' %}" class="button" style="margin-left: 10px;">
-                Zrušit
-            </a>
+          </div>
+          <div class="admin-field">
+            <label for="date_to">Datum do:</label>
+            <input
+              type="date"
+              id="date_to"
+              name="date_to"
+              value="{{ week_later|date:'Y-m-d' }}"
+              required
+              class="admin-field-control"
+            >
+          </div>
         </div>
+
+        <div class="admin-filter-actions">
+          <button type="submit" name="action" value="preview" class="admin-btn admin-btn--primary">
+            <i class="fas fa-eye"></i>
+            Zobrazit náhled změn
+          </button>
+          <a href="{% url 'admin:prepocty_prepoctydummy_changelist' %}" class="admin-btn admin-btn--light">
+            <i class="fas fa-arrow-left"></i>
+            Zpět na přehled přepočtů
+          </a>
+          <a href="{% url 'admin:objednavky_order_changelist' %}" class="admin-btn admin-btn--light">
+            <i class="fas fa-list"></i>
+            Zpět na objednávky
+          </a>
+        </div>
+      </div>
     </form>
+  </div>
 </div>
 {% endblock %}

@@ -1,13 +1,14 @@
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
-from django.db.models import Sum
+from django.db.models import Sum, F
 from datetime import timedelta
 from jidelnicek.models import PolozkaJidelnicku
 from django.contrib.auth.models import Group
 from canteen_settings.models import OrderClosingTime, GroupOrderLimit  # ✅ Správný import
 from dotace.models import SkupinoveNastaveni, DotacniPolitika, DotaceProJidelniskouSkupinu
 from decimal import Decimal
+from users.group_utils import get_effective_user_groups, get_primary_effective_group
 
 
 
@@ -36,6 +37,11 @@ class Order(models.Model):
     storno_datum = models.DateTimeField(null=True, blank=True, verbose_name="Storno datum")
     class Meta:
         unique_together = ('user', 'datum_vydeje')
+        indexes = [
+            models.Index(fields=["user", "datum_vydeje"]),
+            models.Index(fields=["datum_vydeje", "status"]),
+            models.Index(fields=["user", "status", "datum_vydeje"]),
+        ]
         verbose_name = "Objednávka"
         verbose_name_plural = "Objednávky uživatelů"
 
@@ -43,10 +49,14 @@ class Order(models.Model):
         return f"Objednávka {self.user} na {self.datum_vydeje}"
 
     def total_quantity(self):
-        return sum(item.quantity for item in self.items.all())
+        if hasattr(self, '_prefetched_objects_cache') and 'items' in self._prefetched_objects_cache:
+            return sum(item.quantity for item in self.items.all())
+        return self.items.aggregate(total=Sum('quantity'))['total'] or 0
 
     def total_price(self):
-        return sum(item.quantity * item.cena for item in self.items.all())
+        if hasattr(self, '_prefetched_objects_cache') and 'items' in self._prefetched_objects_cache:
+            return sum(item.quantity * item.cena for item in self.items.all())
+        return self.items.aggregate(total=Sum(F('quantity') * F('cena')))['total'] or Decimal('0')
 
 
 class OrderItem(models.Model):
@@ -57,12 +67,6 @@ class OrderItem(models.Model):
     vydano = models.BooleanField(default=False)  # NOVÉ POLE
     datum_vydani = models.DateTimeField(null=True, blank=True) 
 
-    class Meta:
-        indexes = [models.Index(fields=['vydano', 'datum_vydani'])]
-
-    class Meta:
-        unique_together = ('order', 'menu_item')
-
     def __str__(self):
         return f"{self.menu_item.jidlo.nazev} x {self.quantity}"
 
@@ -70,6 +74,11 @@ class OrderItem(models.Model):
         return self.quantity * self.cena
     
     class Meta:
+        unique_together = ('order', 'menu_item')
+        indexes = [
+            models.Index(fields=['vydano', 'datum_vydani']),
+            models.Index(fields=['order', 'menu_item']),
+        ]
         verbose_name = "Objednaná jídla"
         verbose_name_plural = "Objednaná jídla"    
 
@@ -101,7 +110,7 @@ class OrderValidator:
         if user.is_staff:
             return True, ""
         
-        user_group = user.groups.first()
+        user_group = get_primary_effective_group(user)
         if not user_group:
             return True, ""
         
@@ -125,38 +134,23 @@ class OrderValidator:
         return True, ""
 
     @staticmethod
-    def get_price_for_user(user, menu_item):
+    def get_price_for_user(user, menu_item, target_date=None, quantity=1, exclude_order_item_id=None):
         """Výpočet ceny s dotací podle skupiny"""
-        skupina = user.groups.first()
-        if not skupina:
-            return menu_item.jidlo.cena
-        
-        politika = getattr(skupina, 'dotacni_politika', None)
-        if not politika:
-            return menu_item.jidlo.cena
-        
-        prepis = DotaceProJidelniskouSkupinu.objects.filter(
-            dotacni_politika=politika,
-            jidelniskova_skupina=menu_item.druh_jidla
-        ).first()
-        
-        procento = prepis.procento if prepis and prepis.procento is not None else politika.procento
-        castka = prepis.castka if prepis and prepis.castka is not None else politika.castka
-        base_price = menu_item.jidlo.cena
-        snizena_cena = base_price
-        
-        if procento and procento != Decimal('0'):
-            snizena_cena = base_price * (Decimal('1') - Decimal(procento) / Decimal('100'))
-        if castka and castka != Decimal('0'):
-            snizena_cena = max(Decimal('0'), snizena_cena - Decimal(castka))
-        
-        return snizena_cena.quantize(Decimal('0.01'))
+        from dotace.services import vypocet_dotovane_ceny
+
+        return vypocet_dotovane_ceny(
+            user,
+            menu_item,
+            target_date=target_date,
+            quantity=quantity,
+            exclude_order_item_id=exclude_order_item_id,
+        )
 
     @staticmethod
     def check_user_balance(user, total_price):
         """Kontrola zůstatku a nastavení skupiny"""
         nastaveni = SkupinoveNastaveni.objects.filter(
-            skupina__in=user.groups.all()
+            skupina__in=get_effective_user_groups(user)
         ).first()
         
         if not nastaveni:
@@ -233,3 +227,33 @@ class PriceRecalculationDetail(models.Model):
 
     def __str__(self):
         return f"{self.order_item}: {self.old_price} → {self.new_price}"
+
+
+class OrderCancellationLog(models.Model):
+    """Audit storna objednávek/odhlášek z uživatelského dashboardu."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="order_cancellation_logs",
+        verbose_name="Uživatel",
+    )
+    datum_vydeje = models.DateField(verbose_name="Datum výdeje")
+    cancelled_at = models.DateTimeField(auto_now_add=True, verbose_name="Zrušeno")
+    cancelled_late = models.BooleanField(default=False, verbose_name="Po uzávěrce")
+    reason = models.CharField(max_length=255, blank=True, default="", verbose_name="Důvod")
+    items_count = models.PositiveIntegerField(default=0, verbose_name="Počet položek")
+    total_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        verbose_name="Celková cena",
+    )
+
+    class Meta:
+        verbose_name = "Log storna objednávky"
+        verbose_name_plural = "Logy storen objednávek"
+        ordering = ["-cancelled_at"]
+
+    def __str__(self):
+        return f"{self.user} | {self.datum_vydeje:%d.%m.%Y} | {self.total_price} Kč"

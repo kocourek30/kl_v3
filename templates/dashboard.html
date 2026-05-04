@@ -81,6 +81,10 @@
                     </div>
                 </div>
 
+                {% if frontend_ankety_enabled %}
+                    {% include 'includes/_ankety_widget.html' %}
+                {% endif %}
+
                 <!-- Moje objednávky - LIBOVOLNÁ VÝŠKA -->
                 <div class="card shadow-lg rounded-3 overflow-hidden modern-card compact">
                     <div class="card-header bg-gradient-accent text-white py-2 px-3 fs-6 fw-semibold d-flex align-items-center">
@@ -168,7 +172,6 @@
     </div>
 
                                 {% for druh, items in items_by_druh.items %}
-                                    <h6 class="text-muted mb-3 small fw-semibold">{{ druh.nazev }}</h6>
                                     {% for item in items %}
                                         <div class="menu-item-wrapper" data-menu-item-id="{{ item.id }}" data-menu-date="{{ day|date:'Y-m-d' }}">
                                             {% include 'jidelnicek_item.html' with item=item date=day %}
@@ -199,7 +202,6 @@
     </div>
 
                 {% for druh, items in items_by_druh.items %}
-                    <h6 class="text-muted mb-2 small fw-semibold">{{ druh.nazev }}</h6>
                     {% for item in items %}
                         <!-- ✅ STEJNÁ STRUKTURA jako DEN/TÝDEN -->
                         <div class="menu-item-wrapper" data-menu-item-id="{{ item.id }}" data-menu-date="{{ day|date:'Y-m-d' }}">

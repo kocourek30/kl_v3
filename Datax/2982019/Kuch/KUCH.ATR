@@ -1,0 +1,9 @@
+[General]
+Name=Kuchyòka
+Description=Naturální a úè.evidence jídelny: sklad (prùm., reálné ceny), provar, spotøební koš, plachty, jídelníèky, recepty, HACCP, vyúètování, terminál-bez stravenek, kredit.
+Version=13.99
+DefaultPath=C:\Datax\Kuch
+[Buttons]
+Uninstall=1
+[Find]
+PLACHTA.FXP

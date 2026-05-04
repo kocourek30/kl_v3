@@ -1,0 +1,193 @@
+{% extends "admin/base_site.html" %}
+{% load static admin_list %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'users/css/user_list_admin.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="user-list-page admin-shell admin-shell--wide">
+  <section class="user-list-hero">
+    <div class="user-list-hero-main">
+      <span class="user-list-kicker">Uživatelé aplikace</span>
+      <h1>Přehled uživatelů</h1>
+      <p>
+        Provozní přehled pro vedoucí i administrátory: rychlé filtrování, stav kont, role a hromadné operace nad aktuálním výběrem.
+      </p>
+      <div class="user-list-chip-row">
+        <span class="user-list-chip"><strong>Celkem po filtru:</strong> {{ user_total_count }}</span>
+        <span class="user-list-chip"><strong>Na stránce:</strong> {{ users_on_page_count }}</span>
+        <span class="user-list-chip"><strong>Aktivní:</strong> {{ users_active_on_page }}</span>
+        <span class="user-list-chip"><strong>S médiem:</strong> {{ users_with_medium_on_page }}</span>
+        <span class="user-list-chip"><strong>V debetu:</strong> {{ users_negative_balance_on_page }}</span>
+        <span class="user-list-chip"><strong>S povoleným debetem:</strong> {{ users_debt_enabled_on_page }}</span>
+      </div>
+    </div>
+    <div class="user-list-hero-actions">
+      <a href="{% url 'admin:users_customuser_add' %}" class="admin-btn admin-btn--primary">
+        <i class="fas fa-plus"></i>
+        Nový uživatel
+      </a>
+      <a href="{% url 'admin:users_customuser_import' %}" class="admin-btn admin-btn--light">
+        <i class="fas fa-file-import"></i>
+        Import
+      </a>
+      <a href="{% url 'admin:users_customuser_export' %}" class="admin-btn admin-btn--light">
+        <i class="fas fa-file-export"></i>
+        Export
+      </a>
+    </div>
+  </section>
+
+  <section class="admin-filter-panel">
+    <form method="get" class="admin-filter-form">
+      <div class="admin-filter-grid user-list-filter-grid">
+        <div class="admin-field admin-field--span-2">
+          <label for="id_q">Najít uživatele</label>
+          <input
+            type="text"
+            id="id_q"
+            name="q"
+            value="{{ user_filter_q }}"
+            placeholder="Jméno, příjmení, username, e-mail, osobní číslo…"
+          >
+        </div>
+        <div class="admin-field">
+          <label for="id_role_group">Role (Django skupina)</label>
+          <select id="id_role_group" name="role_group">
+            <option value="">Všechny role</option>
+            {% for group in user_role_group_options %}
+              <option value="{{ group.pk }}" {% if user_filter_role_group == group.pk|stringformat:'s' %}selected{% endif %}>{{ group.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="admin-field">
+          <label for="id_strav_group">Stravovací skupina</label>
+          <select id="id_strav_group" name="strav_group">
+            <option value="">Všechny skupiny</option>
+            {% for group in user_strav_group_options %}
+              <option value="{{ group.pk }}" {% if user_filter_strav_group == group.pk|stringformat:'s' %}selected{% endif %}>{{ group.nazev }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="admin-field">
+          <label for="id_medium">Identifikační médium</label>
+          <select id="id_medium" name="medium">
+            <option value="">Vše</option>
+            <option value="with" {% if user_filter_medium == "with" %}selected{% endif %}>Jen s médiem</option>
+            <option value="without" {% if user_filter_medium == "without" %}selected{% endif %}>Jen bez média</option>
+          </select>
+        </div>
+        <div class="admin-field">
+          <label for="id_active">Stav účtu</label>
+          <select id="id_active" name="active">
+            <option value="">Vše</option>
+            <option value="yes" {% if user_filter_active == "yes" %}selected{% endif %}>Aktivní</option>
+            <option value="no" {% if user_filter_active == "no" %}selected{% endif %}>Neaktivní</option>
+          </select>
+        </div>
+        <div class="admin-field">
+          <label for="id_balance">Zůstatek</label>
+          <select id="id_balance" name="balance">
+            <option value="">Vše</option>
+            <option value="positive" {% if user_filter_balance == "positive" %}selected{% endif %}>Kladný</option>
+            <option value="zero" {% if user_filter_balance == "zero" %}selected{% endif %}>Nula</option>
+            <option value="negative" {% if user_filter_balance == "negative" %}selected{% endif %}>V debetu</option>
+          </select>
+        </div>
+      </div>
+      <div class="admin-filter-actions">
+        <button type="submit" class="admin-btn admin-btn--primary">
+          <i class="fas fa-search"></i>
+          Filtrovat uživatele
+        </button>
+        {% if user_filters_active %}
+          <a href="{% url 'admin:users_customuser_changelist' %}" class="admin-btn admin-btn--light">
+            <i class="fas fa-rotate-left"></i>
+            Zrušit filtry
+          </a>
+        {% endif %}
+      </div>
+    </form>
+  </section>
+
+  <section class="food-bulk-panel">
+    <form method="post" action="{% url 'admin:users_customuser_bulk_apply' %}{% if user_bulk_querystring %}?{{ user_bulk_querystring }}{% endif %}" class="food-bulk-panel__form">
+      {% csrf_token %}
+      <div class="food-bulk-panel__title">
+        <strong>Hromadné operace nad aktuálním filtrem</strong>
+        <span>Provádí se nad všemi uživateli v aktuálním výběru, ne jen na jedné stránce.</span>
+      </div>
+      <div class="food-bulk-panel__controls">
+        <select name="bulk_operation">
+          <option value="">Vyber operaci</option>
+          <option value="activate">Aktivovat uživatele</option>
+          <option value="deactivate">Deaktivovat uživatele (mimo superadminy)</option>
+          <option value="reset_password_personal">Resetovat hesla na osobní číslo</option>
+        </select>
+        <button type="submit" class="admin-btn admin-btn--light" onclick="return confirm('Opravdu provést hromadnou operaci nad aktuálním filtrem?');">
+          <i class="fas fa-bolt"></i>
+          Provést hromadně
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <section class="user-list-grid">
+    {% for user in user_cards %}
+      <article class="user-row-card">
+        <div class="user-row-card__main">
+          <h2>
+            <a href="{% url 'admin:users_customuser_change' user.pk %}" class="user-row-card__title-link">
+              {{ user.get_full_name|default:user.username }}
+            </a>
+          </h2>
+          <div class="user-row-card__meta">
+            <span class="user-row-card__pill">@{{ user.username }}</span>
+            {% if user.osobni_cislo %}<span class="user-row-card__pill">Osobní číslo: {{ user.osobni_cislo }}</span>{% endif %}
+            {% if user.stravovaci_skupina %}<span class="user-row-card__pill">{{ user.stravovaci_skupina.nazev }}</span>{% endif %}
+            {% for g in user.groups.all %}
+              <span class="user-row-card__pill soft">{{ g.name }}</span>
+            {% empty %}
+              <span class="user-row-card__pill soft">Bez role</span>
+            {% endfor %}
+          </div>
+          <div class="user-row-card__meta">
+            {% if user.identifikacni_medium %}
+              <span class="user-row-card__status ok"><i class="fas fa-check-circle"></i> Identifikační médium vyplněno</span>
+            {% else %}
+              <span class="user-row-card__status muted"><i class="fas fa-circle"></i> Bez identifikačního média</span>
+            {% endif %}
+            {% if user.is_active %}
+              <span class="user-row-card__status ok"><i class="fas fa-check-circle"></i> Aktivní účet</span>
+            {% else %}
+              <span class="user-row-card__status warn"><i class="fas fa-exclamation-circle"></i> Neaktivní účet</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="user-row-card__side">
+          <div class="user-row-card__balance {% if user.aktualni_zustatek < 0 %}neg{% else %}pos{% endif %}">
+            {{ user.aktualni_zustatek|floatformat:2 }} Kč
+          </div>
+          <a href="{% url 'admin:users_customuser_change' user.pk %}" class="admin-btn admin-btn--light admin-btn--compact">
+            <i class="fas fa-pen"></i>
+            Detail / edit
+          </a>
+        </div>
+      </article>
+    {% empty %}
+      <section class="user-list-empty-state">
+        <strong>Žádní uživatelé k zobrazení</strong>
+        <span>Zkus upravit filtr nebo vyhledávání.</span>
+      </section>
+    {% endfor %}
+  </section>
+
+  {% if cl and cl.result_count %}
+    <section class="user-list-pagination">
+      {% pagination cl %}
+    </section>
+  {% endif %}
+</div>
+{% endblock %}

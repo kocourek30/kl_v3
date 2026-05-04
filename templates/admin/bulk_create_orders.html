@@ -1,153 +1,150 @@
 {% extends "admin/base_site.html" %}
 {% load static %}
 {% block extrahead %}
-<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet" />
-<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-
-<style>
-  .order-form-flex {
-    display: flex;
-    flex-direction: row;
-    gap: 2rem;
-    align-items: flex-start;
-  }
-  #calendar {
-    max-width: 500px;
-    min-width: 340px;
-    margin: 1rem auto;
-  }
-  .fc-daygrid-day.fc-day-with-menu {
-    background-color: #d1e7dd !important;
-    cursor: pointer;
-  }
-  .fc-daygrid-day-selected {
-    box-shadow: inset 0 0 0 3px #198754;
-    background-color: #bcd9c6 !important;
-  }
-</style>
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'objednavky/css/bulk_admin.css' %}">
+<script defer src="{% static 'objednavky/js/bulk_admin.js' %}"></script>
 {% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-  <h1>Hromadné vytvoření objednávek</h1>
-  <div class="order-form-flex">
-    <div>
-      <div id="calendar"></div>
-    </div>
-    <div style="flex:1;">
-      <form method="post" id="bulkOrderForm" class="mt-3">
-        {% csrf_token %}
-        {% if form.errors %}
-          <div class="alert alert-danger">{{ form.errors }}</div>
-        {% endif %}
-        <input type="hidden" name="datum_vydeje" id="selectedDate" value="">
-        <div class="mb-3">
-          <label class="form-label">Položky jídelníčku</label>
-          <div id="menu-items-container">Vyber datum z kalendáře</div>
-        </div>
-        <div class="mb-3">
-          <label class="form-label" for="id_skupina">Skupina zákazníků</label>
-          {{ form.skupina }}
-        </div>
-        <div class="mb-3">
-          <label class="form-label" for="id_uzivatele">Uživatelé</label>
-          <input type="text" id="user-search" class="form-control mb-2" placeholder="Vyhledat (jméno, příjmení, osobní číslo, login)">
-          <div id="user-select-container">
-            {{ form.uzivatele }}
-          </div>
-        </div>
-        <button type="submit" class="btn btn-success" disabled id="submitBtn">Vytvořit objednávky</button>
-        <a href="{% url 'admin:objednavky_order_changelist' %}" class="btn btn-secondary ms-2">Zpět na objednávky</a>
-      </form>
+<div
+  class="bulk-admin-page"
+  data-bulk-admin
+  data-today="{{ today_iso }}"
+  data-menu-items-url="{% url 'admin:menu_items_api' %}"
+  data-menu-days-url="{% url 'admin:jidelnicek_days_api' %}"
+  data-users-url="{% url 'admin:users_api' %}"
+>
+  <div class="bulk-admin-card bulk-admin-hero">
+    <span class="bulk-admin-kicker">Objednávky • Admin nástroj</span>
+    <h1>Hromadné založení objednávek</h1>
+    <p>
+      Vyber den s jídelníčkem, označ položky a připrav objednávky pro celou skupinu nebo ručně vybrané uživatele.
+      Nejdřív zobrazíš náhled dopadu a teprve potom změny potvrdíš.
+    </p>
+    <div class="bulk-stats">
+      <div class="bulk-stat">
+        <span class="bulk-stat-label">Vybraný den</span>
+        <span class="bulk-stat-value" data-bulk-stat-date>Nevybráno</span>
+      </div>
+      <div class="bulk-stat">
+        <span class="bulk-stat-label">Označená jídla</span>
+        <span class="bulk-stat-value" data-bulk-stat-items>0</span>
+      </div>
+      <div class="bulk-stat">
+        <span class="bulk-stat-label">Vybraní uživatelé</span>
+        <span class="bulk-stat-value" data-bulk-stat-users>0</span>
+      </div>
     </div>
   </div>
+
+  <div class="bulk-summary-bar">
+    <div class="bulk-stat">
+      <span class="bulk-stat-label">📅 Vybraný den</span>
+      <span class="bulk-stat-value" data-bulk-stat-date>Nevybráno</span>
+    </div>
+    <div class="bulk-stat">
+      <span class="bulk-stat-label">🍽 Označená jídla</span>
+      <span class="bulk-stat-value" data-bulk-stat-items>0</span>
+    </div>
+    <div class="bulk-stat">
+      <span class="bulk-stat-label">👥 Vybraní uživatelé</span>
+      <span class="bulk-stat-value" data-bulk-stat-users>0</span>
+    </div>
+    <div class="bulk-stat">
+      <span class="bulk-stat-label">💳 Odhad ceny</span>
+      <span class="bulk-stat-value" data-bulk-stat-total>0,00 Kč</span>
+    </div>
+  </div>
+
+  <div class="bulk-admin-shell" style="margin-top: 22px;">
+    <section class="bulk-admin-card bulk-calendar-shell">
+      <div class="bulk-calendar-toolbar">
+        <div>
+          <h2 data-bulk-month-label></h2>
+          <div class="bulk-calendar-empty" data-bulk-selected-hint>Vyber den z kalendáře.</div>
+        </div>
+        <div class="bulk-month-nav">
+          <button type="button" class="bulk-month-btn" data-bulk-prev aria-label="Předchozí měsíc">‹</button>
+          <button type="button" class="bulk-month-btn" data-bulk-next aria-label="Další měsíc">›</button>
+        </div>
+      </div>
+      <div class="bulk-calendar-weekdays">
+        <div class="bulk-weekday">Po</div>
+        <div class="bulk-weekday">Út</div>
+        <div class="bulk-weekday">St</div>
+        <div class="bulk-weekday">Čt</div>
+        <div class="bulk-weekday">Pá</div>
+        <div class="bulk-weekday">So</div>
+        <div class="bulk-weekday">Ne</div>
+      </div>
+      <div class="bulk-calendar-grid" data-bulk-calendar-grid></div>
+    </section>
+
+    <section class="bulk-admin-card bulk-admin-body">
+      <form method="post" id="bulkOrderForm" autocomplete="off">
+        {% csrf_token %}
+        {% if form.errors %}
+          <div class="bulk-user-empty" style="border-color:#f1b4b4;color:#912d2d;background:#fff6f6;">{{ form.errors }}</div>
+        {% endif %}
+        <input type="hidden" name="datum_vydeje" id="selectedDate" value="" autocomplete="off">
+
+        <div class="bulk-admin-section">
+          <div class="bulk-section-title">
+            <h2>🍽 Položky jídelníčku</h2>
+            <span class="bulk-section-hint">Nejdřív zvol den s dostupným jídelníčkem</span>
+          </div>
+          <div class="bulk-quick-actions">
+            <button type="button" class="button" data-bulk-select-all-items>Vybrat všechny položky</button>
+            <button type="button" class="button" data-bulk-clear-items>Vymazat výběr</button>
+          </div>
+          <div id="menu-items-container" class="bulk-menu-empty">Vyber datum z kalendáře vlevo.</div>
+          <div class="bulk-selection-pills" data-bulk-selected-items>
+            <span class="bulk-note">Zatím nejsou vybrané žádné položky.</span>
+          </div>
+        </div>
+
+        <div class="bulk-admin-section">
+          <div class="bulk-section-title">
+            <h2>👥 Výběr uživatelů</h2>
+            <span class="bulk-section-hint">Můžeš filtrovat skupinou i ručním hledáním</span>
+          </div>
+          <div class="bulk-control-grid">
+            <div>
+              <label for="id_skupina">Django skupina</label>
+              {{ form.skupina }}
+            </div>
+            <div>
+              <label for="user-search">Vyhledat uživatele</label>
+              <input type="text" id="user-search" class="bulk-search" placeholder="Jméno, příjmení, osobní číslo nebo login">
+            </div>
+          </div>
+          <div class="bulk-pill-row" style="margin: 14px 0 10px;">
+            <span class="bulk-pill"><strong>Tip:</strong> stav uživatele se přepočítává podle vybraného dne a označených jídel.</span>
+          </div>
+          <div class="bulk-quick-actions">
+            <button type="button" class="button" data-bulk-select-all-users>Vybrat všechny ve filtru</button>
+            <button type="button" class="button" data-bulk-clear-users>Vymazat výběr</button>
+          </div>
+          <div id="user-select-container">
+            <div class="bulk-user-empty">Načítám uživatele…</div>
+          </div>
+          <div class="bulk-selection-pills" data-bulk-selected-users>
+            <span class="bulk-note">Zatím nejsou vybraní žádní uživatelé.</span>
+          </div>
+        </div>
+
+        <div class="bulk-toolbar">
+          <div class="bulk-pill-row">
+            <span class="bulk-pill"><strong>Bezpečnější režim:</strong> nejdřív se zobrazí náhled dopadu a až potom potvrzení.</span>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button type="submit" name="action" value="preview" class="button default" disabled id="submitBtn">Zobrazit náhled</button>
+            <a href="{% url 'admin:objednavky_order_changelist' %}" class="button">Zpět na objednávky</a>
+          </div>
+        </div>
+      </form>
+    </section>
+  </div>
 </div>
-
-<script>
-  document.addEventListener('DOMContentLoaded', function () {
-    let selectedDate = '';
-    const submitBtn = document.getElementById('submitBtn');
-    let availableDates = [];
-    const calendarEl = document.getElementById('calendar');
-    const calendar = new FullCalendar.Calendar(calendarEl, {
-      initialView: 'dayGridMonth',
-      selectable: false,
-      dateClick: function(info) {
-        if (availableDates.includes(info.dateStr)) {
-          selectedDate = info.dateStr;
-          document.getElementById('selectedDate').value = selectedDate;
-          loadMenuItems(selectedDate);
-          submitBtn.disabled = false;
-          calendar.getDateEl().querySelectorAll('.fc-daygrid-day-selected').forEach(el => el.classList.remove('fc-daygrid-day-selected'));
-          const clickedEl = info.dayEl;
-          clickedEl.classList.add('fc-daygrid-day-selected');
-        } else {
-          alert("Vyber prosím den, kdy je vytvořen jídelníček.");
-        }
-      },
-      datesSet: function() {
-        fetch('/admin/objednavky/order/api/jidelnicek_days/')
-          .then(response => response.json())
-          .then(days => {
-            availableDates = days;
-            calendar.getEvents().forEach(ev => ev.remove());
-            days.forEach(day => {
-              calendar.addEvent({
-                title: 'Menu',
-                start: day,
-                allDay: true,
-                display: 'background',
-                classNames: ['fc-daygrid-day-with-menu']
-              });
-            });
-          });
-      }
-    });
-    calendar.render();
-
-    function loadMenuItems(datum) {
-      fetch(`/admin/objednavky/order/api/menu_items/?datum=${datum}`)
-        .then(res => res.json())
-        .then(data => {
-          let html = '';
-          if(data.length === 0) {
-            html = '<p>Pro zvolené datum není žádný jídelníček.</p>';
-          } else {
-            data.forEach(item => {
-              html += `<div class="form-check">
-                <input class="form-check-input" type="checkbox" name="menu_items" value="${item.id}" id="menu_item_${item.id}">
-                <label class="form-check-label" for="menu_item_${item.id}">${item.nazev}</label>
-              </div>`;
-            });
-          }
-          document.getElementById('menu-items-container').innerHTML = html;
-        });
-    }
-
-    // Dynamické načítání a vyhledávání zákazníků podle skupiny
-    const skupinaField = document.getElementById('id_skupina');
-    const userSearchInput = document.getElementById('user-search');
-    function loadUsers(query='') {
-      const groupId = skupinaField.value;
-      let params = [];
-      if (groupId) params.push(`skupina=${groupId}`);
-      if (query && query.trim().length > 0) params.push(`q=${encodeURIComponent(query)}`);
-      const url = '/admin/objednavky/order/api/zákazníci/?' + params.join('&');
-      fetch(url)
-        .then(res => res.json())
-        .then(users => {
-          let html = '<select name="uzivatele" multiple class="form-select" id="id_uzivatele">';
-          users.forEach(user => {
-            html += `<option value="${user.id}">${user.osobni_cislo ? user.osobni_cislo : ''} - ${user.name} (${user.username})</option>`;
-          });
-          html += '</select>';
-          document.getElementById('user-select-container').innerHTML = html;
-        });
-    }
-    skupinaField.addEventListener('change', () => loadUsers(userSearchInput.value));
-    userSearchInput.addEventListener('input', () => loadUsers(userSearchInput.value));
-    loadUsers();
-  });
-</script>
 {% endblock %}

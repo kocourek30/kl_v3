@@ -1,0 +1,201 @@
+.sklad-page {
+  display: grid;
+  gap: 1rem;
+}
+
+.sklad-page .admin-hero {
+  padding: 1.4rem 1.5rem;
+}
+
+.sklad-page .admin-hero h1 {
+  font-size: 2rem;
+}
+
+.sklad-hero-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.sklad-mini-stat {
+  background: #fff;
+  border: 1px solid #e3ecdf;
+  border-radius: 0.95rem;
+  padding: 0.7rem 0.8rem;
+}
+
+.sklad-mini-stat__label {
+  display: block;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6a7a6f;
+  margin-bottom: 0.15rem;
+  font-weight: 700;
+}
+
+.sklad-mini-stat__value {
+  font-size: 1.1rem;
+  color: #1f6a17;
+  font-weight: 800;
+}
+
+.sklad-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.7rem;
+}
+
+.sklad-kpi {
+  background: #fff;
+  border: 1px solid #e4ece0;
+  border-radius: 0.9rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.sklad-kpi strong {
+  display: block;
+  color: #1f3425;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.2rem;
+}
+
+.sklad-kpi span {
+  color: #2a3d2f;
+  font-weight: 700;
+}
+
+.sklad-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.sklad-actions .admin-btn {
+  min-width: 150px;
+  justify-content: center;
+}
+
+.sklad-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sklad-table thead th {
+  background: #f5f8f4;
+  color: #506253;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 800;
+  padding: 0.7rem 0.65rem;
+  border-bottom: 1px solid #e5ece2;
+}
+
+.sklad-table tbody td {
+  padding: 0.62rem 0.65rem;
+  border-bottom: 1px solid #edf2ec;
+  vertical-align: top;
+}
+
+.sklad-table tbody tr:hover {
+  background: #fafdf9;
+}
+
+.sklad-row-soft-danger {
+  background: #fff2f2;
+}
+
+.sklad-row-soft-warning {
+  background: #fff9ef;
+}
+
+.sklad-row-soft-success {
+  background: #f2fbf2;
+}
+
+.sklad-form-inline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.7rem;
+  align-items: end;
+}
+
+.sklad-form-inline .admin-field {
+  margin: 0;
+}
+
+.sklad-info-list {
+  margin: 0;
+  padding-left: 1rem;
+  color: #56675a;
+}
+
+.sklad-info-list li + li {
+  margin-top: 0.3rem;
+}
+
+.sklad-note {
+  font-size: 0.86rem;
+  color: #67766b;
+}
+
+.sklad-doc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.9rem;
+}
+
+.sklad-doc-card {
+  border: 1px solid #e2ebde;
+  border-radius: 1rem;
+  background: #fff;
+  overflow: hidden;
+}
+
+.sklad-doc-card__head {
+  padding: 0.75rem 0.9rem;
+  border-bottom: 1px solid #edf2ec;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.sklad-doc-card__body {
+  padding: 0.75rem 0.9rem;
+}
+
+.sklad-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border: 1px solid #d7e5d2;
+  background: #f4faf1;
+  color: #315f28;
+}
+
+.sklad-empty {
+  text-align: center;
+  padding: 1.4rem 1rem;
+  color: #768578;
+}
+
+.sklad-table-wrapper {
+  overflow-x: auto;
+}
+
+@media (max-width: 767.98px) {
+  .sklad-actions {
+    flex-direction: column;
+  }
+
+  .sklad-actions .admin-btn {
+    width: 100%;
+  }
+}

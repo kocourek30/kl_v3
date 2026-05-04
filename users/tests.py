@@ -1,3 +1,165 @@
-from django.test import TestCase
+from datetime import date
+from decimal import Decimal
 
-# Create your tests here.
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
+from django.core.exceptions import ValidationError
+from django.test import TestCase
+from django.urls import reverse
+
+from dotace.models import SkupinoveNastaveni
+from dotace.models import DotacniPolitika
+from jidelnicek.models import DruhJidla, Jidelnicek, Jidlo, PolozkaJidelnicku
+from dotace.services import vypocet_dotovane_ceny
+
+from .models import Vklad
+from .models import StravovaciSkupina
+
+
+class VkladDebitValidationTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(username="debetni.student", password="x")
+        self.group = Group.objects.create(name="Debetní skupina")
+        SkupinoveNastaveni.objects.create(
+            skupina=self.group,
+            cerpani_debit=True,
+            debit_limit=Decimal("-500.00"),
+        )
+        self.user.groups.add(self.group)
+
+    def test_standardni_kladny_vklad_debetnimu_uzivateli_neprojde(self):
+        with self.assertRaises(ValidationError):
+            Vklad.objects.create(
+                uzivatel=self.user,
+                castka=Decimal("100.00"),
+                poznamka="Ruční dobití",
+            )
+
+    def test_cerpani_z_konta_debetnimu_uzivateli_projde(self):
+        pohyb = Vklad.objects.create(
+            uzivatel=self.user,
+            castka=Decimal("-45.00"),
+            poznamka="Čerpání z konta",
+        )
+
+        self.assertEqual(pohyb.castka, Decimal("-45.00"))
+
+    def test_systemove_nulovani_debetu_projde(self):
+        pohyb = Vklad.objects.create(
+            uzivatel=self.user,
+            castka=Decimal("120.00"),
+            status="nulovani_konta",
+            poznamka="Automatické nulování konta",
+        )
+
+        self.assertEqual(pohyb.status, "nulovani_konta")
+
+
+class EffectiveGroupIntegrationTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.group = Group.objects.create(name="Zaměstnanci")
+        self.stravovaci = StravovaciSkupina.objects.create(
+            kod="ZAM",
+            nazev="Zaměstnanci",
+            django_group=self.group,
+        )
+        self.user = User.objects.create_user(
+            username="employee",
+            password="x",
+            stravovaci_skupina=self.stravovaci,
+        )
+
+    def test_debetni_vklad_validace_respektuje_stravovaci_skupinu(self):
+        SkupinoveNastaveni.objects.create(
+            skupina=self.group,
+            cerpani_debit=True,
+            debit_limit=Decimal("-500.00"),
+        )
+
+        with self.assertRaises(ValidationError):
+            Vklad.objects.create(
+                uzivatel=self.user,
+                castka=Decimal("100.00"),
+                poznamka="Ruční dobití",
+            )
+
+    def test_dotace_respektuje_stravovaci_skupinu_django_group(self):
+        politika = DotacniPolitika.objects.create(
+            skupina=self.group,
+            castka=Decimal("15.00"),
+        )
+        druh = DruhJidla.objects.create(nazev="Oběd", poradi=10)
+        jidlo = Jidlo.objects.create(nazev="Kuře na kari", cena=Decimal("80.00"), druh=druh)
+        menu = Jidelnicek.objects.create(
+            platnost_od=date(2026, 4, 21),
+            platnost_do=date(2026, 4, 21),
+        )
+        item = PolozkaJidelnicku.objects.create(jidelnicek=menu, druh_jidla=druh, jidlo=jidlo)
+
+        cena = vypocet_dotovane_ceny(
+            self.user,
+            item,
+            target_date=date(2026, 4, 21),
+        )
+
+        self.assertEqual(politika.castka, Decimal("15.00"))
+        self.assertEqual(cena, Decimal("65.00"))
+
+
+class UserProfileViewTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="student",
+            password="Str0ng-pass-2026",
+            email="student@example.com",
+            first_name="Jan",
+            last_name="Student",
+        )
+
+    def test_profile_requires_login(self):
+        response = self.client.get(reverse("users:user-profile"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/accounts/login/", response["Location"])
+
+    def test_invalid_email_is_not_saved(self):
+        self.client.login(username="student", password="Str0ng-pass-2026")
+
+        response = self.client.post(reverse("users:user-profile"), {
+            "email": "neni-email",
+        })
+
+        self.user.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.user.email, "student@example.com")
+        self.assertContains(response, "Zadejte prosím platný email.")
+
+    def test_profile_email_update(self):
+        self.client.login(username="student", password="Str0ng-pass-2026")
+
+        response = self.client.post(reverse("users:user-profile"), {
+            "email": "novy.student@example.com",
+        })
+
+        self.user.refresh_from_db()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.user.email, "novy.student@example.com")
+
+    def test_account_history_defaults_to_current_month(self):
+        self.client.login(username="student", password="Str0ng-pass-2026")
+
+        response = self.client.get(reverse("users:account-history"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["filter_type"], "current_month")
+
+    def test_consumption_history_defaults_to_current_month(self):
+        self.client.login(username="student", password="Str0ng-pass-2026")
+
+        response = self.client.get(reverse("users:consumption-history"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["filter_type"], "current_month")

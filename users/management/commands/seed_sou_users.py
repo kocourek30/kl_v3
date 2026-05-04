@@ -17,9 +17,9 @@ DEFAULT_PASSWORD = "Test123456!"
 
 
 STRAVOVACI_SKUPINY = [
-    {"kod": "DS15+", "nazev": "Denní studium 15+"},
-    {"kod": "DM15+", "nazev": "Domov mládeže 15+"},
-    {"kod": "PS15+", "nazev": "Povinná strava 15+"},
+    {"kod": "DS15+", "nazev": "Denní studium 15+", "typ_vzdelavani": "SS"},
+    {"kod": "DM15+", "nazev": "Domov mládeže 15+", "typ_vzdelavani": "SS"},
+    {"kod": "PS15+", "nazev": "Povinná strava 15+", "typ_vzdelavani": "SS"},
 ]
 
 
@@ -244,7 +244,10 @@ class Command(BaseCommand):
         for item in STRAVOVACI_SKUPINY:
             obj, _ = StravovaciSkupina.objects.update_or_create(
                 kod=item["kod"],
-                defaults={"nazev": item["nazev"]},
+                defaults={
+                    "nazev": item["nazev"],
+                    "typ_vzdelavani": item["typ_vzdelavani"],
+                },
             )
             result[obj.kod] = obj
         return result

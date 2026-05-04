@@ -1,0 +1,117 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'provoz_jidelny/css/dashboard.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="canteen-admin admin-shell admin-shell--wide">
+  <section class="admin-hero admin-hero-grid canteen-admin__hero">
+    <div>
+      <span class="admin-kicker">Provoz jídelny</span>
+      <h1>Provozní dashboard pro obsluhu</h1>
+      <p>
+        Obsluha tady na první dobrou vidí, co je dnes potřeba vyrobit, co kdy začíná vydávat
+        a jak běží samotný výdej. Vše se průběžně obnovuje bez ručního refreshování.
+      </p>
+      <div class="canteen-admin__hero-meta">
+        <span class="admin-chip admin-chip--light"><i class="fas fa-calendar-day"></i> {{ dashboard.today|date:"l j. F Y" }}</span>
+        <span class="admin-chip admin-chip--light"><i class="fas fa-clock"></i> {{ dashboard.now|date:"H:i" }}</span>
+        <span class="admin-chip admin-chip--light"><i class="fas fa-stopwatch"></i> Timeout výdeje {{ dashboard.settings_obj.timeout_seconds }} s</span>
+      </div>
+    </div>
+    <div id="canteen-dashboard-hero">
+      {% include "admin/provoz_jidelny/provoznidashboard/_hero_stats.html" %}
+    </div>
+  </section>
+
+  <section class="toolbar-card">
+    <form method="get" action="{{ report_pdf_url }}" target="_blank" class="cancellation-report-form">
+      <div class="cancellation-report-form__title">
+        <i class="fas fa-file-pdf"></i>
+        <div>
+          <strong>Tisk odhlášek jídel</strong>
+          <small>Přehled kdo a co odhlásil pro vybraný den</small>
+        </div>
+      </div>
+      <div class="cancellation-report-form__controls">
+        <label for="report_date">Datum výdeje</label>
+        <input id="report_date" name="report_date" type="date" value="{{ report_date }}" required>
+        <button type="submit" formaction="{{ report_pdf_url }}" class="admin-btn admin-btn--light">
+          <i class="fas fa-download"></i>
+          <span>Stáhnout PDF odhlášek</span>
+        </button>
+        <button type="submit" formaction="{{ report_kitchen_pdf_url }}" class="admin-btn admin-btn--light">
+          <i class="fas fa-utensils"></i>
+          <span>Stáhnout PDF pro kuchyň</span>
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <section class="toolbar-card">
+    <div class="canteen-admin__kitchen-window">
+      <div class="canteen-admin__kitchen-window-meta">
+        <strong>Kuchyňské okno</strong>
+        <small>Rychlý vstup do samostatného pohledu pro kuchyň</small>
+      </div>
+      <a
+        class="admin-btn admin-btn--light"
+        href="{{ dashboard.kitchen_window.url }}"
+        target="_blank"
+        rel="noopener"
+      >
+        <i class="{{ dashboard.kitchen_window.icon }}"></i>
+        <span>{{ dashboard.kitchen_window.label }}</span>
+      </a>
+    </div>
+  </section>
+
+  <div id="canteen-dashboard-sections" class="canteen-admin__live-region">
+    {% include "admin/provoz_jidelny/provoznidashboard/_live_sections.html" %}
+  </div>
+</div>
+
+{{ block.super }}
+
+<script>
+  (function () {
+    const hero = document.getElementById("canteen-dashboard-hero");
+    const sections = document.getElementById("canteen-dashboard-sections");
+    const snapshotUrl = "{% url 'admin:provoz_jidelny_provoznidashboard_snapshot' %}";
+    if (!hero || !sections) {
+      return;
+    }
+
+    async function refreshDashboard() {
+      try {
+        const response = await fetch(snapshotUrl, {
+          headers: { "X-Requested-With": "XMLHttpRequest" },
+          credentials: "same-origin",
+          cache: "no-store"
+        });
+        if (!response.ok) {
+          return;
+        }
+        const payload = await response.json();
+        if (payload.hero_html) {
+          hero.innerHTML = payload.hero_html;
+        }
+        if (payload.sections_html) {
+          sections.classList.add("is-refreshing");
+          sections.innerHTML = payload.sections_html;
+          window.requestAnimationFrame(function () {
+            sections.classList.remove("is-refreshing");
+          });
+        }
+      } catch (error) {
+        console.debug("Dashboard refresh skipped", error);
+      }
+    }
+
+    window.setInterval(refreshDashboard, 25000);
+  })();
+</script>
+{% endblock %}

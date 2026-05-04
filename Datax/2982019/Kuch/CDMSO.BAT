@@ -1,0 +1,2 @@
+c:
+cd \stravnik.mso

@@ -1,53 +1,476 @@
 {% extends "admin/change_list.html" %}
-{% load i18n %}
+{% load i18n static %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'sklad/css/sklad_admin_views.css' %}">
+{% endblock %}
 
 {% block content_title %}
-  
-    <i class="fas fa-warehouse"></i>
-    Sklad – přehled spotřeby
-  
+  <i class="fas fa-warehouse"></i>
+  Sklad – přehled spotřeby
 {% endblock %}
 
 {% block search %}
-<div class="col-12">
-<div class="card mb-3">
-  <div class="card-body">
-    <form method="get" class="form-inline">
-      <div class="form-group mr-2">
-        <label for="id_date" class="mr-2 mb-0">
-          <i class="fas fa-calendar-alt"></i> Datum:
-        </label>
-        <input
-          id="id_date"
-          type="date"
-          name="date"
-          class="form-control"
-          value="{{ target_date|date:'Y-m-d' }}"
-        >
+<div class="sklad-shell">
+  <section class="sklad-hero">
+    <div>
+      <div class="admin-kicker">Sklad jídelny</div>
+      <h1>Denní přehled spotřeby a kontrol</h1>
+      <p>
+        Na jednom místě vidíš kondici skladu, otevřené doklady, suroviny s blížícím se datem spotřeby
+        i rozdíly mezi skladem a šaržemi. Cílem je rychlá orientace před uzávěrkou.
+      </p>
+    </div>
+    <div class="sklad-status">
+      <div class="admin-stat-card">
+        <span class="admin-stat-label">Skóre skladu</span>
+        <span class="admin-stat-value">{{ zdravi_skladu.skore }} %</span>
+        <span class="admin-stat-note">Připravenost na denní uzávěrku</span>
       </div>
-      <button type="submit" class="btn btn-primary">
-        <i class="fas fa-filter"></i> Filtrovat
-      </button>
+      <div class="admin-stat-card">
+        <span class="admin-stat-label">Hodnota skladu</span>
+        <span class="admin-stat-value">{{ zdravi_skladu.hodnota_skladu|floatformat:-2 }} Kč</span>
+        <span class="admin-stat-note">Ocenění aktivního stavu zásob</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="admin-filter-panel">
+    <form method="get" class="admin-filter-form">
+      <div class="admin-filter-grid">
+        <div class="admin-field">
+          <label for="id_date"><i class="fas fa-calendar-alt"></i> Datum</label>
+          <input
+            id="id_date"
+            type="date"
+            name="date"
+            value="{{ target_date|date:'Y-m-d' }}"
+          >
+        </div>
+      </div>
+      <div class="admin-filter-actions">
+        <button type="submit" class="admin-btn admin-btn--primary">
+          <i class="fas fa-filter"></i> Filtrovat
+        </button>
+      </div>
     </form>
   </div>
-</div>
-</div>
 {% endblock %}
 
 {% block result_list %}
-<div class="card">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <span>
+<div class="sklad-shell">
+<section class="sklad-section mb-3">
+  <div class="sklad-section-head">
+    <h3>
+      <i class="fas fa-database"></i>
+      DATAx import pod kontrolou
+    </h3>
+    <div class="admin-actions-row">
+      <a class="admin-btn admin-btn--light admin-btn--small" href="{{ dodavatele_url }}">
+        <i class="fas fa-truck"></i> Partneři a střediska
+      </a>
+      <a class="admin-btn admin-btn--light admin-btn--small" href="{{ prijemky_url }}">
+        <i class="fas fa-file-invoice"></i> Příjemky
+      </a>
+      <a class="admin-btn admin-btn--light admin-btn--small" href="{{ pohyby_url }}">
+        <i class="fas fa-right-left"></i> Pohyby
+      </a>
+      <a class="admin-btn admin-btn--light admin-btn--small" href="{{ suroviny_url }}">
+        <i class="fas fa-carrot"></i> Suroviny
+      </a>
+    </div>
+  </div>
+  <div class="sklad-section-body">
+    <div class="row mb-3">
+      <div class="col-md-2 col-6 mb-2">
+        <div class="admin-stat-card">
+          <span class="admin-stat-label">DATAx partneři</span>
+          <span class="admin-stat-value">{{ import_quality.partner_total }}</span>
+          <span class="admin-stat-note">celkem v adresáři skladu</span>
+        </div>
+      </div>
+      <div class="col-md-2 col-6 mb-2">
+        <div class="admin-stat-card">
+          <span class="admin-stat-label">Dodavatelé</span>
+          <span class="admin-stat-value">{{ import_quality.dodavatele }}</span>
+          <span class="admin-stat-note">komerční subjekty</span>
+        </div>
+      </div>
+      <div class="col-md-2 col-6 mb-2">
+        <div class="admin-stat-card">
+          <span class="admin-stat-label">Střediska</span>
+          <span class="admin-stat-value">{{ import_quality.strediska }}</span>
+          <span class="admin-stat-note">interní odběry a vazby</span>
+        </div>
+      </div>
+      <div class="col-md-2 col-6 mb-2">
+        <div class="admin-stat-card">
+          <span class="admin-stat-label">Provozy</span>
+          <span class="admin-stat-value">{{ import_quality.provozy }}</span>
+          <span class="admin-stat-note">místa a režimy výdeje</span>
+        </div>
+      </div>
+      <div class="col-md-2 col-6 mb-2">
+        <div class="admin-stat-card">
+          <span class="admin-stat-label">Historické příjemky</span>
+          <span class="admin-stat-value">{{ import_quality.historicke_prijemky }}</span>
+          <span class="admin-stat-note">načtené z DATAx QHK01</span>
+        </div>
+      </div>
+      <div class="col-md-2 col-6 mb-2">
+        <div class="admin-stat-card">
+          <span class="admin-stat-label">Historické pohyby</span>
+          <span class="admin-stat-value">{{ import_quality.historicke_pohyby }}</span>
+          <span class="admin-stat-note">QHK01 + QHK10</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-lg-7 mb-3">
+        <div class="table-responsive">
+          <table class="table table-sm table-striped mb-0 sklad-table">
+            <thead class="thead-light">
+              <tr>
+                <th>Kontrolní bod</th>
+                <th>Stav</th>
+                <th>Poznámka</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Receptury jídel</strong></td>
+                <td><span class="badge badge-success">{{ import_quality.receptury }}</span></td>
+                <td>Aktivní vazby jídlo → surovina po DATAx importu.</td>
+              </tr>
+              <tr>
+                <td><strong>Suroviny bez SK skupiny</strong></td>
+                <td>
+                  <span class="badge {% if import_quality.suroviny_bez_skupiny %}badge-warning{% else %}badge-success{% endif %}">
+                    {{ import_quality.suroviny_bez_skupiny }}
+                  </span>
+                </td>
+                <td>Sem spadnou i položky, které se do spotřebního koše nezapočítávají a stojí za ruční revizi.</td>
+              </tr>
+              <tr>
+                <td><strong>Technické záznamy</strong></td>
+                <td><span class="badge badge-secondary">{{ import_quality.technicke }}</span></td>
+                <td>Technický partner pro historické příjemky zůstává odděleně.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="col-lg-5 mb-3">
+        <div class="sklad-alert {% if import_quality.partneri_ke_kontrole %}sklad-alert--warning{% else %}sklad-alert--success{% endif %} mb-2">
+          {% if import_quality.partneri_ke_kontrole %}
+            K ruční kontrole zbývá {{ import_quality.partneri_ke_kontrole|length }} partnerů nebo středisek.
+          {% else %}
+            Partneri z DATAx vypadají po základním čištění v pořádku.
+          {% endif %}
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-striped mb-0 sklad-table">
+            <thead class="thead-light">
+              <tr>
+                <th>Název</th>
+                <th>Typ</th>
+                <th>Kontrola</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for partner in import_quality.partneri_ke_kontrole %}
+                <tr>
+                  <td>
+                    <strong>{{ partner.nazev }}</strong>
+                    {% if partner.datax_kod %}
+                      <small class="text-muted d-block">{{ partner.datax_zdroj }} / {{ partner.datax_kod }}</small>
+                    {% endif %}
+                  </td>
+                  <td>{{ partner.get_typ_subjektu_display }}</td>
+                  <td>
+                    {% if partner.typ_subjektu == "DODAVATEL" and not partner.ico %}
+                      Doplnit IČO
+                    {% elif partner.typ_subjektu != "TECHNICKY" and not partner.adresa %}
+                      Doplnit adresu
+                    {% else %}
+                      Zkontrolovat název
+                    {% endif %}
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="3" class="text-center text-muted py-3">
+                    <i class="fas fa-check-circle"></i>
+                    Žádný partner aktuálně nevyžaduje ruční kontrolu.
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sklad-section">
+  <div class="sklad-section-head">
+    <h3>
+      <i class="fas fa-clipboard-check"></i>
+      Denní skladový checklist
+    </h3>
+    <div class="admin-actions-row">
+      <a class="admin-btn admin-btn--danger admin-btn--small" href="{{ zdravi_skladu_pdf_url }}">
+        <i class="fas fa-file-pdf"></i> PDF zdraví skladu
+      </a>
+      <a class="admin-btn admin-btn--light admin-btn--small" href="{{ zdravi_skladu_url }}?date={{ target_date|date:'Y-m-d' }}">
+        <i class="fas fa-heartbeat"></i> Zdraví skladu
+      </a>
+      <a class="admin-btn admin-btn--accent admin-btn--small" href="{{ doklady_k_oprave_url }}">
+        <i class="fas fa-triangle-exclamation"></i> Doklady k opravě
+      </a>
+      <a class="admin-btn admin-btn--primary admin-btn--small" href="{{ navrh_nakupu_url }}">
+        <i class="fas fa-cart-plus"></i> Návrh nákupu
+      </a>
+    </div>
+  </div>
+  <div class="sklad-section-body">
+    <div class="row mb-3">
+      <div class="col-md-4">
+        <strong>Skóre skladu:</strong>
+        <span class="badge {% if zdravi_skladu.pripraveno_k_uzaverce %}badge-success{% else %}badge-warning{% endif %}">
+          {{ zdravi_skladu.skore }} %
+        </span>
+      </div>
+      <div class="col-md-4">
+        <strong>Hodnota skladu:</strong>
+        {{ zdravi_skladu.hodnota_skladu|floatformat:-2 }} Kč
+      </div>
+      <div class="col-md-4">
+        <strong>Stav uzávěrky:</strong>
+        {% if zdravi_skladu.pripraveno_k_uzaverce %}
+          <span class="text-success">bez kritických upozornění</span>
+        {% else %}
+          <span class="text-warning">vyžaduje kontrolu</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-2">
+        <strong>Příjemky:</strong>
+        {{ denni_checklist.neuzavrene_prijemky|length }}
+      </div>
+      <div class="col-md-2">
+        <strong>Výdejky:</strong>
+        {{ denni_checklist.neuzavrene_vydejky|length }}
+      </div>
+      <div class="col-md-2">
+        <strong>Inventury:</strong>
+        {{ denni_checklist.neuzavrene_inventury|length }}
+      </div>
+      <div class="col-md-2">
+        <strong>Expirace:</strong>
+        {{ denni_checklist.expirovane_sarze|length }}
+      </div>
+      <div class="col-md-2">
+        <strong>Pod minimem:</strong>
+        {{ denni_checklist.minimum_alerty|length }}
+      </div>
+      <div class="col-md-2">
+        <strong>Rozdíly:</strong>
+        {{ denni_checklist.rozdily_stav_sarze|length }}
+      </div>
+    </div>
+    {% if denni_checklist.expirovane_sarze or denni_checklist.rozdily_stav_sarze or denni_checklist.minimum_alerty %}
+      <div class="sklad-alert sklad-alert--warning mt-3 mb-0">
+        Před koncem dne zkontroluj expirace, minima a případné rozdíly mezi stavem skladu a šaržemi.
+      </div>
+    {% else %}
+      <div class="sklad-alert sklad-alert--success mt-3 mb-0">
+        Denní kontroly jsou bez kritických upozornění.
+      </div>
+    {% endif %}
+  </div>
+</section>
+
+<div class="row">
+  <div class="col-lg-6">
+    <section class="sklad-section mb-3">
+      <div class="sklad-section-head">
+        <h3>
+          <i class="fas fa-hourglass-half"></i>
+          Suroviny s končícím datem spotřeby
+        </h3>
+        <small class="text-muted">do {{ expirace_do|date:"d.m.Y" }}</small>
+      </div>
+      <div class="sklad-section-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-striped mb-0 sklad-table">
+            <thead class="thead-light">
+              <tr>
+                <th>Surovina</th>
+                <th>Šarže</th>
+                <th>Spotřeba</th>
+                <th>Stav</th>
+                <th>Příjemka</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for pol in expirace_polozky %}
+                <tr class="{% if pol.datum_spotreby < target_date %}table-danger{% else %}table-warning{% endif %}">
+                  <td>
+                    <strong>{{ pol.surovina.nazev }}</strong>
+                    <small class="text-muted">({{ pol.surovina.jednotka }})</small>
+                  </td>
+                  <td>
+                    {% if pol.sarze %}
+                      {{ pol.sarze }}
+                    {% else %}
+                      <span class="text-muted">–</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {{ pol.datum_spotreby|date:"d.m.Y" }}
+                    {% if pol.stav == "EXPIROVANA" %}
+                      <span class="badge badge-danger ml-1">Po spotřebě</span>
+                    {% elif pol.stav == "KARANTENA" %}
+                      <span class="badge badge-warning ml-1">Karanténa</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ pol.mnozstvi_zbyva_display }}</td>
+                  <td>
+                    {% if pol.polozka_prijmu.prijem_id %}
+                      #{{ pol.polozka_prijmu.prijem_id }}
+                    {% else %}
+                      <span class="text-muted">–</span>
+                    {% endif %}
+                    {% if pol.polozka_prijmu.prijem.dodavatel %}
+                      <small class="text-muted">/ {{ pol.polozka_prijmu.prijem.dodavatel }}</small>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="5" class="text-center text-muted py-3">
+                    <i class="fas fa-check-circle"></i>
+                    Žádné suroviny s blížícím se datem spotřeby.
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="col-lg-6">
+    <section class="sklad-section mb-3">
+      <div class="sklad-section-head">
+        <h3>
+        <i class="fas fa-bell"></i>
+        Upozornění na minimální zásobu
+        </h3>
+      </div>
+      <div class="sklad-section-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm table-striped mb-0 sklad-table">
+            <thead class="thead-light">
+              <tr>
+                <th>Surovina</th>
+                <th>Stav</th>
+                <th>Minimum</th>
+                <th>Stav</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in minimum_alerty %}
+                <tr class="{% if row.pod_min %}table-danger{% else %}table-warning{% endif %}">
+                  <td>
+                    <strong>{{ row.surovina.nazev }}</strong>
+                    <small class="text-muted">({{ row.surovina.jednotka }})</small>
+                  </td>
+                  <td>{{ row.mnozstvi_display }}</td>
+                  <td>{{ row.minimum_display }}</td>
+                  <td>
+                    {% if row.pod_min %}
+                      <span class="badge badge-danger">Pod minimem</span>
+                    {% else %}
+                      <span class="badge badge-warning">Blízko minima</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="4" class="text-center text-muted py-3">
+                    <i class="fas fa-check-circle"></i>
+                    Žádná surovina se neblíží minimální zásobě.
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<section class="sklad-section mb-3">
+  <div class="sklad-section-head">
+    <h3>
+    <i class="fas fa-scale-balanced"></i>
+    Kontrola skladu proti šaržím
+    </h3>
+  </div>
+  <div class="sklad-section-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-striped mb-0 sklad-table">
+        <thead class="thead-light">
+          <tr>
+            <th>Surovina</th>
+            <th>Stav skladu</th>
+            <th>Součet šarží</th>
+            <th>Rozdíl</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rozdily_stav_sarze %}
+            <tr class="table-danger">
+              <td><strong>{{ row.surovina.nazev }}</strong></td>
+              <td>{{ row.stav_display }}</td>
+              <td>{{ row.sarze_display }}</td>
+              <td>{{ row.rozdil_display }}</td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="4" class="text-center text-muted py-3">
+                <i class="fas fa-check-circle"></i>
+                Stav skladu souhlasí se součtem šarží.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="sklad-section">
+  <div class="sklad-section-head">
+    <h3>
       <i class="fas fa-list"></i>
       Přehled surovin
-    </span>
+    </h3>
     <small class="text-muted">
       Datum: {{ target_date|date:"d.m.Y" }}
     </small>
   </div>
-  <div class="card-body p-0">
+  <div class="sklad-section-body p-0">
     <div class="table-responsive">
-      <table class="table table-sm table-striped mb-0">
+      <table class="table table-sm table-striped mb-0 sklad-table">
         <thead class="thead-light">
           <tr>
             <th><i class="fas fa-carrot"></i> Surovina</th>
@@ -59,28 +482,32 @@
         </thead>
         <tbody>
           {% for row in rows %}
-            <tr class="{% if row.pod_min %}table-danger{% endif %}">
+            <tr class="{% if row.pod_min %}table-danger{% elif row.blizko_min %}table-warning{% endif %}">
               <td>
                 <strong>{{ row.surovina.nazev }}</strong>
                 <small class="text-muted">
                   ({{ row.surovina.jednotka }})
                 </small>
               </td>
-              <td>{{ row.expected }}</td>
-              <td>{{ row.real }}</td>
+              <td>{{ row.expected_display }}</td>
+              <td>{{ row.real_display }}</td>
               <td>
                 {% if row.stav is not None %}
-                  {{ row.stav }}
+                  {{ row.stav_display }}
                 {% else %}
                   <span class="text-muted">–</span>
                 {% endif %}
               </td>
               <td>
                 {% if row.min is not None %}
-                  {{ row.min }}
+                  {{ row.min_display }}
                   {% if row.pod_min %}
                     <span class="badge badge-danger ml-1">
                       <i class="fas fa-exclamation-triangle"></i> Pod minimem
+                    </span>
+                  {% elif row.blizko_min %}
+                    <span class="badge badge-warning ml-1">
+                      <i class="fas fa-bell"></i> Blízko minima
                     </span>
                   {% endif %}
                 {% else %}
@@ -100,5 +527,6 @@
       </table>
     </div>
   </div>
+</section>
 </div>
 {% endblock %}

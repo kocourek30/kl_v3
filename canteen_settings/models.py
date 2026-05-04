@@ -14,7 +14,7 @@ class CanteenContact(models.Model):
     address = models.TextField(verbose_name="Adresa provozovny")
 
     class Meta:
-        verbose_name = "Kontakt jídelna"
+        verbose_name = "Kontakt jídelny"
         verbose_name_plural = "Kontakty jídelny"
 
     def __str__(self):

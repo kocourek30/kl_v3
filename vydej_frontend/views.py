@@ -1,33 +1,41 @@
-# vydej_frontend/views.py
+import logging
+import secrets
+from collections import defaultdict
+
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.http import JsonResponse
 from django.template.loader import render_to_string
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 from datetime import date
-from decimal import Decimal
-import serial
 import json
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, csrf_protect
 
 from objednavky.models import Order, OrderItem
-from vydej.models import VydejniUctenka, PolozkaUctenky
 from canteen_settings.models import MealPickupTime
 from jidelnicek.models import PolozkaJidelnicku
-from django.db.models import Count, Sum, Q
+from django.db.models import Sum
+from django.db.models import Q
 from django.contrib.auth import get_user_model
+from django.conf import settings
 
 from .decorators import obsluha_required
-from sklad.utils import odeber_ze_skladu_pro_jidlo
+from .services import aktualni_druhy_jidel_ids, vydat_objednavku, vydat_polozku
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
-# vydej_frontend/views.py
-from django.http import JsonResponse
 from vydej.models import VydejSettings
 
 
+ACTIVE_ORDER_STATUSES = ['objednano', 'zalozena-obsluhou', 'castecne-vydano']
+LOCAL_RFID_CLIENTS = {"127.0.0.1", "::1", "localhost"}
+
+
+@login_required
+@obsluha_required
 def get_vydej_settings(request):
     settings, created = VydejSettings.objects.get_or_create()
     return JsonResponse({
@@ -35,13 +43,34 @@ def get_vydej_settings(request):
     })
 
 
+def _rfid_token_ok(request, data=None, require_configured=False):
+    expected = getattr(settings, "RFID_API_TOKEN", "")
+    if not expected:
+        return not require_configured
+    supplied = (
+        request.headers.get("X-RFID-Token")
+        or request.headers.get("X-API-Key")
+        or (data or {}).get("token")
+        or ""
+    )
+    return secrets.compare_digest(str(supplied), str(expected))
+
+
+def _rfid_request_allowed(request, data=None):
+    user = getattr(request, "user", None)
+    if user and user.is_authenticated:
+        return True
+
+    remote_addr = (request.META.get("REMOTE_ADDR") or "").strip()
+    if remote_addr not in LOCAL_RFID_CLIENTS:
+        return False
+
+    return _rfid_token_ok(request, data, require_configured=True)
+
+
 def get_current_meal_type_ids():
     """Vrátí ID druhů jídel s aktuálním výdejním časem"""
-    now = timezone.localtime(timezone.now()).time()
-    return list(MealPickupTime.objects.filter(
-        pickup_from__lte=now,
-        pickup_to__gte=now
-    ).values_list('druh_jidla_id', flat=True))
+    return aktualni_druhy_jidel_ids()
 
 
 def prepare_order_with_items(order, current_meal_type_ids):
@@ -66,31 +95,53 @@ def get_current_meal_types_with_counts(today, current_meal_type_ids):
     active_pickup_times = MealPickupTime.objects.filter(
         pickup_from__lte=now,
         pickup_to__gte=now
-    ).select_related('druh_jidla')
+    ).select_related('druh_jidla').order_by('druh_jidla__poradi', 'druh_jidla__nazev')
     
-    for pickup in active_pickup_times:
-        menu_items = PolozkaJidelnicku.objects.filter(
-            druh_jidla=pickup.druh_jidla,
+    pickup_meal_type_ids = [p.druh_jidla_id for p in active_pickup_times]
+    if not pickup_meal_type_ids:
+        return active_pickup_times
+
+    menu_items = list(
+        PolozkaJidelnicku.objects.filter(
+            druh_jidla_id__in=pickup_meal_type_ids,
             jidelnicek__platnost_od__lte=today,
-            jidelnicek__platnost_do__gte=today
-        ).select_related('jidlo')
-        
-        meals_with_counts = []
-        for menu_item in menu_items:
-            count = OrderItem.objects.filter(
-                order__datum_vydeje=today,
-                order__status__in=['objednano', 'zalozena-obsluhou', 'castecne-vydano'],
-                menu_item=menu_item,
-                vydano=False
-            ).aggregate(total=Sum('quantity'))['total'] or 0
-            
-            if count > 0:
-                meals_with_counts.append({
-                    'menu_item': menu_item,
-                    'count': count
-                })
-        
-        pickup.meals_with_counts = meals_with_counts
+            jidelnicek__platnost_do__gte=today,
+        )
+        .select_related("jidlo", "druh_jidla")
+        .order_by("druh_jidla__poradi", "druh_jidla__nazev", "jidlo__nazev")
+    )
+    menu_item_ids = [m.id for m in menu_items]
+    if not menu_item_ids:
+        for pickup in active_pickup_times:
+            pickup.meals_with_counts = []
+        return active_pickup_times
+
+    count_by_menu_item_id = {
+        row["menu_item_id"]: row["total"]
+        for row in OrderItem.objects.filter(
+            order__datum_vydeje=today,
+            order__status__in=ACTIVE_ORDER_STATUSES,
+            menu_item_id__in=menu_item_ids,
+            vydano=False,
+        )
+        .values("menu_item_id")
+        .annotate(total=Sum("quantity"))
+    }
+
+    meals_by_type = defaultdict(list)
+    for menu_item in menu_items:
+        count = count_by_menu_item_id.get(menu_item.id, 0) or 0
+        if count <= 0:
+            continue
+        meals_by_type[menu_item.druh_jidla_id].append(
+            {
+                "menu_item": menu_item,
+                "count": count,
+            }
+        )
+
+    for pickup in active_pickup_times:
+        pickup.meals_with_counts = meals_by_type.get(pickup.druh_jidla_id, [])
     
     return active_pickup_times
 
@@ -104,7 +155,7 @@ def dashboard(request):
     # Pending orders (k výdeji)
     pending_orders_qs = Order.objects.filter(
         datum_vydeje=today,
-        status__in=['objednano', 'zalozena-obsluhou', 'castecne-vydano']
+        status__in=ACTIVE_ORDER_STATUSES
     ).select_related('user').prefetch_related(
         'items__menu_item__jidlo',
         'items__menu_item__druh_jidla'
@@ -139,7 +190,7 @@ def dashboard(request):
     # Statistiky položek k výdeji POUZE pro aktuální výdejní časy
     pending_items = OrderItem.objects.filter(
         order__datum_vydeje=today,
-        order__status__in=['objednano', 'zalozena-obsluhou', 'castecne-vydano'],
+        order__status__in=ACTIVE_ORDER_STATUSES,
         vydano=False,
         menu_item__druh_jidla_id__in=current_meal_type_ids
     ).select_related(
@@ -149,7 +200,11 @@ def dashboard(request):
         'menu_item__druh_jidla__nazev'
     ).annotate(
         total_quantity=Sum('quantity')
-    ).order_by('menu_item__druh_jidla__nazev', 'menu_item__jidlo__nazev')
+    ).order_by(
+        'menu_item__druh_jidla__poradi',
+        'menu_item__druh_jidla__nazev',
+        'menu_item__jidlo__nazev',
+    )
     
     context = {
         'today': today,
@@ -165,12 +220,6 @@ def dashboard(request):
     return render(request, 'vydej_frontend/dashboard.html', context)
 
 
-from django.http import JsonResponse
-from django.views.decorators.http import require_POST
-from django.views.decorators.csrf import csrf_protect
-from django.utils import timezone
-from decimal import Decimal
-
 @login_required
 @obsluha_required
 @csrf_protect
@@ -181,103 +230,14 @@ def issue_order(request, order_id):
     Vždy vrací JSON payload (success / error).
     """
     try:
-        order = Order.objects.select_related('user').prefetch_related(
-            'items__menu_item__jidlo',
-            'items__menu_item__druh_jidla'
-        ).get(id=order_id)
-
-        if order.status not in ['objednano', 'zalozena-obsluhou', 'castecne-vydano']:
-            return JsonResponse({
-                'success': False,
-                'error': 'Objednávka nemůže být vydána (nesprávný stav)'
-            }, status=400)
-
-        now = timezone.localtime(timezone.now()).time()
-        current_meal_type_ids = list(MealPickupTime.objects.filter(
-            pickup_from__lte=now,
-            pickup_to__gte=now
-        ).values_list('druh_jidla_id', flat=True))
-
-        if not current_meal_type_ids:
-            return JsonResponse({
-                'success': False,
-                'error': 'Nyní není žádný výdejní čas'
-            }, status=400)
-
-        items_to_issue = order.items.filter(
-            vydano=False,
-            menu_item__druh_jidla_id__in=current_meal_type_ids
-        )
-
-        if not items_to_issue.exists():
-            return JsonResponse({
-                'success': False,
-                'error': 'Žádné položky k vydání v aktuálním čase'
-            }, status=400)
-
-        # 🔥 1) odečet ze skladu + nastavení statusu na 'vydano' / 'castecne-vydano'
-        # použijeme službu, ale jen pro items_to_issue – proto je lepší varianta níž:
-        from sklad.utils import odeber_ze_skladu_pro_jidlo
-
-        # nejdřív odečti za každou položku v aktuálním čase
-        for item in items_to_issue.select_related("menu_item__jidlo"):
-            ok, _ = odeber_ze_skladu_pro_jidlo(item.menu_item.jidlo, item.quantity)
-            if not ok:
-                return JsonResponse({
-                    'success': False,
-                    'error': f'Nedostatek surovin pro {item.menu_item.jidlo.nazev}'
-                }, status=400)
-
-        # 🔥 2) vytvoř / aktualizuj účtenku a flagy vydano (zbytek logiky necháváš jak máš)
-        uctenka, created = VydejniUctenka.objects.get_or_create(
-            order=order,
-            defaults={
-                'datum_vydeje': timezone.now(),
-                'vydal': request.user,
-                'celkova_cena': Decimal('0'),
-                'celkova_dotace': Decimal('0'),
-            },
-        )
-
-        vydane_polozky = []
-        for item in items_to_issue:
-            cena_za_kus = item.cena
-            puvodni_cena = item.menu_item.jidlo.cena
-            dotace_za_kus = puvodni_cena - cena_za_kus
-
-            PolozkaUctenky.objects.create(
-                uctenka=uctenka,
-                nazev_jidla=item.menu_item.jidlo.nazev,
-                druh_jidla=item.menu_item.druh_jidla.nazev,
-                mnozstvi=item.quantity,
-                cena_za_kus=cena_za_kus,
-                dotace_za_kus=dotace_za_kus,
-            )
-
-            uctenka.celkova_cena += cena_za_kus * item.quantity
-            uctenka.celkova_dotace += dotace_za_kus * item.quantity
-
-            item.vydano = True
-            item.datum_vydani = timezone.now()
-            item.save()
-
-            vydane_polozky.append(f"{item.quantity}× {item.menu_item.jidlo.nazev}")
-
-        uctenka.save()
-
-        if order.items.filter(vydano=False).exists():
-            order.status = 'castecne-vydano'
-        else:
-            order.status = 'vydano'
-
-        order.datum_vydani = timezone.now()
-        order.save()
+        result = vydat_objednavku(order_id, request.user)
+        order = result["order"]
 
         return JsonResponse({
             'success': True,
-            'message': f'Vydáno pro {order.user.get_full_name()}: {", ".join(vydane_polozky)}',
-            'uctenka_id': uctenka.id,
-            'partial': order.status == 'castecne-vydano',
+            'message': f'Vydáno pro {order.user.get_full_name()}: {", ".join(result["vydane_polozky"])}',
+            'uctenka_id': result["uctenka"].id,
+            'partial': result["partial"],
         })
 
     except Order.DoesNotExist:
@@ -286,14 +246,18 @@ def issue_order(request, order_id):
             'error': 'Objednávka nenalezena',
         }, status=404)
 
-    except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f'Chyba při vydávání objednávky {order_id}: {str(e)}', exc_info=True)
+    except ValidationError as exc:
+        return JsonResponse({
+            'success': False,
+            'error': exc.messages[0],
+        }, status=400)
+
+    except Exception:
+        logger.exception('Chyba při vydávání objednávky %s.', order_id)
 
         return JsonResponse({
             'success': False,
-            'error': f'Chyba při vytváření účtenky: {str(e)}',
+            'error': 'Chyba při vytváření účtenky.',
         }, status=500)
 
 
@@ -306,7 +270,7 @@ def refresh_data(request):
     
     pending_orders_qs = Order.objects.filter(
         datum_vydeje=today,
-        status__in=['objednano', 'zalozena-obsluhou', 'castecne-vydano']
+        status__in=ACTIVE_ORDER_STATUSES
     ).select_related('user').prefetch_related(
         'items__menu_item__jidlo',
         'items__menu_item__druh_jidla'
@@ -336,7 +300,7 @@ def refresh_data(request):
     
     pending_items = OrderItem.objects.filter(
         order__datum_vydeje=today,
-        order__status__in=['objednano', 'zalozena-obsluhou', 'castecne-vydano'],
+        order__status__in=ACTIVE_ORDER_STATUSES,
         vydano=False,
         menu_item__druh_jidla_id__in=current_meal_type_ids
     ).select_related(
@@ -346,7 +310,11 @@ def refresh_data(request):
         'menu_item__druh_jidla__nazev'
     ).annotate(
         total_quantity=Sum('quantity')
-    ).order_by('menu_item__druh_jidla__nazev', 'menu_item__jidlo__nazev')
+    ).order_by(
+        'menu_item__druh_jidla__poradi',
+        'menu_item__druh_jidla__nazev',
+        'menu_item__jidlo__nazev',
+    )
     
     pending_html = render_to_string('vydej_frontend/partials/pending_orders.html', {
         'pending_orders': pending_orders
@@ -382,18 +350,33 @@ def rfid_scan(request):
     """Najde objednávku podle RFID - zobrazí i už vydané"""
     try:
         data = json.loads(request.body)
+        if not _rfid_request_allowed(request, data):
+            logger.warning(
+                "Odmítnutý RFID scan (remote=%s, user=%s).",
+                request.META.get("REMOTE_ADDR"),
+                getattr(getattr(request, "user", None), "username", None),
+            )
+            return JsonResponse({'success': False, 'error': 'Neplatné oprávnění RFID terminálu.'}, status=403)
+
         rfid_tag = data.get('rfid_tag', '').strip()
         
         if not rfid_tag:
             return JsonResponse({'success': False, 'error': 'Žádný RFID tag'})
         
-        # Najdi uživatele podle pole identifikacni_medium
+        # Najdi uživatele podle ISIC karty nebo ISIC mobilu
         try:
-            user = User.objects.get(identifikacni_medium=rfid_tag)
+            user = User.objects.get(
+                Q(identifikacni_medium__iexact=rfid_tag) | Q(identifikacni_medium_mobil__iexact=rfid_tag)
+            )
         except User.DoesNotExist:
             return JsonResponse({
                 'success': False,
                 'error': f'Uživatel s kartou {rfid_tag} nenalezen v systému'
+            })
+        except User.MultipleObjectsReturned:
+            return JsonResponse({
+                'success': False,
+                'error': 'RFID je přiřazeno více uživatelům. Zkontrolujte ISIC kartu/mobil v administraci.'
             })
         
         # Najdi dnešní objednávku
@@ -403,7 +386,7 @@ def rfid_scan(request):
         order = Order.objects.filter(
             user=user,
             datum_vydeje=today,
-            status__in=['objednano', 'zalozena-obsluhou', 'castecne-vydano']
+            status__in=ACTIVE_ORDER_STATUSES
         ).select_related('user').prefetch_related(
             'items__menu_item__jidlo',
             'items__menu_item__druh_jidla'
@@ -471,36 +454,32 @@ def rfid_scan(request):
         
     except json.JSONDecodeError:
         return JsonResponse({'success': False, 'error': 'Neplatný JSON formát'})
-    except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f'Chyba při RFID scan: {str(e)}', exc_info=True)
-        return JsonResponse({'success': False, 'error': f'Systémová chyba: {str(e)}'})
+    except Exception:
+        logger.exception('Chyba při RFID scan.')
+        return JsonResponse({'success': False, 'error': 'Systémová chyba.'}, status=500)
 
 
-@csrf_exempt
+@login_required
+@obsluha_required
+@require_POST
 def rfid_debug(request):
     """Debug endpoint pro testování RFID"""
-    if request.method == 'POST':
-        data = json.loads(request.body)
-        rfid = data.get('rfid_tag', '').strip()
-        
-        # Získej všechny uživatele s RFID
-        all_users = list(User.objects.filter(
-            identifikacni_medium__isnull=False
-        ).values_list('username', 'first_name', 'last_name', 'identifikacni_medium'))
-        
-        # Zkus najít přesnou shodu
-        user = User.objects.filter(identifikacni_medium=rfid).first()
-        
-        return JsonResponse({
-            'input_rfid': rfid,
-            'found': bool(user),
-            'user': f"{user.first_name} {user.last_name}" if user else None,
-            'all_users_sample': all_users[:10]
-        })
-    
-    return JsonResponse({'error': 'POST only'}, status=405)
+    data = json.loads(request.body)
+    if not _rfid_token_ok(request, data):
+        logger.warning("Odmítnutý RFID debug kvůli neplatnému tokenu.")
+        return JsonResponse({'success': False, 'error': 'Neplatné oprávnění RFID terminálu.'}, status=403)
+
+    rfid = data.get('rfid_tag', '').strip()
+
+    user = User.objects.filter(
+        Q(identifikacni_medium__iexact=rfid) | Q(identifikacni_medium_mobil__iexact=rfid)
+    ).first()
+
+    return JsonResponse({
+        'input_rfid': rfid,
+        'found': bool(user),
+        'user': f"{user.first_name} {user.last_name}" if user else None,
+    })
 
 @login_required
 @obsluha_required
@@ -586,90 +565,13 @@ def get_order_detail(request, order_id):
 def issue_single_item(request, item_id):
     """AJAX endpoint pro vydání JEDNÉ položky objednávky"""
     try:
-        item = OrderItem.objects.select_related(
-            'order__user',
-            'menu_item__jidlo',
-            'menu_item__druh_jidla'
-        ).get(id=item_id)
-        
-        order = item.order
-        
-        # Kontrola stavu
-        if order.status not in ['objednano', 'zalozena-obsluhou', 'castecne-vydano']:
-            return JsonResponse({
-                'success': False,
-                'error': 'Objednávka nemůže být vydána (nesprávný stav)'
-            }, status=400)
-        
-        # Kontrola, zda už není vydáno
-        if item.vydano:
-            return JsonResponse({
-                'success': False,
-                'error': 'Položka už byla vydána'
-            }, status=400)
-        
-        # Kontrola výdejního času
-        now = timezone.localtime(timezone.now()).time()
-        current_meal_type_ids = list(MealPickupTime.objects.filter(
-            pickup_from__lte=now,
-            pickup_to__gte=now
-        ).values_list('druh_jidla_id', flat=True))
-        
-        if item.menu_item.druh_jidla_id not in current_meal_type_ids:
-            return JsonResponse({
-                'success': False,
-                'error': 'Tato položka není v aktuálním výdejním čase'
-            }, status=400)
-        
-        # Vytvoř nebo najdi účtenku
-        uctenka, created = VydejniUctenka.objects.get_or_create(
-            order=order,
-            defaults={
-                'datum_vydeje': timezone.now(),
-                'vydal': request.user,
-                'celkova_cena': Decimal('0'),
-                'celkova_dotace': Decimal('0')
-            }
-        )
-        
-        # Vytvoř položku účtenky
-        cena_za_kus = item.cena
-        puvodni_cena = item.menu_item.jidlo.cena
-        dotace_za_kus = puvodni_cena - cena_za_kus
-        
-        PolozkaUctenky.objects.create(
-            uctenka=uctenka,
-            nazev_jidla=item.menu_item.jidlo.nazev,
-            druh_jidla=item.menu_item.druh_jidla.nazev,
-            mnozstvi=item.quantity,
-            cena_za_kus=cena_za_kus,
-            dotace_za_kus=dotace_za_kus
-        )
-        
-        # Aktualizuj celkové částky na účtence
-        uctenka.celkova_cena += cena_za_kus * item.quantity
-        uctenka.celkova_dotace += dotace_za_kus * item.quantity
-        uctenka.save()
-        
-        # Označ položku jako vydanou
-        item.vydano = True
-        item.datum_vydani = timezone.now()
-        item.save()
-        
-        # Aktualizuj stav objednávky
-        if order.items.filter(vydano=False).exists():
-            order.status = 'castecne-vydano'
-        else:
-            order.status = 'vydano'
-            if not order.datum_vydani:
-                order.datum_vydani = timezone.now()
-        order.save()
+        result = vydat_polozku(item_id, request.user)
         
         return JsonResponse({
             'success': True,
-            'message': f'Vydáno: {item.quantity}× {item.menu_item.jidlo.nazev}',
-            'uctenka_id': uctenka.id,
-            'order_complete': order.status == 'vydano'
+            'message': f'Vydáno: {", ".join(result["vydane_polozky"])}',
+            'uctenka_id': result["uctenka"].id,
+            'order_complete': result["order_complete"],
         })
         
     except OrderItem.DoesNotExist:
@@ -677,13 +579,16 @@ def issue_single_item(request, item_id):
             'success': False,
             'error': 'Položka nenalezena'
         }, status=404)
-    except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f'Chyba při vydávání položky {item_id}: {str(e)}', exc_info=True)
+    except ValidationError as exc:
         return JsonResponse({
             'success': False,
-            'error': f'Chyba při vytváření účtenky: {str(e)}'
+            'error': exc.messages[0],
+        }, status=400)
+    except Exception:
+        logger.exception('Chyba při vydávání položky %s.', item_id)
+        return JsonResponse({
+            'success': False,
+            'error': 'Chyba při vytváření účtenky.'
         }, status=500)
 
 
@@ -694,6 +599,9 @@ from django.views.decorators.http import require_http_methods
 @require_http_methods(["GET"])
 def auto_login_kiosk(request):
     """Automatické přihlášení pro výdejní terminál"""
+    if not getattr(settings, "DEBUG", False) and not getattr(settings, "KIOSK_AUTO_LOGIN_ENABLED", False):
+        return redirect('admin:login')
+
     if request.user.is_authenticated:
         return redirect('vydej_frontend:dashboard')
     
@@ -720,6 +628,6 @@ def auto_login_kiosk(request):
             # Žádný vhodný uživatel
             return redirect('admin:login')
             
-    except Exception as e:
-        print(f"Chyba auto-login: {e}")
+    except Exception:
+        logger.exception("Chyba při automatickém přihlášení výdejního terminálu.")
         return redirect('admin:login')

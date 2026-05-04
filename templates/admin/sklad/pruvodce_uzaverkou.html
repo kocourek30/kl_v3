@@ -1,0 +1,92 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'sklad/css/sklad_admin_views.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="admin-shell admin-shell--wide sklad-page">
+  <section class="admin-hero">
+    <div class="admin-hero-grid">
+      <div>
+        <div class="admin-kicker">Uzávěrka skladu</div>
+        <h1>{{ title }}</h1>
+        <p>Období {{ data.date_from|date:"d.m.Y" }} - {{ data.date_to|date:"d.m.Y" }}. Postupný průvodce, aby uzávěrka prošla bez chyb.</p>
+      </div>
+      <div class="sklad-actions" style="justify-content:flex-end;align-content:flex-start;">
+        <a class="admin-btn admin-btn--light" href="{{ change_url }}"><i class="fas fa-file"></i> Doklad uzávěrky</a>
+        <a class="admin-btn admin-btn--accent" href="{{ xlsx_url }}"><i class="fas fa-file-excel"></i> XLSX</a>
+        <a class="admin-btn admin-btn--danger" href="{{ pdf_url }}"><i class="fas fa-file-pdf"></i> PDF</a>
+        <a class="admin-btn admin-btn--primary" href="{{ archiv_url }}"><i class="fas fa-file-archive"></i> Archiv ZIP</a>
+      </div>
+    </div>
+    <div class="sklad-kpi-grid">
+      <article class="sklad-kpi"><strong>Počáteční hodnota</strong><span>{{ data.uzaverka.pocatecni_stav|floatformat:-2 }} Kč</span></article>
+      <article class="sklad-kpi"><strong>Příjmy</strong><span>{{ data.uzaverka.prijmy|floatformat:-2 }} Kč</span></article>
+      <article class="sklad-kpi"><strong>Výdeje</strong><span>{{ data.uzaverka.vydeje|floatformat:-2 }} Kč</span></article>
+      <article class="sklad-kpi"><strong>Kontrolní rozdíl</strong><span>{{ data.uzaverka.rozdil_kontroly|floatformat:-2 }} Kč</span></article>
+    </div>
+  </section>
+
+  <section class="admin-panel">
+    <div class="admin-panel-body">
+      {% if data.pripraveno %}
+        <div class="sklad-alert sklad-alert--success">Všechny kontroly jsou v pořádku. Měsíc je připravený k uzavření.</div>
+      {% else %}
+        <div class="sklad-alert sklad-alert--warning">Před uzavřením projdi kroky označené jako „Vyžaduje kontrolu“.</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="admin-panel">
+    <div class="admin-panel-head"><strong>Kroky uzávěrky</strong></div>
+    <div class="admin-panel-body p-0">
+      <div class="sklad-table-wrapper">
+        <table class="sklad-table">
+          <thead>
+            <tr>
+              <th>Krok</th>
+              <th>Úkol</th>
+              <th>Počet problémů</th>
+              <th>Stav</th>
+              <th>Akce</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for krok in kroky %}
+              <tr class="{% if krok.kontrola.ok %}sklad-row-soft-success{% else %}sklad-row-soft-warning{% endif %}">
+                <td>{{ krok.cislo }}</td>
+                <td><strong>{{ krok.nazev }}</strong><div class="sklad-note">{{ krok.popis }}</div></td>
+                <td>{{ krok.kontrola.pocet }}</td>
+                <td>{% if krok.kontrola.ok %}<span class="sklad-badge">V pořádku</span>{% else %}<span class="sklad-badge">Vyžaduje kontrolu</span>{% endif %}</td>
+                <td><a class="admin-btn admin-btn--small admin-btn--light" href="{{ krok.url }}"><i class="fas fa-arrow-up-right-from-square"></i> Otevřít</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="admin-panel">
+    <div class="admin-panel-head"><strong>Uzavření měsíce</strong></div>
+    <div class="admin-panel-body">
+      {% if uzaverka.uzavreny %}
+        <div class="sklad-alert sklad-alert--success mb-0">Uzávěrka je uzavřená.</div>
+      {% elif data.pripraveno %}
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="close">
+          <button type="submit" class="admin-btn admin-btn--primary">
+            <i class="fas fa-lock"></i> Uzavřít skladový měsíc
+          </button>
+        </form>
+      {% else %}
+        <button class="admin-btn admin-btn--light" disabled>Uzavřít půjde po vyřešení kontrol</button>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}

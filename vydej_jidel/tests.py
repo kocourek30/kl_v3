@@ -1,3 +1,6 @@
-from django.test import TestCase
+from django.test import SimpleTestCase
 
-# Create your tests here.
+
+class VydejJidelPlaceholderTests(SimpleTestCase):
+    def test_placeholder(self):
+        self.assertTrue(True)
