@@ -147,8 +147,14 @@ class CustomUser(AbstractUser):
         max_length=100,
         blank=True,
         null=True,
-        verbose_name=_("Identifikační médium")
-    )     
+        verbose_name=_("ISIC karta")
+    )
+    identifikacni_medium_mobil = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        verbose_name=_("ISIC mobil")
+    )
     osobni_cislo = models.CharField(max_length=100, blank=True, null=True, verbose_name=_("Osobní číslo"))
     alergeny = models.ManyToManyField('jidelnicek.Alergen', blank=True, verbose_name=_("Alergeny"))
     stravovaci_skupina = models.ForeignKey(

@@ -98,6 +98,7 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
                 "last_name",
                 "email",
                 "identifikacni_medium",
+                "identifikacni_medium_mobil",
                 "osobni_cislo",
                 "stravovaci_skupina",  # ← sem doplněno
             )
@@ -122,7 +123,15 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
         'stravovaci_skupina',  # ← doplněno
     )
 
-    search_fields = ('username', 'first_name', 'last_name', 'email', 'osobni_cislo')
+    search_fields = (
+        'username',
+        'first_name',
+        'last_name',
+        'email',
+        'osobni_cislo',
+        'identifikacni_medium',
+        'identifikacni_medium_mobil',
+    )
 
     add_fieldsets = (
         (None, {
@@ -131,6 +140,7 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
                 "username", "password1", "password2",
                 "first_name", "last_name", "email",
                 "identifikacni_medium", "osobni_cislo",
+                "identifikacni_medium_mobil",
                 "stravovaci_skupina",          # ← i do add formuláře
                 "alergeny", "is_staff", "is_active", "groups",
             ),
@@ -292,6 +302,8 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
                 | Q(last_name__icontains=q_lookup)
                 | Q(email__icontains=q_lookup)
                 | Q(osobni_cislo__icontains=q_lookup)
+                | Q(identifikacni_medium__icontains=q_lookup)
+                | Q(identifikacni_medium_mobil__icontains=q_lookup)
             )
 
         if role_group_id:
@@ -307,9 +319,15 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
                 qs = qs.none()
 
         if medium_state == "with":
-            qs = qs.exclude(Q(identifikacni_medium__isnull=True) | Q(identifikacni_medium__exact=""))
+            qs = qs.exclude(
+                (Q(identifikacni_medium__isnull=True) | Q(identifikacni_medium__exact=""))
+                & (Q(identifikacni_medium_mobil__isnull=True) | Q(identifikacni_medium_mobil__exact=""))
+            )
         elif medium_state == "without":
-            qs = qs.filter(Q(identifikacni_medium__isnull=True) | Q(identifikacni_medium__exact=""))
+            qs = qs.filter(
+                (Q(identifikacni_medium__isnull=True) | Q(identifikacni_medium__exact=""))
+                & (Q(identifikacni_medium_mobil__isnull=True) | Q(identifikacni_medium_mobil__exact=""))
+            )
 
         if active_state == "yes":
             qs = qs.filter(is_active=True)
@@ -361,7 +379,9 @@ class CustomUserAdmin(ExportMixin, ImportMixin, UserAdmin):
 
         active_on_page = sum(1 for u in users_on_page if u.is_active)
         with_medium_on_page = sum(
-            1 for u in users_on_page if (u.identifikacni_medium or "").strip()
+            1
+            for u in users_on_page
+            if (u.identifikacni_medium or "").strip() or (u.identifikacni_medium_mobil or "").strip()
         )
         negative_balance_on_page = sum(1 for u in users_on_page if u.aktualni_zustatek < 0)
         debt_enabled_on_page = sum(

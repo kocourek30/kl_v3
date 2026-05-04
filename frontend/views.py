@@ -8,6 +8,7 @@ from django.contrib.auth import login
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.conf import settings
+from django.db.models import Q
 
 from users.models import CustomUser
 
@@ -45,7 +46,7 @@ def rfid_login_api(request):
         return JsonResponse({'success': False, 'error': 'RFID chybí'}, status=400)
 
     user = CustomUser.objects.filter(
-        identifikacni_medium__iexact=rfid,
+        Q(identifikacni_medium__iexact=rfid) | Q(identifikacni_medium_mobil__iexact=rfid),
         is_active=True,
     ).first()
     if not user:

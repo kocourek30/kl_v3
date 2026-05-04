@@ -17,6 +17,7 @@ from objednavky.models import Order, OrderItem
 from canteen_settings.models import MealPickupTime
 from jidelnicek.models import PolozkaJidelnicku
 from django.db.models import Sum
+from django.db.models import Q
 from django.contrib.auth import get_user_model
 from django.conf import settings
 
@@ -362,13 +363,20 @@ def rfid_scan(request):
         if not rfid_tag:
             return JsonResponse({'success': False, 'error': 'Žádný RFID tag'})
         
-        # Najdi uživatele podle pole identifikacni_medium
+        # Najdi uživatele podle ISIC karty nebo ISIC mobilu
         try:
-            user = User.objects.get(identifikacni_medium=rfid_tag)
+            user = User.objects.get(
+                Q(identifikacni_medium__iexact=rfid_tag) | Q(identifikacni_medium_mobil__iexact=rfid_tag)
+            )
         except User.DoesNotExist:
             return JsonResponse({
                 'success': False,
                 'error': f'Uživatel s kartou {rfid_tag} nenalezen v systému'
+            })
+        except User.MultipleObjectsReturned:
+            return JsonResponse({
+                'success': False,
+                'error': 'RFID je přiřazeno více uživatelům. Zkontrolujte ISIC kartu/mobil v administraci.'
             })
         
         # Najdi dnešní objednávku
@@ -463,7 +471,9 @@ def rfid_debug(request):
 
     rfid = data.get('rfid_tag', '').strip()
 
-    user = User.objects.filter(identifikacni_medium=rfid).first()
+    user = User.objects.filter(
+        Q(identifikacni_medium__iexact=rfid) | Q(identifikacni_medium_mobil__iexact=rfid)
+    ).first()
 
     return JsonResponse({
         'input_rfid': rfid,
