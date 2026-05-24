@@ -1,0 +1,154 @@
+{% if my_day_orders %}
+<div class="day-orders-list">
+  {% for day in my_day_orders %}
+  <article class="day-order-card">
+    <header class="day-order-head">
+      <div>
+        <div class="day-order-date">
+          <i class="fa-regular fa-calendar-days me-1"></i>{{ day.date|date:"l j. n. Y" }}
+        </div>
+        <div class="day-order-meta">
+          {{ day.total_qty }} porcí • {{ day.items|length }} jídel
+        </div>
+      </div>
+      <div class="day-order-total">{{ day.total_price|floatformat:2 }} Kč</div>
+    </header>
+
+    <ul class="day-order-items">
+      {% for oi in day.items %}
+      <li>
+        <span class="day-order-item-name">{{ oi.menu_item.jidlo.nazev }}</span>
+        <span class="day-order-item-type">{{ oi.menu_item.druh_jidla.nazev }}</span>
+        <span class="day-order-item-qty">{{ oi.quantity }}×</span>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <form
+      action="{% url 'jidelnicek:order_delete' %}"
+      method="post"
+      onsubmit="return window.handleAjaxOrderSubmit ? window.handleAjaxOrderSubmit(event, this) : false;"
+      class="ajax-order-form day-cancel-form"
+      data-day-label="{{ day.date|date:'l j. n. Y' }}"
+      data-requires-reason="{% if day.requires_reason %}1{% else %}0{% endif %}"
+      data-day-total-price="{{ day.total_price|floatformat:2 }} Kč">
+      {% csrf_token %}
+      <input type="hidden" name="cancel_day" value="1">
+      <input type="hidden" name="menu_date" value="{{ day.date|date:'Y-m-d' }}">
+      <input type="hidden" name="menu_item_id" value="{{ day.items.0.menu_item.id }}">
+      <input type="hidden" name="cancel_reason" value="">
+
+      <div class="day-cancel-details-payload d-none">
+        <ul class="day-cancel-modal-list">
+          {% for oi in day.items %}
+          <li>
+            <span class="item-name">{{ oi.menu_item.jidlo.nazev }}</span>
+            <span class="item-meta">{{ oi.quantity }}× · {{ oi.line_total|floatformat:2 }} Kč</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      <button
+        type="submit"
+        class="btn btn-outline-danger w-100 rounded-pill fw-semibold btn-order-cancel"
+        title="Odhlásit celý den">
+        <i class="fas fa-times-circle me-1"></i>Odhlásit celý den
+      </button>
+    </form>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-orders-state p-4">
+  <div class="text-center">
+    <div class="empty-state-icon mb-3">
+      <i class="fas fa-calendar-check fa-3x text-muted opacity-25"></i>
+    </div>
+    <h6 class="text-muted mb-2 fw-semibold">Na další dny nemáte žádné aktivní objednávky</h6>
+    <p class="text-muted small mb-0">Objednaná jídla se tu zobrazí po dnech a půjdou odhlásit jedním klikem.</p>
+  </div>
+</div>
+{% endif %}
+
+<style>
+.day-orders-list {
+  display: grid;
+  gap: 0.75rem;
+}
+.day-order-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #fff;
+  padding: 0.8rem;
+}
+.day-order-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.55rem;
+}
+.day-order-date {
+  font-weight: 700;
+  color: #1f2937;
+  font-size: 0.95rem;
+}
+.day-order-meta {
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+.day-order-total {
+  font-weight: 700;
+  color: #0f5132;
+  white-space: nowrap;
+}
+.day-order-items {
+  list-style: none;
+  margin: 0 0 0.7rem;
+  padding: 0;
+}
+.day-order-items li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.35rem 0.5rem;
+  align-items: center;
+  border-top: 1px dashed #e5e7eb;
+  padding: 0.35rem 0;
+}
+.day-order-items li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.day-order-item-name {
+  font-size: 0.86rem;
+  color: #1f2937;
+}
+.day-order-item-type {
+  font-size: 0.73rem;
+  color: #166534;
+  background: #e8f5e9;
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  white-space: nowrap;
+}
+.day-order-item-qty {
+  font-size: 0.78rem;
+  color: #374151;
+  font-weight: 600;
+}
+.day-cancel-warning {
+  background: #fff3cd;
+  color: #7a4a03;
+  border: 1px solid #ffe69c;
+  border-radius: 10px;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.78rem;
+  margin-bottom: 0.45rem;
+}
+.empty-orders-state {
+  border: 1px dashed #d1d5db;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+</style>

@@ -1,4 +1,5 @@
 from django.shortcuts import redirect
+from django.utils.cache import add_never_cache_headers
 from django.urls import reverse
 
 
@@ -26,3 +27,17 @@ class ForcePasswordChangeMiddleware:
                 return redirect(f"{force_change_url}?next={request.path}")
 
         return self.get_response(request)
+
+
+class NoCacheAuthenticatedMiddleware:
+    """Zabrání prohlížeči vracet přihlášené stránky z cache po logoutu."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        user = getattr(request, "user", None)
+        if user and user.is_authenticated:
+            add_never_cache_headers(response)
+        return response

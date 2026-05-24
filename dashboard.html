@@ -1,0 +1,2046 @@
+{% extends 'base.html' %}
+{% load static jidelnicek_extras %}
+
+{% block title %}Jídelníček - {{ selected_date|date:"d.m.Y" }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4" data-jidelnicek-dashboard>
+    <!-- Toast notifikace -->
+    <div id="toast-container" class="position-fixed start-50 translate-middle-x p-3 toast-stack" style="z-index: 2100; width: 100%; max-width: 440px;"></div>
+
+    <div class="dashboard-page-header sticky-top mb-3">
+        <div class="dashboard-page-header__inner">
+            <div class="dashboard-page-header__lead">
+                <div class="dashboard-page-kicker">Jídelníček</div>
+                <h1 class="dashboard-page-title mb-1">
+                    {% if filter == 'week' %}
+                        Týden {{ week_start|date:"d.m." }} - {{ week_end|date:"d.m.Y" }}
+                    {% elif filter == 'month' %}
+                        {{ current_month|date:"F Y" }}
+                    {% else %}
+                        {{ selected_date|date:"d.m.Y (l)" }}
+                    {% endif %}
+                </h1>
+                <p class="dashboard-page-subtitle mb-0">
+                    {% if filter == 'week' %}
+                        Přehled jídelníčku pro celý týden
+                    {% elif filter == 'month' %}
+                        Zobrazeny jsou pouze objednatelné dny
+                    {% else %}
+                        Denní přehled jídelníčku
+                    {% endif %}
+                </p>
+            </div>
+            <div class="dashboard-page-header__meta">
+                <span class="dashboard-stat-chip">
+                    <i class="fa fa-utensils"></i>
+                    {{ menu_items|length }} položek
+                </span>
+                <span class="dashboard-stat-chip dashboard-stat-chip--soft">
+                    <i class="fa-regular fa-calendar"></i>
+                    {{ days_with_menu|length }} dní v měsíci
+                </span>
+                <button class="btn btn-outline-secondary dashboard-sidebar-toggle d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#dashboardSidebarDrawer" aria-controls="dashboardSidebarDrawer">
+                    <i class="fas fa-sliders me-1"></i>Panel
+                </button>
+            </div>
+        </div>
+
+        <!-- Segmentovaný přepínač -->
+        <div class="dashboard-segmented-control nav" id="menuTabs" role="tablist" aria-label="Přepínač zobrazení">
+            <a class="dashboard-segmented-control__item {% if filter == 'date' %}is-active{% endif %}"
+               id="tab-day" href="?filter=date&date={{ selected_date|date:'Y-m-d' }}" role="tab">
+                <span class="dashboard-segmented-control__label"><i class="fa fa-calendar-day"></i>Den</span>
+                <span class="dashboard-segmented-control__meta">{{ menu_items|length }}</span>
+            </a>
+            <a class="dashboard-segmented-control__item {% if filter == 'week' %}is-active{% endif %}"
+               id="tab-week" href="?filter=week&date={{ selected_date|date:'Y-m-d' }}" role="tab">
+                <span class="dashboard-segmented-control__label"><i class="fa fa-calendar-week"></i>Týden</span>
+                <span class="dashboard-segmented-control__meta">{{ week_items_count }}</span>
+            </a>
+            <a class="dashboard-segmented-control__item {% if filter == 'month' %}is-active{% endif %}"
+               id="tab-month" href="?filter=month&date={{ selected_date|date:'Y-m-d' }}&month={{ selected_date.month }}&year={{ selected_date.year }}" role="tab">
+                <span class="dashboard-segmented-control__label"><i class="fa-solid fa-calendar-days"></i>Měsíc</span>
+                <span class="dashboard-segmented-control__meta">{{ month_items_count }}</span>
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-4 align-items-start">
+        <!-- Pravá sekce: kalendář + objednávky -->
+        <aside class="col-lg-4 col-xl-3 order-2 order-lg-2 dashboard-sidebar d-none d-lg-block">
+            <div class="dashboard-sidebar-sticky">
+                {% include 'jidelnicek/_dashboard_sidebar_panel.html' %}
+            </div>
+        </aside>
+
+        <!-- Levá sekce: jídelníček -->
+        <section id="menu-section" class="col-lg-8 col-xl-9 order-1 order-lg-1 dashboard-content">
+
+            <!-- Tab content -->
+            <div class="tab-content" id="menuTabsContent">
+                <!-- DEN -->
+                <div class="tab-pane fade {% if filter == 'date' %}show active{% endif %}" id="tab-pane-day" role="tabpanel">
+                    {% with day_action=day_actions|dict_get:selected_date %}
+                    <div class="dashboard-day-hero">
+                        <div class="dashboard-day-hero__title">
+                            <span class="dashboard-day-hero__day">{{ selected_date|date:"l" }}</span>
+                            <span class="dashboard-day-hero__date">{{ selected_date|date:"d.m.Y" }}</span>
+                        </div>
+                        <div class="dashboard-day-hero__meta">
+                            {% if day_action and day_action.mode == 'cancel' %}
+                                <span class="dashboard-day-hero__badge dashboard-day-hero__badge--success">{{ day_action.total_qty }} objednaných porcí</span>
+                            {% elif day_action and day_action.mode == 'order' %}
+                                <span class="dashboard-day-hero__badge">{{ day_action.total_items }} objednatelných položek</span>
+                            {% else %}
+                                <span class="dashboard-day-hero__badge dashboard-day-hero__badge--muted">Bez aktivní akce</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="dashboard-day-actions">
+                        {% if day_action and day_action.mode == 'cancel' %}
+                            <form
+                                action="{% url 'jidelnicek:order_delete' %}"
+                                method="post"
+                                onsubmit="return window.handleAjaxOrderSubmit ? window.handleAjaxOrderSubmit(event, this) : false;"
+                                class="ajax-order-form day-cancel-form"
+                                data-day-label="{{ selected_date|date:'l j. n. Y' }}"
+                                data-requires-reason="{% if day_action.requires_reason %}1{% else %}0{% endif %}"
+                                data-day-total-price="{{ day_action.total_price|floatformat:2 }} Kč">
+                                {% csrf_token %}
+                                <input type="hidden" name="cancel_day" value="1">
+                                <input type="hidden" name="menu_date" value="{{ selected_date|date:'Y-m-d' }}">
+                                <input type="hidden" name="menu_item_id" value="{{ day_action.first_menu_item_id }}">
+                                <input type="hidden" name="cancel_reason" value="">
+                                <div class="day-cancel-details-payload d-none">
+                                    <ul class="day-cancel-modal-list">
+                                        {% for row in day_action.items %}
+                                        <li>
+                                            <span class="item-name">{{ row.name }}</span>
+                                            <span class="item-meta">{{ row.qty }}× · {{ row.line_total|floatformat:2 }} Kč</span>
+                                        </li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                                <button type="submit" class="btn btn-outline-danger rounded-pill fw-semibold px-3 dashboard-action-btn dashboard-action-btn--danger">
+                                    <i class="fas fa-times-circle me-1"></i>Odhlásit celý den
+                                </button>
+                            </form>
+                        {% elif day_action and day_action.mode == 'order' %}
+                            <form
+                                action="{% url 'jidelnicek:order_create' %}"
+                                method="post"
+                                onsubmit="return window.handleAjaxOrderSubmit ? window.handleAjaxOrderSubmit(event, this) : false;"
+                                class="ajax-order-form day-order-form"
+                                data-day-label="{{ selected_date|date:'l j. n. Y' }}"
+                                data-day-total-items="{{ day_action.total_items }}">
+                                {% csrf_token %}
+                                <input type="hidden" name="create_day" value="1">
+                                <input type="hidden" name="menu_date" value="{{ selected_date|date:'Y-m-d' }}">
+                                <div class="day-order-details-payload d-none">
+                                    <ul class="day-cancel-modal-list">
+                                        {% for row in day_action.items %}
+                                        <li>
+                                            <span class="item-name">{{ row.name }}</span>
+                                            <span class="item-meta">{{ row.meal_type }}</span>
+                                        </li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                                <button type="submit" class="btn btn-success rounded-pill fw-semibold px-3 dashboard-action-btn dashboard-action-btn--success">
+                                    <i class="fas fa-cart-plus me-1"></i>Objednat celý den
+                                </button>
+                            </form>
+                        {% endif %}
+                    </div>
+                    {% endwith %}
+                    {% if menu_items %}
+                        {% for item in menu_items %}
+                            <div class="menu-item-wrapper" data-menu-item-id="{{ item.id }}" data-menu-date="{{ selected_date|date:'Y-m-d' }}">
+                                {% include 'jidelnicek_item.html' with item=item %}
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="alert alert-info d-flex align-items-center shadow-md rounded-3 p-4 mb-0 modern-alert compact">
+                            <i class="fa fa-info-circle me-3 text-info"></i>
+                            <strong>Pro tento den není žádný jídelníček.</strong>
+                        </div>
+                    {% endif %}
+                </div>
+
+                <!-- TÝDEN -->
+                <div class="tab-pane fade {% if filter == 'week' %}show active{% endif %}" id="tab-pane-week" role="tabpanel">
+                    {% if menu_items_by_day %}
+                        {% for day, items in menu_items_by_day.items %}
+                            {% with day_action=day_actions|dict_get:day %}
+                            <div class="mb-4 p-4 bg-light-soft rounded-4 shadow-sm modern-day-section compact">
+                                <h6 class="menu-day-heading border-bottom border-light pb-3 mb-3">
+                                    <span class="menu-day-heading-main">
+                                        <i class="fas fa-calendar-day menu-date-icon"></i>
+                                        <span class="menu-day-title">{{ day|date:"l" }}</span>
+                                        <span class="menu-day-date">{{ day|date:"d.m.Y" }}</span>
+                                    </span>
+                                    <span class="menu-day-heading-badge">
+                                        {% if day_action and day_action.mode == 'cancel' %}
+                                            {{ day_action.total_qty }} porcí
+                                        {% elif day_action and day_action.mode == 'order' %}
+                                            {{ day_action.total_items }} položek
+                                        {% else %}
+                                            Bez akce
+                                        {% endif %}
+                                    </span>
+                                    <span class="d-flex align-items-center gap-2">
+                                        {% if day_action and day_action.mode == 'cancel' %}
+                                            <form
+                                                action="{% url 'jidelnicek:order_delete' %}"
+                                                method="post"
+                                                onsubmit="return window.handleAjaxOrderSubmit ? window.handleAjaxOrderSubmit(event, this) : false;"
+                                                class="ajax-order-form day-cancel-form"
+                                                data-day-label="{{ day|date:'l j. n. Y' }}"
+                                                data-requires-reason="{% if day_action.requires_reason %}1{% else %}0{% endif %}"
+                                                data-day-total-price="{{ day_action.total_price|floatformat:2 }} Kč">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="cancel_day" value="1">
+                                                <input type="hidden" name="menu_date" value="{{ day|date:'Y-m-d' }}">
+                                                <input type="hidden" name="menu_item_id" value="{{ day_action.first_menu_item_id }}">
+                                                <input type="hidden" name="cancel_reason" value="">
+                                                <div class="day-cancel-details-payload d-none">
+                                                    <ul class="day-cancel-modal-list">
+                                                        {% for row in day_action.items %}
+                                                        <li>
+                                                            <span class="item-name">{{ row.name }}</span>
+                                                            <span class="item-meta">{{ row.qty }}× · {{ row.line_total|floatformat:2 }} Kč</span>
+                                                        </li>
+                                                        {% endfor %}
+                                                    </ul>
+                                                </div>
+                                                <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill fw-semibold dashboard-action-btn dashboard-action-btn--danger">
+                                                    <i class="fas fa-times-circle me-1"></i>Odhlásit den
+                                                </button>
+                                            </form>
+                                        {% elif day_action and day_action.mode == 'order' %}
+                                            <form
+                                                action="{% url 'jidelnicek:order_create' %}"
+                                                method="post"
+                                                onsubmit="return window.handleAjaxOrderSubmit ? window.handleAjaxOrderSubmit(event, this) : false;"
+                                                class="ajax-order-form day-order-form"
+                                                data-day-label="{{ day|date:'l j. n. Y' }}"
+                                                data-day-total-items="{{ day_action.total_items }}">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="create_day" value="1">
+                                                <input type="hidden" name="menu_date" value="{{ day|date:'Y-m-d' }}">
+                                                <div class="day-order-details-payload d-none">
+                                                    <ul class="day-cancel-modal-list">
+                                                        {% for row in day_action.items %}
+                                                        <li>
+                                                            <span class="item-name">{{ row.name }}</span>
+                                                            <span class="item-meta">{{ row.meal_type }}</span>
+                                                        </li>
+                                                        {% endfor %}
+                                                    </ul>
+                                                </div>
+                                                <button type="submit" class="btn btn-sm btn-success rounded-pill fw-semibold dashboard-action-btn dashboard-action-btn--success">
+                                                    <i class="fas fa-cart-plus me-1"></i>Objednat den
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                    </span>
+                                </h6>
+                                {% for item in items %}
+                                    <div class="menu-item-wrapper" data-menu-item-id="{{ item.id }}" data-menu-date="{{ day|date:'Y-m-d' }}">
+                                        {% include 'jidelnicek_item.html' with item=item date=day %}
+                                    </div>
+                                {% endfor %}
+                            </div>
+                            {% endwith %}
+                        {% endfor %}
+                    {% else %}
+                        <div class="alert alert-info d-flex align-items-center shadow-md rounded-3 p-4 mb-0 modern-alert compact">
+                            <i class="fa fa-info-circle me-3 text-info"></i>
+                            <strong>Pro tento týden není žádný jídelníček.</strong>
+                        </div>
+                    {% endif %}
+                </div>
+
+                <!-- MĚSÍC -->
+                <div class="tab-pane fade {% if filter == 'month' %}show active{% endif %}" id="tab-pane-month" role="tabpanel">
+                    {% if menu_items_by_day %}
+                        {% for day, items in menu_items_by_day.items %}
+                            {% with day_action=day_actions|dict_get:day %}
+                            <div class="mb-3 p-3 bg-light-soft rounded-4 shadow-sm modern-day-section compact">
+                                <h6 class="menu-day-heading menu-day-heading-sm border-bottom border-light pb-2 mb-3">
+                                    <span class="menu-day-heading-main">
+                                        <i class="fas fa-calendar-day menu-date-icon"></i>
+                                        <span class="menu-day-title">{{ day|date:"l" }}</span>
+                                        <span class="menu-day-date">{{ day|date:"d.m.Y" }}</span>
+                                    </span>
+                                    <span class="menu-day-heading-badge">
+                                        {% if day_action and day_action.mode == 'cancel' %}
+                                            {{ day_action.total_qty }} porcí
+                                        {% elif day_action and day_action.mode == 'order' %}
+                                            {{ day_action.total_items }} položek
+                                        {% else %}
+                                            Bez akce
+                                        {% endif %}
+                                    </span>
+                                    <span class="d-flex align-items-center gap-2">
+                                        {% if day_action and day_action.mode == 'cancel' %}
+                                            <form
+                                                action="{% url 'jidelnicek:order_delete' %}"
+                                                method="post"
+                                                onsubmit="return window.handleAjaxOrderSubmit ? window.handleAjaxOrderSubmit(event, this) : false;"
+                                                class="ajax-order-form day-cancel-form"
+                                                data-day-label="{{ day|date:'l j. n. Y' }}"
+                                                data-requires-reason="{% if day_action.requires_reason %}1{% else %}0{% endif %}"
+                                                data-day-total-price="{{ day_action.total_price|floatformat:2 }} Kč">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="cancel_day" value="1">
+                                                <input type="hidden" name="menu_date" value="{{ day|date:'Y-m-d' }}">
+                                                <input type="hidden" name="menu_item_id" value="{{ day_action.first_menu_item_id }}">
+                                                <input type="hidden" name="cancel_reason" value="">
+                                                <div class="day-cancel-details-payload d-none">
+                                                    <ul class="day-cancel-modal-list">
+                                                        {% for row in day_action.items %}
+                                                        <li>
+                                                            <span class="item-name">{{ row.name }}</span>
+                                                            <span class="item-meta">{{ row.qty }}× · {{ row.line_total|floatformat:2 }} Kč</span>
+                                                        </li>
+                                                        {% endfor %}
+                                                    </ul>
+                                                </div>
+                                                <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill fw-semibold dashboard-action-btn dashboard-action-btn--danger">
+                                                    <i class="fas fa-times-circle me-1"></i>Odhlásit den
+                                                </button>
+                                            </form>
+                                        {% elif day_action and day_action.mode == 'order' %}
+                                            <form
+                                                action="{% url 'jidelnicek:order_create' %}"
+                                                method="post"
+                                                onsubmit="return window.handleAjaxOrderSubmit ? window.handleAjaxOrderSubmit(event, this) : false;"
+                                                class="ajax-order-form day-order-form"
+                                                data-day-label="{{ day|date:'l j. n. Y' }}"
+                                                data-day-total-items="{{ day_action.total_items }}">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="create_day" value="1">
+                                                <input type="hidden" name="menu_date" value="{{ day|date:'Y-m-d' }}">
+                                                <div class="day-order-details-payload d-none">
+                                                    <ul class="day-cancel-modal-list">
+                                                        {% for row in day_action.items %}
+                                                        <li>
+                                                            <span class="item-name">{{ row.name }}</span>
+                                                            <span class="item-meta">{{ row.meal_type }}</span>
+                                                        </li>
+                                                        {% endfor %}
+                                                    </ul>
+                                                </div>
+                                                <button type="submit" class="btn btn-sm btn-success rounded-pill fw-semibold dashboard-action-btn dashboard-action-btn--success">
+                                                    <i class="fas fa-cart-plus me-1"></i>Objednat den
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                    </span>
+                                </h6>
+                                {% for item in items %}
+                                    <div class="menu-item-wrapper" data-menu-item-id="{{ item.id }}" data-menu-date="{{ day|date:'Y-m-d' }}">
+                                        {% include 'jidelnicek_item.html' with item=item date=day %}
+                                    </div>
+                                {% endfor %}
+                            </div>
+                            {% endwith %}
+                        {% endfor %}
+                    {% else %}
+                        <div class="alert alert-info d-flex align-items-center shadow-md rounded-3 p-4 mb-0 modern-alert compact">
+                            <i class="fa fa-info-circle me-3 text-info"></i>
+                            <strong>Pro tento měsíc není žádný jídelníček.</strong>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<div class="offcanvas offcanvas-end dashboard-sidebar-drawer" tabindex="-1" id="dashboardSidebarDrawer" aria-labelledby="dashboardSidebarDrawerLabel">
+    <div class="offcanvas-header">
+        <h5 class="offcanvas-title fw-bold" id="dashboardSidebarDrawerLabel">Panel objednávek</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Zavřít"></button>
+    </div>
+    <div class="offcanvas-body">
+        <div class="dashboard-sidebar-sticky dashboard-sidebar-sticky--drawer">
+            {% include 'jidelnicek/_dashboard_sidebar_panel.html' %}
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="dayCancelModal" tabindex="-1" aria-labelledby="dayCancelModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content day-cancel-modal">
+            <div class="modal-header border-0 pb-1">
+                <h5 class="modal-title fw-bold" id="dayCancelModalLabel">
+                    <i class="fas fa-calendar-xmark text-danger me-2"></i>Odhlásit celý den
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+            </div>
+            <div class="modal-body pt-1">
+                <p id="dayCancelModalSubtitle" class="mb-2 fw-semibold text-dark"></p>
+                <p class="text-muted small mb-3">Tato akce zruší všechny položky objednávky v daném dni.</p>
+
+                <div id="dayCancelModalItemsWrap" class="d-none mb-3">
+                    <div class="day-cancel-modal-card">
+                        <div class="day-cancel-modal-card-head">
+                            <span>Rušené položky</span>
+                            <strong id="dayCancelModalTotal"></strong>
+                        </div>
+                        <ul id="dayCancelModalItems" class="day-cancel-modal-list mb-0"></ul>
+                    </div>
+                </div>
+
+                <div id="dayCancelModalWarning" class="alert alert-warning py-2 px-3 small d-none mb-2">
+                    <i class="fas fa-triangle-exclamation me-1"></i>
+                    Odhláška je po uzávěrce. Důvod je povinný.
+                </div>
+
+                <div id="dayCancelModalReasonWrap" class="d-none">
+                    <label for="dayCancelModalReason" class="form-label fw-semibold small mb-1">Důvod odhlášky</label>
+                    <textarea
+                        id="dayCancelModalReason"
+                        class="form-control form-control-sm"
+                        rows="3"
+                        minlength="3"
+                        placeholder="Napište stručně důvod odhlášky..."></textarea>
+                </div>
+
+                <div id="dayCancelModalError" class="alert alert-danger py-2 px-3 small d-none mt-2 mb-0"></div>
+            </div>
+            <div class="modal-footer border-0 pt-2">
+                <button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Zpět</button>
+                <button type="button" class="btn btn-danger rounded-pill px-3" id="dayCancelModalConfirm">
+                    <i class="fas fa-times-circle me-1"></i>Odhlásit den
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="dayOrderModal" tabindex="-1" aria-labelledby="dayOrderModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content day-cancel-modal day-order-modal">
+            <div class="modal-header border-0 pb-1">
+                <h5 class="modal-title fw-bold" id="dayOrderModalLabel">
+                    <i class="fas fa-cart-plus text-success me-2"></i>Objednat celý den
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+            </div>
+            <div class="modal-body pt-1">
+                <p id="dayOrderModalSubtitle" class="mb-2 fw-semibold text-dark"></p>
+                <p class="text-muted small mb-3">Tato akce objedná všechny dostupné položky jídelníčku v daném dni.</p>
+
+                <div id="dayOrderModalItemsWrap" class="d-none mb-3">
+                    <div class="day-cancel-modal-card">
+                        <div class="day-cancel-modal-card-head">
+                            <span>Objednávané položky</span>
+                            <strong id="dayOrderModalTotal"></strong>
+                        </div>
+                        <ul id="dayOrderModalItems" class="day-cancel-modal-list mb-0"></ul>
+                    </div>
+                </div>
+
+                <div id="dayOrderModalError" class="alert alert-danger py-2 px-3 small d-none mt-2 mb-0"></div>
+            </div>
+            <div class="modal-footer border-0 pt-2">
+                <button type="button" class="btn btn-light rounded-pill px-3" data-bs-dismiss="modal">Zpět</button>
+                <button type="button" class="btn btn-success rounded-pill px-3" id="dayOrderModalConfirm">
+                    <i class="fas fa-cart-plus me-1"></i>Objednat den
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let dayCancelModalInstance = null;
+let dayCancelModalEl = null;
+let pendingDayCancelForm = null;
+let dayOrderModalEl = null;
+let pendingDayOrderForm = null;
+const PENDING_TOAST_KEY = 'kliknijidlo_pending_toast';
+
+document.addEventListener('DOMContentLoaded', function() {
+    initDayCancelModal();
+    initDayOrderModal();
+    flushPendingToast();
+
+    bindDashboardNavigation();
+});
+
+function flushPendingToast() {
+    let raw = null;
+    try {
+        raw = window.sessionStorage.getItem(PENDING_TOAST_KEY);
+    } catch (error) {
+        raw = null;
+    }
+
+    if (!raw) return;
+
+    try {
+        window.sessionStorage.removeItem(PENDING_TOAST_KEY);
+        const payload = JSON.parse(raw);
+        if (payload?.message && typeof window.showToast === 'function') {
+            window.setTimeout(() => {
+                window.showToast(payload.message, payload.type || 'info');
+            }, 120);
+        }
+    } catch (error) {
+        try {
+            window.sessionStorage.removeItem(PENDING_TOAST_KEY);
+        } catch (cleanupError) {
+            // ignore
+        }
+    }
+}
+
+function initDayCancelModal() {
+    dayCancelModalEl = document.getElementById('dayCancelModal');
+    if (!dayCancelModalEl) return;
+
+    const confirmBtn = document.getElementById('dayCancelModalConfirm');
+    if (confirmBtn && !confirmBtn.dataset.bound) {
+        confirmBtn.dataset.bound = '1';
+        confirmBtn.addEventListener('click', function() {
+            if (!pendingDayCancelForm) return;
+            const formToSubmit = pendingDayCancelForm;
+
+            const requiresReason = formToSubmit.dataset.requiresReason === '1';
+            const reasonField = document.getElementById('dayCancelModalReason');
+            const reason = (reasonField?.value || '').trim();
+
+            if (requiresReason && reason.length < 3) {
+                showDayCancelModalError('Po uzávěrce je potřeba uvést důvod (min. 3 znaky).');
+                return;
+            }
+
+            const hiddenReasonInput = formToSubmit.querySelector('input[name="cancel_reason"]');
+            if (hiddenReasonInput) {
+                hiddenReasonInput.value = reason;
+            }
+
+            formToSubmit.dataset.confirmed = '1';
+            hideDayCancelModal();
+            formToSubmit.requestSubmit();
+        });
+    }
+
+    dayCancelModalEl.addEventListener('click', function(event) {
+        if (event.target === dayCancelModalEl) {
+            hideDayCancelModal();
+        }
+    });
+
+    dayCancelModalEl.querySelectorAll('[data-bs-dismiss="modal"]').forEach(btn => {
+        if (btn.dataset.bound === '1') return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', hideDayCancelModal);
+    });
+}
+
+function initDayOrderModal() {
+    dayOrderModalEl = document.getElementById('dayOrderModal');
+    if (!dayOrderModalEl) return;
+
+    const confirmBtn = document.getElementById('dayOrderModalConfirm');
+    if (confirmBtn && !confirmBtn.dataset.bound) {
+        confirmBtn.dataset.bound = '1';
+        confirmBtn.addEventListener('click', function() {
+            if (!pendingDayOrderForm) return;
+            const formToSubmit = pendingDayOrderForm;
+
+            formToSubmit.dataset.confirmed = '1';
+            hideDayOrderModal();
+            formToSubmit.requestSubmit();
+        });
+    }
+
+    dayOrderModalEl.addEventListener('click', function(event) {
+        if (event.target === dayOrderModalEl) {
+            hideDayOrderModal();
+        }
+    });
+
+    dayOrderModalEl.querySelectorAll('[data-bs-dismiss="modal"]').forEach(btn => {
+        if (btn.dataset.bound === '1') return;
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', hideDayOrderModal);
+    });
+}
+
+function openDayCancelModal(form) {
+    pendingDayCancelForm = form;
+
+    const dayLabel = form.dataset.dayLabel || '';
+    const requiresReason = form.dataset.requiresReason === '1';
+
+    const subtitleEl = document.getElementById('dayCancelModalSubtitle');
+    const itemsWrapEl = document.getElementById('dayCancelModalItemsWrap');
+    const itemsListEl = document.getElementById('dayCancelModalItems');
+    const totalEl = document.getElementById('dayCancelModalTotal');
+    const reasonWrapEl = document.getElementById('dayCancelModalReasonWrap');
+    const warningEl = document.getElementById('dayCancelModalWarning');
+    const reasonInput = document.getElementById('dayCancelModalReason');
+
+    if (subtitleEl) {
+        subtitleEl.textContent = dayLabel ? `Odhlásit celý den: ${dayLabel}` : 'Odhlásit celý den';
+    }
+    if (itemsWrapEl && itemsListEl) {
+        const payload = form.querySelector('.day-cancel-details-payload .day-cancel-modal-list');
+        if (payload) {
+            itemsListEl.innerHTML = payload.innerHTML;
+            itemsWrapEl.classList.remove('d-none');
+        } else {
+            itemsListEl.innerHTML = '';
+            itemsWrapEl.classList.add('d-none');
+        }
+    }
+    if (totalEl) {
+        totalEl.textContent = form.dataset.dayTotalPrice || '';
+    }
+
+    if (reasonWrapEl) {
+        reasonWrapEl.classList.toggle('d-none', !requiresReason);
+    }
+    if (warningEl) {
+        warningEl.classList.toggle('d-none', !requiresReason);
+    }
+    if (reasonInput) {
+        reasonInput.value = '';
+        reasonInput.required = requiresReason;
+    }
+
+    showDayCancelModalError('');
+    showDayCancelModal();
+}
+window.openDayCancelModal = openDayCancelModal;
+
+function openDayOrderModal(form) {
+    pendingDayOrderForm = form;
+
+    const dayLabel = form.dataset.dayLabel || '';
+    const totalItems = form.dataset.dayTotalItems || '';
+
+    const subtitleEl = document.getElementById('dayOrderModalSubtitle');
+    const itemsWrapEl = document.getElementById('dayOrderModalItemsWrap');
+    const itemsListEl = document.getElementById('dayOrderModalItems');
+    const totalEl = document.getElementById('dayOrderModalTotal');
+
+    if (subtitleEl) {
+        subtitleEl.textContent = dayLabel ? `Objednat celý den: ${dayLabel}` : 'Objednat celý den';
+    }
+    if (itemsWrapEl && itemsListEl) {
+        const payload = form.querySelector('.day-order-details-payload .day-cancel-modal-list');
+        if (payload) {
+            itemsListEl.innerHTML = payload.innerHTML;
+            itemsWrapEl.classList.remove('d-none');
+        } else {
+            itemsListEl.innerHTML = '';
+            itemsWrapEl.classList.add('d-none');
+        }
+    }
+    if (totalEl) {
+        totalEl.textContent = totalItems ? `${totalItems} položek` : '';
+    }
+
+    showDayOrderModalError('');
+    showDayOrderModal();
+}
+window.openDayOrderModal = openDayOrderModal;
+
+function showDayCancelModal() {
+    if (dayCancelModalEl && typeof window.showDayCancelModalElement === 'function') {
+        window.showDayCancelModalElement(dayCancelModalEl);
+    } else if (pendingDayCancelForm) {
+        pendingDayCancelForm.dataset.confirmed = '1';
+        pendingDayCancelForm.requestSubmit();
+    }
+}
+
+function hideDayCancelModal() {
+    if (dayCancelModalEl && typeof window.hideDayCancelModalElement === 'function') {
+        window.hideDayCancelModalElement(dayCancelModalEl);
+    }
+    clearDayCancelModalState();
+}
+
+function showDayOrderModal() {
+    if (dayOrderModalEl && typeof window.showDayCancelModalElement === 'function') {
+        window.showDayCancelModalElement(dayOrderModalEl);
+    } else if (pendingDayOrderForm) {
+        pendingDayOrderForm.dataset.confirmed = '1';
+        pendingDayOrderForm.requestSubmit();
+    }
+}
+
+function hideDayOrderModal() {
+    if (dayOrderModalEl && typeof window.hideDayCancelModalElement === 'function') {
+        window.hideDayCancelModalElement(dayOrderModalEl);
+    }
+    clearDayOrderModalState();
+}
+
+function showDayCancelModalError(message) {
+    const errorEl = document.getElementById('dayCancelModalError');
+    if (!errorEl) return;
+    if (message) {
+        errorEl.textContent = message;
+        errorEl.classList.remove('d-none');
+    } else {
+        errorEl.textContent = '';
+        errorEl.classList.add('d-none');
+    }
+}
+
+function showDayOrderModalError(message) {
+    const errorEl = document.getElementById('dayOrderModalError');
+    if (!errorEl) return;
+    if (message) {
+        errorEl.textContent = message;
+        errorEl.classList.remove('d-none');
+    } else {
+        errorEl.textContent = '';
+        errorEl.classList.add('d-none');
+    }
+}
+
+function clearDayCancelModalState() {
+    const reasonInput = document.getElementById('dayCancelModalReason');
+    if (reasonInput) {
+        reasonInput.value = '';
+    }
+    const itemsListEl = document.getElementById('dayCancelModalItems');
+    if (itemsListEl) {
+        itemsListEl.innerHTML = '';
+    }
+    const totalEl = document.getElementById('dayCancelModalTotal');
+    if (totalEl) {
+        totalEl.textContent = '';
+    }
+    showDayCancelModalError('');
+    pendingDayCancelForm = null;
+}
+
+function clearDayOrderModalState() {
+    const itemsListEl = document.getElementById('dayOrderModalItems');
+    if (itemsListEl) {
+        itemsListEl.innerHTML = '';
+    }
+    const totalEl = document.getElementById('dayOrderModalTotal');
+    if (totalEl) {
+        totalEl.textContent = '';
+    }
+    showDayOrderModalError('');
+    pendingDayOrderForm = null;
+}
+
+function bindDashboardNavigation() {
+    const root = document.querySelector('[data-jidelnicek-dashboard]');
+    if (!root) return;
+
+    root.querySelectorAll('a[href^="?filter="], a[href^="?month="]').forEach(link => {
+        if (link.dataset.ajaxBound === '1') return;
+        link.dataset.ajaxBound = '1';
+
+        link.addEventListener('click', function(e) {
+            if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button !== 0) return;
+
+            e.preventDefault();
+            const targetUrl = new URL(this.getAttribute('href'), window.location.href);
+            loadDashboardUrl(targetUrl, this, true);
+        });
+    });
+}
+
+async function loadDashboardUrl(url, trigger, pushState) {
+    const root = document.querySelector('[data-jidelnicek-dashboard]');
+    if (!root) {
+        window.location.href = url.toString();
+        return;
+    }
+
+    if (trigger && !trigger.classList.contains('active')) {
+        trigger.classList.add('menu-tab-loading');
+    }
+    root.classList.add('dashboard-soft-loading');
+    root.setAttribute('aria-busy', 'true');
+
+    try {
+        const response = await fetch(url.toString(), {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const html = await response.text();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const nextRoot = doc.querySelector('[data-jidelnicek-dashboard]');
+
+        if (!nextRoot) {
+            window.location.href = url.toString();
+            return;
+        }
+
+        root.replaceWith(nextRoot);
+        document.title = doc.title || document.title;
+
+        if (pushState) {
+            window.history.pushState({ jidelnicekDashboard: true }, '', url.toString());
+        }
+
+        bindDashboardNavigation();
+    } catch (err) {
+        console.debug('Chyba při načítání jídelníčku:', err);
+        window.location.href = url.toString();
+    }
+}
+
+window.addEventListener('popstate', function() {
+    loadDashboardUrl(new URL(window.location.href), null, false);
+});
+
+window.adjustQty = function(btn, delta) {
+    const input = btn.parentElement.querySelector('input[type="number"]');
+    let val = parseInt(input.value) || 1;
+    const max = parseInt(input.max) || 99;
+    val = Math.max(1, Math.min(max, val + delta));
+    input.value = val;
+};
+
+window.showToast = function(message, type = 'info') {
+    const typeMap = {
+        success: {
+            tone: 'success',
+            title: 'Hotovo',
+        },
+        error: {
+            tone: 'danger',
+            title: 'Něco se nepovedlo',
+        },
+        warning: {
+            tone: 'warning',
+            title: 'Pozor',
+        },
+        info: {
+            tone: 'info',
+            title: 'Informace',
+        }
+    };
+
+    const config = typeMap[type] || typeMap.info;
+    
+    const toast = document.createElement('div');
+    toast.className = `toast border-0 shadow-lg modern-toast modern-toast-${config.tone}`;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'polite');
+    toast.setAttribute('aria-atomic', 'true');
+    toast.innerHTML = `
+        <div class="modern-toast-shell">
+            <div class="modern-toast-content">
+                <div class="modern-toast-title">${config.title}</div>
+                <div class="modern-toast-message">${message}</div>
+            </div>
+            <button type="button" class="btn-close modern-toast-close" data-bs-dismiss="toast" aria-label="Zavřít"></button>
+        </div>
+        <div class="modern-toast-progress"></div>
+    `;
+    
+    let container = document.getElementById('global-toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'global-toast-container';
+        container.className = 'position-fixed start-50 translate-middle-x p-3 toast-stack';
+        container.style.zIndex = '2100';
+        container.style.width = '100%';
+        container.style.maxWidth = '440px';
+        container.style.top = '140px';
+        document.body.appendChild(container);
+    }
+    container.appendChild(toast);
+    
+    const bsToast = new bootstrap.Toast(toast, { delay: 4200 });
+    bsToast.show();
+    
+    toast.addEventListener('hidden.bs.toast', () => toast.remove());
+};
+
+window.loadDashboardUrl = loadDashboardUrl;
+window.bindDashboardNavigation = bindDashboardNavigation;
+</script>
+
+<!-- Kompaktní moderní CSS - příjemné barvy -->
+<style>
+:root {
+    --primary-color: #54ae43;
+    --accent-color: #f28c28;
+}
+
+.bg-gradient-primary {
+    background: linear-gradient(135deg, var(--primary-color), #4a9b3a) !important;
+}
+
+.bg-gradient-accent {
+    background: linear-gradient(135deg, var(--accent-color), #e07b1f) !important;
+}
+
+.bg-gradient-light {
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+}
+
+.bg-light-soft {
+    background: #f8f9fa !important;
+}
+
+.bg-success-soft {
+    background: #e8f5e8 !important;
+    border-left: 3px solid #4caf50 !important;
+}
+
+.bg-warning-soft {
+    background: #fff3cd !important;
+    border: 2px solid #ffc107 !important;
+}
+
+.modern-card.compact {
+    border: none !important;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.1) !important;
+    transition: all 0.3s ease;
+}
+
+.menu-tabs-sticky {
+    position: sticky;
+    top: 84px;
+    z-index: 1020;
+}
+
+.menu-date-banner {
+    border: 1px solid #d8e2d4;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #ffffff 0%, #f7fbf4 100%);
+    padding: 0.7rem 0.95rem;
+    box-shadow: 0 6px 14px rgba(17, 24, 39, 0.06);
+}
+
+.menu-date-banner-label {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.72rem;
+    color: #5c6b61;
+    font-weight: 700;
+}
+
+.menu-date-banner-main {
+    font-size: 1.05rem;
+    line-height: 1.2;
+    font-weight: 800;
+    color: #213a2a;
+}
+
+.menu-date-banner-sub {
+    font-size: 0.82rem;
+    color: #617284;
+}
+
+.menu-head-subline {
+    margin-top: -0.2rem;
+    color: #60717f;
+    font-size: 0.92rem;
+    font-weight: 600;
+}
+
+.menu-day-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    color: #1f2e22;
+    font-weight: 800;
+}
+
+.menu-day-heading-main {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    min-width: 0;
+}
+
+.menu-date-icon {
+    color: var(--accent-color);
+}
+
+.menu-day-heading-sm {
+    font-size: 0.9rem;
+}
+
+.menu-day-title {
+    display: inline-flex;
+    align-items: center;
+    color: #1f2e22;
+    font-weight: 800;
+    text-transform: capitalize;
+}
+
+.menu-day-date {
+    color: #5a6674;
+    font-weight: 700;
+    font-size: 0.93rem;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+}
+
+.modern-card.compact:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 35px rgba(0,0,0,0.15) !important;
+}
+
+.dashboard-sidebar {
+    position: sticky;
+    top: 84px;
+    align-self: flex-start;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0.2rem;
+}
+
+.dashboard-sidebar-sticky {
+    position: static;
+}
+
+#my-orders-wrapper {
+    max-height: none;
+    overflow: visible;
+}
+
+[data-jidelnicek-dashboard] {
+    transition: opacity 0.12s ease;
+}
+
+[data-jidelnicek-dashboard].dashboard-soft-loading {
+    opacity: 0.88;
+}
+
+.custom-menu-tabs-modern.compact {
+    background: linear-gradient(135deg, var(--primary-color), #4a9b3a) !important;
+    border: none !important;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.26rem;
+    padding: 0.28rem;
+    width: min(100%, 42rem);
+    margin-left: auto;
+    margin-right: auto;
+    border-radius: 18px !important;
+    box-shadow: 0 12px 24px rgba(31, 66, 35, 0.16) !important;
+}
+
+.custom-menu-tabs-modern .nav-link {
+    color: #ffffff !important;
+    background: transparent !important;
+    border: none !important;
+    border-radius: 999px !important;
+    transition: all 0.3s ease;
+    font-weight: 500;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 0.38rem;
+    min-height: 42px;
+    padding: 0.54rem 0.85rem !important;
+}
+
+.custom-menu-tabs-modern .nav-link:hover {
+    background: rgba(255,255,255,0.1) !important;
+}
+
+.custom-menu-tabs-modern.nav-tabs .nav-link.active,
+.custom-menu-tabs-modern .nav-link.active {
+    background-color: #f28c28 !important;
+    background-image: linear-gradient(180deg, #ffbc54 0%, #f28c28 58%, #d86c13 100%) !important;
+    color: #ffffff !important;
+    box-shadow:
+        inset 0 -3px 0 rgba(115,54,8,0.24),
+        0 8px 18px rgba(242,140,40,0.42);
+    font-weight: 800;
+    transform: none;
+    text-shadow: 0 1px 1px rgba(98,53,12,0.24);
+    box-shadow:
+        inset 0 -2px 0 rgba(115,54,8,0.22),
+        0 5px 12px rgba(242,140,40,0.34);
+}
+
+.custom-menu-tabs-modern .nav-link.active i {
+    color: #ffffff !important;
+}
+
+.custom-menu-tabs-modern .nav-link.menu-tab-loading {
+    position: relative;
+    opacity: 0.9;
+    pointer-events: none;
+}
+
+.custom-menu-tabs-modern .nav-link.menu-tab-loading::after {
+    content: "";
+    width: 1rem;
+    height: 1rem;
+    margin-left: 0.5rem;
+    border: 2px solid rgba(255,255,255,0.45);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+    display: inline-block;
+    vertical-align: -0.15rem;
+    animation: menu-tab-spin 0.7s linear infinite;
+}
+
+@keyframes menu-tab-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.modern-account-status.compact {
+    background: linear-gradient(135deg, #e8f5e8, #d4edda) !important;
+    border: 1px solid #c8e6c9 !important;
+    border-radius: 12px !important;
+    font-size: 0.9rem;
+}
+
+.modern-calendar-table.compact {
+    font-size: 0.8rem;
+    background: #ffffff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+}
+
+.modern-day-header.compact {
+    background: #e9ecef !important;
+    font-weight: 600 !important;
+    padding: 0.5rem 0.25rem !important;
+    color: #495057 !important;
+    font-size: 0.75rem;
+}
+
+.modern-day-cell.compact {
+    height: 3rem;
+    vertical-align: middle;
+    border: 1px solid #e0e6ed !important;
+    transition: all 0.3s ease;
+}
+
+.day-cell-soft {
+    transition: all 0.2s ease;
+}
+
+.day-cell-soft:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    z-index: 5;
+}
+
+.menu-day-link-soft {
+    color: #2e7d32 !important;
+    font-weight: 600 !important;
+    background: rgba(84,174,67,0.08) !important;
+    border: 1px solid rgba(84,174,67,0.2) !important;
+}
+
+.menu-day-link-soft:hover {
+    color: #1b5e20 !important;
+    background: rgba(84,174,67,0.15) !important;
+    box-shadow: 0 2px 8px rgba(84,174,67,0.2);
+}
+
+.selected-day-soft {
+    background: #fff3cd !important;
+    color: #856404 !important;
+    font-weight: 700 !important;
+    font-size: 0.9rem !important;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.menu-day-soft {
+    border-left: 3px solid #4caf50 !important;
+}
+
+.modern-day-section.compact {
+    border: 1px solid #e0e6ed !important;
+    transition: all 0.2s ease;
+}
+
+.modern-alert.compact {
+    background: linear-gradient(135deg, #e3f2fd, #bbdefb) !important;
+    border: 1px solid #90caf9 !important;
+    border-radius: 12px !important;
+    font-size: 0.95rem;
+}
+
+.modern-toast.compact {
+    border-radius: 12px !important;
+    font-size: 0.9rem;
+}
+
+.toast-stack {
+    display: grid;
+    gap: 0.7rem;
+    pointer-events: none;
+    top: 140px;
+}
+
+.toast-stack .toast {
+    pointer-events: auto;
+}
+
+.modern-toast {
+    position: relative;
+    overflow: hidden;
+    border-radius: 14px !important;
+    background: #ffffff !important;
+    border: 1px solid #dce3ea !important;
+    box-shadow: 0 8px 20px rgba(18, 34, 22, 0.12) !important;
+}
+
+.modern-toast::before {
+    content: none;
+}
+
+.modern-toast-shell {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 0.65rem;
+    padding: 0.72rem 0.78rem 0.7rem;
+}
+
+.modern-toast-content {
+    min-width: 0;
+}
+
+.modern-toast-title {
+    font-size: 0.8rem;
+    font-weight: 900;
+    letter-spacing: 0.01em;
+    color: #22303b;
+    margin-bottom: 0.08rem;
+}
+
+.modern-toast-message {
+    font-size: 0.8rem;
+    line-height: 1.35;
+    color: #4c5d69;
+    word-break: break-word;
+}
+
+.modern-toast-close {
+    position: relative;
+    z-index: 1;
+    margin-top: 0.05rem;
+    opacity: 0.55;
+    filter: none;
+}
+
+.modern-toast-close:hover {
+    opacity: 0.9;
+}
+
+.modern-toast-progress {
+    position: relative;
+    z-index: 1;
+    height: 2px;
+    margin: 0 0.78rem 0.62rem;
+    border-radius: 999px;
+    background: rgba(21,49,29,0.08);
+    overflow: hidden;
+}
+
+.modern-toast-progress::after {
+    content: "";
+    display: block;
+    height: 100%;
+    width: 100%;
+    border-radius: inherit;
+    transform-origin: left center;
+    animation: toast-progress 4.2s linear forwards;
+}
+
+.modern-toast-success .modern-toast-progress::after {
+    background: linear-gradient(90deg, #54ae43, #8adf6e);
+}
+
+.modern-toast-danger .modern-toast-progress::after {
+    background: linear-gradient(90deg, #dc3545, #f18b96);
+}
+
+.modern-toast-warning .modern-toast-progress::after {
+    background: linear-gradient(90deg, #f28c28, #f4b56f);
+}
+
+.modern-toast-info .modern-toast-progress::after {
+    background: linear-gradient(90deg, #3b82f6, #93c5fd);
+}
+
+@keyframes toast-progress {
+    from {
+        transform: scaleX(1);
+    }
+    to {
+        transform: scaleX(0);
+    }
+}
+
+.day-cancel-modal {
+    border-radius: 18px;
+    border: 1px solid rgba(220,53,69,0.16);
+    box-shadow: 0 18px 40px rgba(17,24,39,0.18);
+}
+
+.day-cancel-modal .modal-header,
+.day-cancel-modal .modal-footer {
+    background: #fff;
+}
+
+.day-cancel-modal .form-control:focus {
+    border-color: #f28c28;
+    box-shadow: 0 0 0 0.18rem rgba(242,140,40,0.15);
+}
+
+.day-cancel-modal-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #f8fafc;
+    padding: 0.65rem 0.75rem;
+}
+
+.day-cancel-modal-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: 0.82rem;
+    color: #475569;
+    margin-bottom: 0.35rem;
+}
+
+.day-cancel-modal-card-head strong {
+    color: #0f5132;
+    font-size: 0.92rem;
+}
+
+.day-cancel-modal-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.2rem;
+}
+
+.day-cancel-modal-list li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.65rem;
+    font-size: 0.82rem;
+    border-top: 1px dashed #dbe3ec;
+    padding-top: 0.3rem;
+}
+
+.day-cancel-modal-list li:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+
+.day-cancel-modal-list .item-name {
+    color: #1f2937;
+    flex: 1;
+    min-width: 0;
+}
+
+.day-cancel-modal-list .item-meta {
+    color: #334155;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.compact-title {
+    font-size: 1.4rem;
+}
+
+.compact-title-date-line {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+    min-width: 0;
+    white-space: nowrap;
+}
+
+.compact-title-day {
+    text-transform: capitalize;
+}
+
+.compact-title-date {
+    color: #60717f;
+    font-weight: 700;
+    font-size: 0.92em;
+}
+
+.btn-primary, .btn-success {
+    background: linear-gradient(135deg, var(--primary-color), #4a9b3a) !important;
+    border: none !important;
+    box-shadow: 0 2px 8px rgba(84,174,67,0.3);
+}
+
+.btn-primary:hover, .btn-success:hover {
+    background: linear-gradient(135deg, var(--accent-color), #e07b1f) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(242,140,40,0.4);
+}
+
+.shadow-md {
+    box-shadow: 0 4px 15px rgba(0,0,0,0.08) !important;
+}
+
+.shadow-lg {
+    box-shadow: 0 10px 30px rgba(0,0,0,0.12) !important;
+}
+
+@media (max-width: 991.98px) {
+    .menu-tabs-sticky {
+        top: 74px;
+    }
+
+    .dashboard-sidebar {
+        position: static;
+        max-height: none;
+        overflow-y: visible;
+        padding-right: 0;
+    }
+
+    #my-orders-wrapper {
+        max-height: none;
+        overflow-y: visible;
+    }
+
+    .dashboard-content {
+        margin-bottom: 0.25rem;
+    }
+
+    .dashboard-sidebar {
+        margin-top: 0.25rem;
+    }
+
+    .dashboard-sidebar .modern-card.compact,
+    .dashboard-sidebar .survey-widget,
+    .dashboard-sidebar .modern-account-status.compact {
+        margin-bottom: 0.85rem !important;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .menu-tabs-sticky {
+        top: 70px;
+    }
+
+    .custom-menu-tabs-modern.compact {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        border-radius: 20px !important;
+        overflow: hidden;
+        padding: 0.28rem;
+        gap: 0.22rem;
+        width: min(100%, 22rem);
+    }
+
+    .custom-menu-tabs-modern .nav-item {
+        min-width: 0;
+    }
+
+    .custom-menu-tabs-modern .nav-link {
+        min-height: 54px;
+        padding: 0.7rem 0.5rem !important;
+        font-size: 0.92rem;
+        gap: 0.28rem;
+        justify-content: center;
+        text-align: center;
+    }
+
+    .custom-menu-tabs-modern .nav-link i {
+        margin-right: 0 !important;
+        font-size: 0.95rem;
+    }
+
+    .menu-date-banner {
+        padding: 0.56rem 0.72rem;
+    }
+
+    .menu-date-banner-main {
+        font-size: 0.9rem;
+    }
+
+    .menu-day-heading {
+        align-items: flex-start;
+    }
+
+    .menu-day-heading-main {
+        display: inline-flex;
+        align-items: center;
+        flex-wrap: nowrap;
+        gap: 0.3rem;
+        line-height: 1.15;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    #toast-container.toast-stack {
+        top: 124px !important;
+        padding-inline: 0.75rem !important;
+        max-width: 100% !important;
+    }
+
+    .modern-toast {
+        border-radius: 18px !important;
+    }
+
+    .modern-toast-shell {
+        grid-template-columns: minmax(0, 1fr);
+        padding: 0.68rem 0.7rem 0.65rem;
+    }
+
+    .modern-toast-close {
+        position: absolute;
+        top: 0.7rem;
+        right: 0.7rem;
+    }
+
+    .modern-toast-title {
+        font-size: 0.88rem;
+        padding-right: 1.8rem;
+    }
+
+    .modern-toast-message {
+        font-size: 0.84rem;
+    }
+
+    .dashboard-content .compact-title {
+        display: flex;
+        align-items: center;
+        flex-wrap: nowrap;
+        gap: 0.6rem;
+        margin-bottom: 0.35rem !important;
+        padding: 0.62rem 0.78rem;
+        border-radius: 18px;
+        background: linear-gradient(135deg, rgba(255,255,255,0.98), rgba(246,250,246,0.96));
+        box-shadow: 0 12px 24px rgba(22, 38, 25, 0.08);
+        font-size: 0.92rem;
+        line-height: 1.15;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .dashboard-content .compact-title .compact-title-date-line {
+        gap: 0.26rem;
+        font-size: 0.9rem;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .dashboard-content .compact-title .compact-title-date {
+        font-size: 0.88em;
+    }
+
+    .dashboard-content .compact-title .compact-title-day,
+    .dashboard-content .compact-title .compact-title-date {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .dashboard-content .compact-title i {
+        width: 1.7rem;
+        height: 1.7rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        background: rgba(84,174,67,0.1);
+        font-size: 0.88rem;
+    }
+
+    .dashboard-sidebar-sticky {
+        display: grid;
+        gap: 0.85rem;
+    }
+
+    .dashboard-sidebar .card-header,
+    .survey-widget-head {
+        min-height: 48px;
+    }
+
+    .dashboard-page-header {
+        top: 88px;
+    }
+}
+
+.dashboard-page-header {
+    position: sticky;
+    top: 92px;
+    z-index: 1025;
+    padding: 0.9rem;
+    border-radius: 24px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,250,247,0.95));
+    border: 1px solid rgba(84,174,67,0.12);
+    box-shadow: 0 16px 30px rgba(20, 38, 24, 0.08);
+    backdrop-filter: blur(12px);
+}
+
+.dashboard-page-header__inner {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.dashboard-page-header__lead {
+    min-width: 0;
+    flex: 1 1 360px;
+}
+
+.dashboard-page-kicker {
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.73rem;
+    color: #5c6d5d;
+    font-weight: 800;
+    margin-bottom: 0.28rem;
+}
+
+.dashboard-page-title {
+    font-size: clamp(1.45rem, 2.6vw, 2.3rem);
+    font-weight: 900;
+    color: #17311d;
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+}
+
+.dashboard-page-subtitle {
+    color: #5f6f63;
+    font-size: 0.93rem;
+    font-weight: 600;
+}
+
+.dashboard-page-header__meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.dashboard-stat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 38px;
+    padding: 0.45rem 0.8rem;
+    border-radius: 999px;
+    background: linear-gradient(135deg, rgba(84,174,67,0.12), rgba(84,174,67,0.06));
+    color: #1b4a28;
+    border: 1px solid rgba(84,174,67,0.16);
+    font-size: 0.86rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.dashboard-stat-chip--soft {
+    background: rgba(255,255,255,0.9);
+    color: #56635a;
+    border-color: rgba(99, 116, 103, 0.16);
+}
+
+.dashboard-sidebar-toggle {
+    min-height: 38px;
+    border-radius: 999px;
+    font-weight: 800;
+}
+
+.dashboard-segmented-control {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin-top: 0.85rem;
+}
+
+.dashboard-segmented-control__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.82rem 1rem;
+    border-radius: 18px;
+    background: rgba(243, 247, 243, 0.96);
+    border: 1px solid rgba(84,174,67,0.12);
+    color: #23412c;
+    text-decoration: none;
+    font-weight: 800;
+    transition: transform .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+
+.dashboard-segmented-control__item:hover {
+    transform: translateY(-1px);
+    background: #fff;
+    border-color: rgba(84,174,67,0.22);
+    box-shadow: 0 10px 18px rgba(18, 33, 20, 0.06);
+    color: #17311d;
+}
+
+.dashboard-segmented-control__item.is-active {
+    background: linear-gradient(135deg, #54ae43, #3f8e34);
+    color: #fff;
+    border-color: #3f8e34;
+    box-shadow: 0 14px 24px rgba(63, 142, 52, 0.24);
+}
+
+.dashboard-segmented-control__item.is-active:hover {
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+.dashboard-segmented-control__label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.96rem;
+}
+
+.dashboard-segmented-control__meta {
+    min-width: 2.3rem;
+    padding: 0.18rem 0.48rem;
+    border-radius: 999px;
+    text-align: center;
+    font-size: 0.78rem;
+    font-weight: 900;
+    background: rgba(255,255,255,0.65);
+    color: inherit;
+}
+
+.dashboard-segmented-control__item.is-active .dashboard-segmented-control__meta {
+    background: rgba(255,255,255,0.2);
+}
+
+.dashboard-day-hero {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0 0.25rem 0.65rem;
+    margin-bottom: 0.9rem;
+    border-bottom: 1px solid rgba(84,174,67,0.1);
+}
+
+.dashboard-day-hero__title {
+    min-width: 0;
+}
+
+.dashboard-day-hero__day {
+    display: block;
+    font-size: 1rem;
+    color: #5c6d5d;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.dashboard-day-hero__date {
+    display: block;
+    font-size: clamp(1.35rem, 2.2vw, 1.9rem);
+    line-height: 1.08;
+    color: #17311d;
+    font-weight: 900;
+}
+
+.dashboard-day-hero__meta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.4rem;
+}
+
+.dashboard-day-hero__badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 0.42rem 0.72rem;
+    border-radius: 999px;
+    background: rgba(84,174,67,0.12);
+    border: 1px solid rgba(84,174,67,0.18);
+    color: #1f5f2f;
+    font-size: 0.84rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.dashboard-day-hero__badge--success {
+    background: rgba(84,174,67,0.16);
+}
+
+.dashboard-day-hero__badge--muted {
+    background: rgba(107,114,128,0.08);
+    border-color: rgba(107,114,128,0.12);
+    color: #59616b;
+}
+
+.dashboard-day-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.85rem;
+}
+
+.dashboard-action-btn {
+    min-height: 42px;
+    border-radius: 999px !important;
+    font-weight: 800 !important;
+    padding-inline: 1rem !important;
+    box-shadow: none !important;
+}
+
+.dashboard-action-btn--success {
+    background: linear-gradient(135deg, #54ae43, #3f8e34) !important;
+    border-color: #3f8e34 !important;
+}
+
+.dashboard-action-btn--danger {
+    border-color: #f59e9e !important;
+}
+
+.menu-day-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    position: sticky;
+    top: 146px;
+    z-index: 1010;
+    padding-top: 0.15rem;
+    background: linear-gradient(180deg, rgba(247,250,247,0.98), rgba(247,250,247,0.92));
+}
+
+.menu-day-heading-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+}
+
+.menu-day-heading-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 30px;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    background: rgba(84,174,67,0.1);
+    color: #1d5b2c;
+    font-size: 0.76rem;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.menu-day-heading-sm {
+    top: 146px;
+}
+
+.modern-day-section {
+    border: 1px solid rgba(84,174,67,0.1);
+}
+
+.modern-day-section.compact {
+    margin-bottom: 1rem !important;
+}
+
+.dashboard-sidebar-drawer .offcanvas-body {
+    background: linear-gradient(180deg, #f8fbf7, #ffffff);
+}
+
+.dashboard-sidebar-drawer {
+    width: min(92vw, 420px);
+}
+
+.dashboard-sidebar-sticky--drawer {
+    position: static;
+}
+
+.dashboard-side-card + .dashboard-side-card {
+    margin-top: 1rem;
+}
+
+.dashboard-summary-card .card-body {
+    display: grid;
+    gap: 0.7rem;
+}
+
+.dashboard-summary-date {
+    font-size: 0.98rem;
+    font-weight: 900;
+    color: #17311d;
+}
+
+.dashboard-summary-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding-top: 0.55rem;
+    border-top: 1px solid rgba(84,174,67,0.08);
+}
+
+.dashboard-summary-row--muted {
+    color: #5f6f63;
+}
+
+.dashboard-summary-label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: inherit;
+}
+
+.calendar-day-badge {
+    position: absolute;
+    top: 0.2rem;
+    right: 0.2rem;
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    min-width: 1.45rem;
+    min-height: 1.45rem;
+    padding: 0.14rem;
+    border-radius: 999px;
+    background: #54ae43;
+    color: #fff;
+    font-size: 0.76rem;
+    font-weight: 900;
+    line-height: 1;
+    box-shadow: 0 6px 14px rgba(84,174,67,0.22);
+    pointer-events: none;
+}
+
+.calendar-day-badge i {
+    font-size: 0.72rem;
+    margin-right: 0;
+}
+
+.menu-item-card.menu-item-card--selected {
+    border-color: rgba(84,174,67,0.3) !important;
+    box-shadow: 0 16px 34px rgba(84,174,67,0.12) !important;
+    background: linear-gradient(180deg, #ffffff, #f8fcf7);
+}
+
+.menu-item-card.menu-item-card--ordered {
+    border-color: rgba(84,174,67,0.36) !important;
+}
+
+.menu-item-card.menu-item-card--closed {
+    border-color: rgba(107,114,128,0.18) !important;
+}
+
+@media (max-width: 991.98px) {
+    .dashboard-page-header {
+        top: 88px;
+    }
+
+    .dashboard-segmented-control {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-page-header__meta {
+        justify-content: flex-start;
+    }
+
+    .dashboard-day-hero {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .menu-day-heading {
+        top: 132px;
+    }
+
+    .menu-day-heading-sm {
+        top: 132px;
+    }
+
+    .calendar-day-badge {
+        top: 0.2rem;
+        right: 0.2rem;
+        min-width: 1.2rem;
+        min-height: 1.2rem;
+        padding: 0.1rem;
+        font-size: 0.68rem;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .dashboard-page-header {
+        border-radius: 20px;
+        padding: 0.8rem;
+    }
+
+    .dashboard-page-title {
+        font-size: 1.38rem;
+    }
+
+    .dashboard-segmented-control__item {
+        padding: 0.76rem 0.9rem;
+    }
+
+    .dashboard-day-hero {
+        padding-bottom: 0.5rem;
+        margin-bottom: 0.7rem;
+    }
+
+    .dashboard-action-btn {
+        width: 100%;
+    }
+
+    .dashboard-day-actions {
+        justify-content: stretch;
+    }
+
+    .dashboard-day-actions .ajax-order-form {
+        width: 100%;
+    }
+
+    .menu-day-heading {
+        top: 124px;
+    }
+
+    .menu-day-heading-sm {
+        top: 124px;
+    }
+
+    .calendar-day-badge {
+        top: 0.18rem;
+        right: 0.18rem;
+    }
+}
+</style>
+{% endblock %}

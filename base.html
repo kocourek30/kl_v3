@@ -1,0 +1,831 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{% block title %}KlikniJídlo{% endblock %}</title>
+
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <link
+      rel="stylesheet"
+      href="{% static 'vendor/fontawesome-free/css/all.min.css' %}?v=2"
+    />
+    <link href="{% static 'vendor/bootswatch/default/bootstrap.min.css' %}" rel="stylesheet" />
+    <link rel="stylesheet" href="{% static 'css/app-theme.css' %}?v=10">
+    <link rel="stylesheet" href="{% static 'css/pwa.css' %}?v=7">
+
+<link rel="stylesheet" href="{% static 'vendor/baguettebox.min.css' %}">
+<script src="{% static 'vendor/baguettebox.min.js' %}"></script>
+
+{% include "includes/pwa_meta.html" %}
+
+<script>
+  window.__KJ_BUILD__ = '20260510-17';
+</script>
+<script src="{% static 'js/build-refresh.js' %}?v=1"></script>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  if (document.querySelector('.menu-item-card')) {
+    baguetteBox.run('.menu-item-card', {
+      captions: function(element) {
+        return element.getAttribute('data-caption') || '';
+      }
+    });
+  }
+});
+</script>
+
+
+    <style>
+        html {
+            scroll-behavior: smooth;
+        }
+
+        .skip-link {
+            position: absolute;
+            left: 1rem;
+            top: -3rem;
+            background: #0f4c22;
+            color: #fff;
+            padding: 0.65rem 0.9rem;
+            border-radius: 0.75rem;
+            z-index: 2000;
+            text-decoration: none;
+            font-weight: 700;
+            transition: top 0.2s ease;
+        }
+
+        .skip-link:focus {
+            top: 1rem;
+            color: #fff;
+        }
+
+        .app-brand-logo {
+            height: 50px;
+            max-width: 160px;
+        }
+
+        /* Sticky footer layout přes flexbox */
+        html, body {
+            height: 100%;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            background:
+                radial-gradient(circle at top left, rgba(255,255,255,0.95), rgba(255,255,255,0.88) 28%, rgba(245,247,250,0.96) 100%);
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: env(safe-area-inset-top, 0px);
+            background: #54ae43;
+            z-index: 1040;
+            pointer-events: none;
+        }
+
+        main {
+            flex: 1 0 auto;
+        }
+
+        footer {
+            flex-shrink: 0;
+        }
+
+        /*
+         * ZELENÁ HLAVIČKA (#54ae43)
+         */
+        .header-green {
+            background-color: #54ae43 !important;
+        }
+
+        .header-green.navbar {
+            box-shadow: 0 0.25rem 0.75rem rgba(0,0,0,0.18);
+        }
+
+        .app-navbar {
+            min-height: 76px;
+            padding-block: 0.6rem;
+            border-bottom: 4px solid #f28f28;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            z-index: 1030;
+            backdrop-filter: blur(10px);
+        }
+
+        .app-navbar .navbar-brand {
+            min-width: 136px;
+        }
+
+        .app-nav-shell {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .app-nav-left,
+        .app-nav-right {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+        }
+
+        .app-nav-left {
+            justify-content: flex-start;
+        }
+
+        .app-nav-right {
+            justify-content: flex-end;
+        }
+
+        .app-nav-btn,
+        .app-nav-balance,
+        .app-nav-user {
+            height: 42px;
+            border-radius: 999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.45rem;
+            padding: 0.48rem 0.82rem;
+            font-weight: 700;
+            font-size: 0.92rem;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        .app-nav-btn {
+            color: #fff !important;
+            text-decoration: none;
+            border: 1px solid rgba(255,255,255,0.18);
+            background: rgba(255,255,255,0.08);
+            transition: transform .15s ease, background .15s ease, border-color .15s ease;
+        }
+
+        .app-nav-btn:hover,
+        .app-nav-btn:focus {
+            color: #fff;
+            background: rgba(255,255,255,0.16);
+            border-color: rgba(255,255,255,0.32);
+            transform: translateY(-1px);
+        }
+
+        .app-nav-btn.active {
+            background: #fff;
+            border-color: #fff;
+            color: #176a32 !important;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.12);
+        }
+
+        .app-nav-btn-rating {
+            background: rgba(255,255,255,0.06);
+            color: #fff !important;
+            border-color: rgba(255,255,255,0.18);
+        }
+
+        .app-nav-btn-rating:hover,
+        .app-nav-btn-rating:focus,
+        .app-nav-btn-rating.active {
+            background: rgba(255,255,255,0.18);
+            color: #fff !important;
+            border-color: rgba(255,255,255,0.34);
+        }
+
+        .app-nav-user {
+            color: #fff;
+            text-decoration: none;
+            background: rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.16);
+            transition: transform .15s ease, background .15s ease, border-color .15s ease;
+        }
+
+        .app-nav-user:hover,
+        .app-nav-user:focus,
+        .app-nav-user.active {
+            color: #fff;
+            text-decoration: none;
+            background: rgba(0,0,0,0.18);
+            border-color: rgba(255,255,255,0.28);
+            transform: translateY(-1px);
+        }
+
+        .app-nav-user.active {
+            box-shadow: inset 0 -3px 0 #f28f28;
+        }
+
+        .app-nav-user span {
+            display: inline-block;
+            max-width: 210px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            vertical-align: middle;
+        }
+
+        .app-nav-balance {
+            color: #145f2f;
+            background: #fff;
+            border: 1px solid rgba(255,255,255,0.9);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.08);
+            min-width: 150px;
+        }
+
+        .app-nav-balance-label {
+            color: #607080;
+            font-size: 0.72rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .app-nav-balance-value {
+            color: #145f2f;
+            font-weight: 900;
+            font-variant-numeric: tabular-nums;
+            line-height: 1;
+        }
+
+        .navbar-balance-value-text {
+            display: inline-block;
+            min-width: 64px;
+            text-align: right;
+        }
+
+        .app-nav-logout {
+            height: 42px;
+            border-radius: 999px;
+            font-weight: 700;
+            font-size: 0.92rem;
+            padding-inline: 0.92rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        @media (max-width: 991.98px) {
+            .app-brand-logo {
+                height: 42px;
+                max-width: 128px;
+            }
+
+            .app-navbar .navbar-collapse {
+                padding-top: 0.75rem;
+            }
+
+            .app-nav-shell {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 0.75rem;
+            }
+
+            .app-nav-left,
+            .app-nav-right {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 0.6rem;
+                align-items: stretch;
+                justify-content: flex-start;
+                width: 100%;
+            }
+
+            .app-nav-btn,
+            .app-nav-balance,
+            .app-nav-user,
+            .app-nav-logout {
+                width: 100%;
+                justify-content: center;
+                height: 42px;
+            }
+
+            .app-nav-user,
+            .app-nav-balance,
+            .app-nav-logout,
+            .app-nav-right form {
+                grid-column: 1 / -1;
+            }
+
+            .app-nav-right form {
+                margin: 0;
+            }
+        }
+
+        @media (max-width: 575.98px) {
+            .app-navbar {
+                min-height: 70px;
+                padding-block: 0.45rem;
+            }
+
+            .app-navbar .container-fluid {
+                padding-inline: 0.75rem;
+            }
+
+            .app-nav-left {
+                grid-template-columns: 1fr;
+            }
+
+            .app-nav-btn,
+            .app-nav-balance,
+            .app-nav-user,
+            .app-nav-logout {
+                height: 44px;
+                font-size: 0.92rem;
+            }
+
+            .main-wrapper {
+                padding-top: 5.35rem;
+            }
+        }
+
+        /*
+         * ORANŽOVÁ PATIČKA (#f28f28)
+         */
+        .footer-orange {
+            background-color: #f28f28 !important;
+        }
+
+        .header-green a,
+        .footer-orange a {
+            color: #ffffff;
+        }
+
+        .footer-orange a:hover {
+            color: #fff3e0;
+            text-decoration: underline;
+        }
+
+        .main-wrapper {
+            padding-inline: 1rem;
+            padding-top: 5.75rem;
+            padding-bottom: 2rem;
+        }
+
+        @media (min-width: 992px) {
+            .main-wrapper {
+                padding-inline: 2rem;
+            }
+        }
+
+        @media (max-width: 767.98px) {
+            .main-wrapper {
+                padding-inline: 0.75rem;
+                padding-bottom: 1.5rem;
+            }
+        }
+
+        footer .vr {
+            opacity: 0.5;
+        }
+
+        footer h5 {
+            font-size: 1.05rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        footer .small {
+            font-size: 0.9rem;
+        }
+    </style>
+
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Přeskočit na obsah</a>
+    <!-- NAVBAR - ZELENÁ (#54ae43) -->
+    <nav class="navbar navbar-expand-lg navbar-dark header-green app-navbar mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand d-flex align-items-center" href="{% url 'jidelnicek:dashboard' %}">
+              <img src="{% static 'images/logo-white.png' %}" alt="Logo jídelna"
+                   class="me-2 app-brand-logo">
+            </a>
+
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#navbarMain" aria-controls="navbarMain"
+                    aria-expanded="false" aria-label="Přepnout navigaci">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+
+            <div class="collapse navbar-collapse justify-content-end" id="navbarMain">
+                {% if user.is_authenticated %}
+                <div class="app-nav-shell">
+                    <div class="app-nav-left">
+                        <a href="{% url 'jidelnicek:dashboard' %}"
+                           class="app-nav-btn {% if request.resolver_match.app_name == 'jidelnicek' or request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+                            <i class="fas fa-utensils"></i>
+                            <span>Jídelníček</span>
+                        </a>
+                        {% if frontend_ankety_enabled %}
+                        <a href="{% url 'ankety:moje_ankety' %}"
+                           class="app-nav-btn app-nav-btn-rating {% if request.resolver_match.app_name == 'ankety' %}active{% endif %}">
+                            <i class="fas fa-star"></i>
+                            <span>Hodnocení jídel</span>
+                        </a>
+                        {% endif %}
+                    </div>
+
+                    <div class="app-nav-right">
+                        <a href="{% url 'users:user-profile' %}"
+                           class="app-nav-user {% if request.resolver_match.url_name == 'user-profile' %}active{% endif %}">
+                            <i class="fas fa-user"></i>
+                            <span>{{ request.user.get_full_name|default:request.user.username }}</span>
+                        </a>
+
+                        <span class="app-nav-balance">
+                            <i class="fa-solid fa-coins"></i>
+                            <span class="app-nav-balance-label">Zůstatek</span>
+                            <span id="navbar-balance-container" class="app-nav-balance-value">
+{% include "includes/_navbar_balance.html" with user_balance=user.aktualni_zustatek %}                        </span>
+                        </span>
+
+                        <form method="post" action="{% url 'logout' %}" class="m-0">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-outline-light app-nav-logout">
+                                <i class="fas fa-right-from-bracket me-1"></i>Odhlásit
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <!-- HLAVNÍ OBSAH -->
+    <main class="container-fluid main-wrapper" id="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+  <!-- PATIČKA - POSLEDNÍ VERZE (kontakty v jednom panelu) -->
+<style>
+/* Hlavní kontejner patičky s tmavším zeleným přechodem */
+.footer-green {
+  background: linear-gradient(180deg, #4e9f3e 0%, #3a7a2e 100%);
+  border-top: 6px solid #f28f28;
+  
+  box-shadow: 
+    0 6px 18px rgba(0,0,0,0.18),
+    0 16px 34px rgba(0,0,0,0.16),
+    inset 0 1px 0 rgba(255,255,255,0.08);
+  color: #fff;
+  margin-top: 2.5rem;
+}
+
+/* Glassmorphism boxy */
+.footer-box {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 18px;
+  padding: 1.35rem;
+  height: 100%;
+}
+
+/* VELKÝ JEDINÝ PANEL se všemi kontakty */
+.contact-panel {
+  position: relative;
+  background: rgba(255, 255, 255, 0.11);
+  border-radius: 16px;
+  padding: 1.8rem 1.8rem 1.8rem 210px;
+  margin-bottom: 0;
+  overflow: visible;
+  height: 100%;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+}
+
+/* Logo - širší pro lepší vzhled */
+.logo-overflow {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 200px;
+  height: 130%;
+  z-index: 1;
+  margin-right: 2em;
+}
+
+.logo-overflow img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 50%;
+  transform: rotate(-10deg);
+}
+
+/* Obsah panelu - VŠICHNI KONTAKTY */
+.panel-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  height: 100%;
+}
+
+/* Horní sekce - Název + adresa + web */
+.panel-header {
+  flex: 1;
+}
+
+.panel-header h4 {
+  margin-bottom: 0.5rem;
+}
+
+/* Kontaktní řada - Osoba, Tel, Email */
+.contact-row {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
+/* Jednotlivé kontakty */
+.contact-item {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* Ikony kontaktů */
+.icon-circle-small {
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+/* Minimalistický seznam výdejů */
+.pickup-list-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pickup-item-mini {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0.9rem;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  font-size: 0.9rem;
+}
+
+.pickup-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pickup-time-mini {
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.95);
+  color: #3a7a2e;
+  padding: 2px 10px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.contact-link {
+  color: #fff !important;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.site-link {
+  color: rgba(255,255,255,0.9) !important;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.site-link:hover {
+  color: #fff !important;
+}
+
+@media (max-width: 991.98px) {
+  .contact-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.35rem;
+    min-height: auto;
+    text-align: center;
+  }
+
+  .logo-overflow {
+    position: static;
+    transform: none;
+    width: 120px;
+    height: 120px;
+    margin: 0 auto 1rem auto;
+  }
+
+  .panel-content {
+    gap: 1rem;
+    width: 100%;
+  }
+
+  .contact-row {
+    gap: 0.85rem;
+    flex-direction: column;
+  }
+
+  .contact-item {
+    min-width: 0;
+    width: 100%;
+    justify-content: flex-start;
+    padding: 0.8rem 0.95rem;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+}
+
+@media (max-width: 767.98px) {
+  .footer-green {
+    margin-top: 1.5rem;
+  }
+
+  .footer-box {
+    padding: 0.9rem;
+  }
+
+  .contact-panel {
+    border-radius: 16px;
+    padding: 1rem;
+  }
+
+  .panel-header h4 {
+    font-size: 1.35rem;
+  }
+
+  .panel-header p,
+  .panel-header .site-link {
+    font-size: 0.9rem;
+  }
+
+  .contact-item .small {
+    text-align: left;
+  }
+
+  .pickup-item-mini {
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.85rem 0.9rem;
+  }
+
+  .pickup-time-mini {
+    white-space: nowrap;
+    margin-left: auto;
+  }
+
+  .pickup-info {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .pickup-info span {
+    word-break: break-word;
+  }
+
+  footer .text-center.mt-4 {
+    margin-top: 1rem !important;
+    padding-top: 1rem !important;
+    font-size: 0.8rem;
+  }
+}
+</style>
+
+<footer class="footer-green py-4 mt-5">
+  <div class="container-fluid">
+    <div class="row g-4">
+      
+      <!-- 🏢 2/3: VEĽKÝ JEDINÝ PANEL se všemi kontakty -->
+      <div class="col-lg-8">
+        <div class="footer-box">
+          <div class="contact-panel">
+            <!-- Logo přetéká -->
+            <div class="logo-overflow">
+              <img src="{% static 'images/kliknijidlo-v3-footer.png' %}" alt="{{ canteen_contact.canteen_name }}">
+            </div>
+            
+            <!-- VŠICHNI KONTAKTY v jednom panelu -->
+            <div class="panel-content">
+              <!-- Horní sekce: Název + adresa + web -->
+              <div class="panel-header">
+                <h4 class="mb-1 fw-bold">{{ canteen_contact.canteen_name|default:"Jídelna Kliknijídlo.cz" }}</h4>
+                <p class="mb-2 opacity-90 small lh-sm">
+                  <i class="fas fa-map-marker-alt me-2"></i>{{ canteen_contact.address }}
+                </p>
+                <a href="https://kliknijidlo.cz" target="_blank" class="site-link d-inline-flex align-items-center">
+                  <i class="fas fa-external-link-alt me-1"></i> kliknijidlo.cz
+                </a>
+              </div>
+              
+              <!-- Kontaktní řada: Osoba + Tel + Email -->
+              <div class="contact-row">
+                <div class="contact-item">
+                  <div class="icon-circle-small"><i class="fas fa-user"></i></div>
+                  <div class="small">
+                    <span class="opacity-75 d-block">Zodpovědná osoba</span>
+                    <strong>{{ canteen_contact.contact_name }}</strong>
+                  </div>
+                </div>
+                <div class="contact-item">
+                  <div class="icon-circle-small"><i class="fas fa-phone"></i></div>
+                  <div class="small">
+                    <span class="opacity-75 d-block" >Telefon</span>
+                    <a href="tel:{{ canteen_contact.contact_phone }}" class="contact-link">
+                      <strong>{{ canteen_contact.contact_phone }}</strong>
+                    </a>
+                  </div>
+                </div>
+                <div class="contact-item">
+                  <div class="icon-circle-small"><i class="fas fa-envelope"></i></div>
+                  <div class="small">
+                    <span class="opacity-75 d-block">Email</span>
+                    <a href="mailto:{{ canteen_contact.contact_email }}" class="contact-link">
+                      <strong>{{ canteen_contact.contact_email }}</strong>
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ⏰ 1/3: Výdej (Minimalistický) -->
+      <div class="col-lg-4">
+        <div class="footer-box">
+          <div class="pickup-list-mini">
+            {% for pickup in meal_pickup_times %}
+              <div class="pickup-item-mini">
+                <div class="pickup-info">
+                  <i class="{{ pickup.druh_jidla.ikona|default:'fas fa-utensils' }} opacity-75" style="width: 16px;"></i>
+                  <span>{{ pickup.druh_jidla.nazev }}</span>
+                </div>
+                <span class="pickup-time-mini">
+                  {{ pickup.pickup_from|time:"H:i" }}–{{ pickup.pickup_to|time:"H:i" }}
+                </span>
+              </div>
+            {% empty %}
+              <div class="text-center py-2 opacity-50 small">Časy nejsou nastaveny</div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+    </div>
+    
+    <!-- PWA install prompt -->
+    {% include "includes/pwa_install_banner.html" %}
+
+    <!-- Spodní linka -->
+    <div class="text-center mt-4 pt-3 border-top border-white border-opacity-10 small opacity-75">
+      &copy; 2026 {{ canteen_contact.canteen_name|default:"Jídelna" }}. Všechna práva vyhrazena.
+    </div>
+  </div>
+</footer>
+
+
+
+    <script src="{% static 'vendor/bootstrap/js/bootstrap.min.js' %}"></script>
+    <script src="{% static 'js/navbar-fallback.js' %}?v=1"></script>
+    <script src="{% static 'js/fontawesome-fallback.js' %}?v=1"></script>
+    <script src="{% static 'js/ajax-order-bridge.js' %}?v=15"></script>
+    <script src="{% static 'js/pwa.js' %}?v=10"></script>
+    <script>
+      window.addEventListener('pageshow', function(event) {
+        if (event.persisted) {
+          window.location.reload();
+        }
+      });
+    </script>
+    {% block scripts %}{% endblock %}
+
+  
+</body>
+</html>

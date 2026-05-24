@@ -41,6 +41,8 @@ ALLOWED_HOSTS = env_list(
         '127.0.0.1',
         'localhost',
         '10.0.0.108',
+        '10.66.0.1',
+        '10.66.0.20',
         'jidelna.kliknijidlo.cz',
         'www.jidelna.kliknijidlo.cz',
     ],
@@ -61,6 +63,10 @@ CSRF_TRUSTED_ORIGINS = env_list(
     [
         'http://127.0.0.1:8000',
         'http://localhost:8000',
+        'http://10.66.0.1',
+        'https://10.66.0.1',
+        'http://10.66.0.20',
+        'https://10.66.0.20',
         'https://jidelna.kliknijidlo.cz',
         'http://jidelna.kliknijidlo.cz',
         'http://10.0.0.108:8000',
@@ -74,7 +80,7 @@ if not DEBUG and not LOCAL_RUNSERVER:
 
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_SSL_REDIRECT = True
+    SECURE_SSL_REDIRECT = env_bool('SECURE_SSL_REDIRECT', default=False)
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
@@ -100,7 +106,11 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = 'same-origin'
 X_FRAME_OPTIONS = 'DENY'
 KIOSK_AUTO_LOGIN_ENABLED = env_bool('KIOSK_AUTO_LOGIN_ENABLED', default=False)
+KIOSK_USERNAME = os.getenv("KIOSK_USERNAME", "").strip()
 RFID_API_TOKEN = os.getenv("RFID_API_TOKEN", "").strip()
+RFID_BRIDGE_URL = os.getenv("RFID_BRIDGE_URL", "").strip()
+if not DEBUG and not RFID_API_TOKEN:
+    raise ValueError("RFID_API_TOKEN must be set in production.")
 
 
 # --- APPS ---
@@ -125,6 +135,7 @@ INSTALLED_APPS = [
     'widget_tweaks',
     'vydej_jidel',
     'frontend',
+    'knowledge_base',
     'vydej',
     'vydej_frontend',
     'reporty',
@@ -145,6 +156,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'users.middleware.NoCacheAuthenticatedMiddleware',
     'users.middleware.ForcePasswordChangeMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'admin_dashboard.middleware.ModuleAccessMiddleware',
@@ -300,7 +312,7 @@ LOGGING = {
             'filters': ['require_debug_false'],
         },
         'console': {
-            'level': 'INFO',
+            'level': 'WARNING',
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
@@ -313,7 +325,7 @@ LOGGING = {
     'loggers': {
         'django': {
             'handlers': ['file', 'console'],
-            'level': 'INFO',
+            'level': 'WARNING',
             'propagate': False,
         },
         'django.security': {

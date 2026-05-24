@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} | Knowledge Base</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f2;
+      --panel: #ffffff;
+      --text: #172026;
+      --muted: #5a6671;
+      --accent: #2f855a;
+      --accent-2: #f39c12;
+      --line: #dfe6df;
+      --shadow: 0 18px 50px rgba(23, 32, 38, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(180deg, rgba(47,133,90,0.06), transparent 240px), var(--bg);
+      color: var(--text);
+    }
+    .wrap { max-width: 1024px; margin: 0 auto; padding: 28px 18px 56px; }
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .crumbs a, .crumbs {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.95rem;
+    }
+    .crumbs a:hover { color: var(--accent); }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .head {
+      padding: 28px 30px 18px;
+      background: linear-gradient(135deg, rgba(47,133,90,0.95), rgba(23,32,38,0.93));
+      color: #fff;
+    }
+    .head h1 { margin: 0 0 8px; font-size: clamp(1.8rem, 4vw, 3rem); line-height: 1.05; }
+    .head p { margin: 0; color: rgba(255,255,255,0.82); }
+    .body {
+      padding: 26px 30px 32px;
+      line-height: 1.65;
+      font-size: 1rem;
+    }
+    .body h1, .body h2, .body h3, .body h4 { line-height: 1.22; }
+    .body h1 { font-size: 1.9rem; }
+    .body h2 { font-size: 1.5rem; margin-top: 1.8rem; }
+    .body h3 { font-size: 1.2rem; margin-top: 1.4rem; }
+    .body p, .body ul { margin-top: 0.85rem; }
+    .body ul { padding-left: 1.2rem; }
+    .body li + li { margin-top: 0.28rem; }
+    .body pre {
+      overflow-x: auto;
+      border-radius: 16px;
+      padding: 16px 18px;
+      background: #0f1720;
+      color: #e2e8f0;
+    }
+    .body code {
+      background: rgba(47,133,90,0.08);
+      color: #1f5b3f;
+      padding: 0.12rem 0.35rem;
+      border-radius: 6px;
+    }
+    .body pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+    }
+    .body a { color: var(--accent); }
+    .meta {
+      margin-top: 18px;
+      color: rgba(255,255,255,0.82);
+      font-size: 0.92rem;
+    }
+    .label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-size: 0.78rem;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="crumbs"><a href="../">Knowledge Base</a> / {{ title }}</div>
+      <div class="crumbs"><a href="../">Zpět na index</a></div>
+    </div>
+
+    <article class="panel">
+      <header class="head">
+        <div class="label">Markdown source</div>
+        <h1>{{ title }}</h1>
+        <p>{{ rel_path }}</p>
+        <div class="meta">Stránka je generovaná z Markdown souboru a může se rychle aktualizovat při dalším deployi.</div>
+      </header>
+      <div class="body">
+        {{ html_body|safe }}
+      </div>
+    </article>
+  </div>
+</body>
+</html>
+

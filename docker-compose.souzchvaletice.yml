@@ -1,7 +1,14 @@
+x-docker-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: souzchvaletice_db
+    logging: *default-logging
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME}
@@ -16,8 +23,9 @@ services:
       retries: 10
 
   web:
-    build: .
+    image: repo-web:latest
     container_name: souzchvaletice_web
+    logging: *default-logging
     restart: unless-stopped
     command: >
       sh -c "python manage.py migrate
@@ -39,10 +47,9 @@ services:
       - logs_data:/app/logs
 
   rfid:
-    build:
-      context: .
-      dockerfile: Dockerfile.rfid
+    image: ${RFID_IMAGE:-souzchvaletice-rfid:latest}
     container_name: souzchvaletice_rfid
+    logging: *default-logging
     restart: unless-stopped
     env_file:
       - .env.prod
@@ -52,10 +59,10 @@ services:
       - logs_data:/app/logs
     devices:
       - "${RFID_SERIAL_DEVICE:-/dev/null}:${RFID_SERIAL_DEVICE:-/dev/null}"
-
   nginx:
     image: nginx:1.27-alpine
     container_name: souzchvaletice_nginx
+    logging: *default-logging
     restart: unless-stopped
     depends_on:
       - web
