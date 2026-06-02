@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="KlikniLístek">
+  <defs>
+    <linearGradient id="bg" x1="64" y1="48" x2="448" y2="464" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1a1f3c" />
+      <stop offset="1" stop-color="#24304f" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="120" fill="url(#bg)" />
+  <rect x="88" y="88" width="336" height="336" rx="88" fill="none" stroke="#c9a84c" stroke-width="20" />
+  <path d="M168 170h40v172h96v40H168z" fill="#f8f6f1" />
+  <path d="M284 170h40v82l64-82h50l-76 96 82 116h-50l-60-86-10 12v74h-40z" fill="#f8f6f1" />
+  <circle cx="374" cy="382" r="16" fill="#c9a84c" />
+</svg>
